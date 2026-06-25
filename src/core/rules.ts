@@ -15,6 +15,8 @@ export const SCORE_PULSAR = 200
 export const SCORE_FUSEBALL_BASE = 250
 export const SCORE_FUSEBALL_STEP = 250  // 250 / 500 / 750 across depth thirds
 export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade: 1–3)
+export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
+export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
 
 export interface LevelParams {
@@ -22,6 +24,7 @@ export interface LevelParams {
   flipperSpeed: number   // depth units per second
   flipInterval: number   // seconds between flips
   spawnInterval: number  // seconds between spawns
+  spikerSpeed: number    // depth units/s for spiker oscillation
 }
 
 export function levelParams(level: number): LevelParams {
@@ -31,6 +34,7 @@ export function levelParams(level: number): LevelParams {
     flipperSpeed: 0.18 * ramp,
     flipInterval: Math.max(0.4, 1.5 / ramp),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
+    spikerSpeed: 0.22 * ramp,
   }
 }
 

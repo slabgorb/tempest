@@ -5,9 +5,11 @@ import { wrapLane, currentLane } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
+  SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN,
 } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
+import { stepSpiker } from './enemies/spiker'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -63,6 +65,13 @@ function stepEnemies(s: GameState, dt: number): void {
         moved.push(res.enemy)
         break
       }
+      case 'spiker': {
+        const res = stepSpiker(e, dt, params)
+        const sp = res.enemy
+        s.spikes[sp.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(s.spikes[sp.lane], sp.depth))
+        moved.push(sp)
+        break
+      }
       default:
         moved.push(e) // kinds without a stepper yet (added in later tasks) hold position
     }
@@ -97,6 +106,19 @@ function resolveBulletHits(s: GameState): void {
   })
   if (deadBullets.size > 0) s.bullets = s.bullets.filter((_, i) => !deadBullets.has(i))
   if (deadEnemies.size > 0) s.enemies = s.enemies.filter((_, i) => !deadEnemies.has(i))
+}
+
+function resolveSpikeHits(s: GameState): void {
+  const dead = new Set<number>()
+  s.bullets.forEach((b, bi) => {
+    const h = s.spikes[b.lane]
+    if (h > 0 && b.depth <= h) {
+      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)
+      dead.add(bi)
+      awardScore(s, SCORE_SPIKE_SEGMENT)
+    }
+  })
+  if (dead.size > 0) s.bullets = s.bullets.filter((_, i) => !dead.has(i))
 }
 
 function startLevel(s: GameState): void {
@@ -157,6 +179,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       stepBullets(s, dt)
       stepEnemies(s, dt)
       resolveBulletHits(s)
+      resolveSpikeHits(s)
       resolvePlayerHits(s)
       checkLevelClear(s)
       break
