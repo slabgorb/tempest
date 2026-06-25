@@ -6,7 +6,7 @@ import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
-  rollSpawnKind, rollTankerCargo,
+  rollSpawnKind, rollTankerCargo, WARP_SPEED,
 } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
@@ -23,6 +23,7 @@ function cloneState(s: GameState): GameState {
     enemies: s.enemies.map((e) => ({ ...e })),
     spikes: s.spikes.slice(),
     spawn: { ...s.spawn },
+    warp: { ...s.warp },
   }
 }
 
@@ -228,15 +229,37 @@ function startGame(s: GameState): void {
   s.enemies = []
   s.tube = tubeForLevel(1)
   s.spikes = new Array(s.tube.laneCount).fill(0)
+  s.warp.progress = 0
   startLevel(s)
 }
 
+// Clearing a level no longer advances immediately — it enters the warp. The
+// Claw flies down the tube (progress 0 → 1); advanceLevel runs on completion.
 function checkLevelClear(s: GameState): void {
   if (s.mode !== 'playing') return
   if (s.enemies.length === 0 && s.spawn.remaining === 0) {
-    s.level += 1
-    startLevel(s)
+    s.mode = 'warp'
+    s.warp.progress = 0
+    s.bullets = []
   }
+}
+
+// Swap in the next level's geometry, resize the per-lane spike array to the new
+// laneCount, wrap the player into the (possibly smaller) tube, then resume play.
+function advanceLevel(s: GameState): void {
+  s.level += 1
+  s.tube = tubeForLevel(s.level)
+  s.spikes = new Array(s.tube.laneCount).fill(0)
+  s.player.lane = wrapLane(s.tube, s.player.lane)
+  startLevel(s)
+  s.warp.progress = 0
+  s.mode = 'playing'
+}
+
+// Advance the warp animation by dt; on arrival (progress ≥ 1) advance the level.
+function stepWarp(s: GameState, dt: number): void {
+  s.warp.progress += dt * WARP_SPEED
+  if (s.warp.progress >= 1) advanceLevel(s)
 }
 
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
@@ -252,6 +275,10 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       resolveTankerArrivals(s)
       resolvePlayerHits(s)
       checkLevelClear(s)
+      break
+    case 'warp':
+      stepPlayer(s, input) // the Claw may still rotate during the warp; firing is disabled
+      stepWarp(s, dt)
       break
     case 'dying':
       s.player.respawnTimer -= dt
