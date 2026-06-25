@@ -1,7 +1,8 @@
+// src/core/sim.ts
 import { GameState } from './state'
 import { Input } from './input'
-import { wrapLane } from './geometry'
-import { SPIN_SENSITIVITY } from './rules'
+import { wrapLane, currentLane } from './geometry'
+import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS } from './rules'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -18,11 +19,25 @@ function stepPlayer(s: GameState, input: Input): void {
   s.player.lane = wrapLane(s.tube, s.player.lane + input.spin * SPIN_SENSITIVITY)
 }
 
+function stepFiring(s: GameState, input: Input): void {
+  if (!input.fire || !s.player.alive) return
+  if (s.bullets.length >= MAX_BULLETS) return
+  s.bullets.push({ lane: currentLane(s.tube, s.player.lane), depth: 1 })
+}
+
+function stepBullets(s: GameState, dt: number): void {
+  for (const b of s.bullets) {
+    b.depth -= BULLET_SPEED * dt
+  }
+  s.bullets = s.bullets.filter((b) => b.depth > 0)
+}
+
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
-  void dt // unused until bullets/enemies (Task 9+)
   const s = cloneState(state)
   if (s.mode === 'playing') {
     stepPlayer(s, input)
+    stepFiring(s, input)
+    stepBullets(s, dt)
   }
   return s
 }
