@@ -5,4 +5,40 @@ description: WebAudio SFX, particle/screen-shake polish, glow tuning.
 priority: p1
 status: backlog
 repos: tempest
-stories: []
+stories:
+  - id: 5-1
+    title: Pure-core game event channel
+    points: 3
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 5-2
+    title: WebAudio SFX engine
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: trivial
+  - id: 5-3
+    title: Particle system and screen-shake
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: trivial
+  - id: 5-4
+    title: Render particles, screen-shake, and glow tuning
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: trivial
+  - id: 5-5
+    title: Wire audio and particles into loop and bootstrap
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: trivial
+    type: chore

@@ -1,7 +1,7 @@
 // src/core/sim.ts
 import { GameState, Enemy, EnemyKind, TankerCargo } from './state'
 import { Input } from './input'
-import { wrapLane, currentLane } from './geometry'
+import { wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
@@ -226,6 +226,7 @@ function startGame(s: GameState): void {
   s.lives = START_LIVES
   s.player = { lane: 0, alive: true, respawnTimer: 0 }
   s.enemies = []
+  s.tube = tubeForLevel(1)
   s.spikes = new Array(s.tube.laneCount).fill(0)
   startLevel(s)
 }
