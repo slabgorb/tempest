@@ -1,0 +1,8 @@
+id: '3'
+type: epic
+title: Wave 3 — Levels & warp
+description: All 16 tube geometries (open + closed), color cycling, the end-of-level warp with spike collision, difficulty ramp.
+priority: p1
+status: backlog
+repos: tempest
+stories: []

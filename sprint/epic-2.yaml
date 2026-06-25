@@ -1,0 +1,8 @@
+id: '2'
+type: epic
+title: Wave 2 — Full roster
+description: Tankers (split on death/at-rim), Spikers + persistent per-lane spikes, Fuseballs (erratic rim/boundary movement), Pulsars (electrify lane on pulse, flip), with faithful behaviors and scoring.
+priority: p1
+status: backlog
+repos: tempest
+stories: []

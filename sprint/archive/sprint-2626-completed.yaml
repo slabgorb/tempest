@@ -1,0 +1,13 @@
+# Sprint TO Sprint 2626 - Completed Stories
+# Jira Sprint ID: 1
+# Archived: 2026-06-25
+
+sprint:
+  name: "TO Sprint 2626"
+  number: 2626
+  jira_sprint_id: 1
+  jira_sprint_name: "TO Sprint 2626"
+  goal: Tempest playable slice (Waves 0-1) plus full roadmap epics
+
+completed:
+  # Completed stories will be appended here by pf sprint archive
