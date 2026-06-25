@@ -39,9 +39,12 @@ stories:
     title: Spikes crash the Claw during the warp
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-25'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-25'
+    review_verdict: approved
   - id: 3-4
     title: Difficulty ramp continues past the geometry cycle
     points: 2
@@ -56,3 +59,29 @@ stories:
     status: backlog
     repos: tempest
     workflow: trivial
+  - id: 3-6
+    title: Resolve post-warp-death re-warp loop on persisted spikes
+    description: "Follow-up from Story 3-3 (spike↔Claw warp collision). After a warp crash, killPlayer→dying→respawn returns mode to 'playing'; the already-cleared level immediately re-enters the warp (checkLevelClear), so a spike still on the player's lane re-crashes every respawn unless the player steers — draining all lives with neutral input. Define and implement the intended post-warp-death resolution. Affects src/core/sim.ts (respawn / checkLevelClear / stepWarp / advanceLevel). Context: sprint/archive/3-3-session.md Delivery Findings (Reviewer/TEA/Dev)."
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - 'Decide the resolution: complete the level transition on warp-death respawn, OR clear/skip the killing spike, OR grant brief post-respawn invulnerability — document the choice.'
+      - After a warp-death respawn, the player is NOT instantly re-killed by the same persisted spike with neutral input.
+      - A genuinely surviving warp (no spike on the player's lane) still advances to the next geometry exactly as today.
+      - Deterministic and pure-core (no DOM/time/random); covered by tests.
+    type: bug
+  - id: 3-7
+    title: Use import type for Input in warp-spikes test
+    description: Trivial cleanup from Story 3-3 review (Reviewer rule-checker, LOW). tests/core/sim.warp-spikes.test.ts:21 uses 'import { Input }' but Input is a type-only interface used only in annotations; should be 'import type { Input }' for consistency with line 18 (GameState). No compile/runtime impact under current tsconfig.
+    points: 1
+    priority: p3
+    status: backlog
+    repos: tempest
+    workflow: trivial
+    acceptance_criteria:
+      - tests/core/sim.warp-spikes.test.ts imports Input via 'import type'.
+      - Full test suite and tsc --noEmit remain green.
+    type: chore

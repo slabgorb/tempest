@@ -256,9 +256,31 @@ function advanceLevel(s: GameState): void {
   s.mode = 'playing'
 }
 
-// Advance the warp animation by dt; on arrival (progress ≥ 1) advance the level.
+// During the warp the camera dives from the rim (progress 0 → depth 1) toward the
+// far end (progress 1 → depth 0). A spike on a lane reaches up from the far end to
+// `spikes[lane]`, so the Claw crashes onto it once its depth descends to that height.
+function warpClawDepth(progress: number): number {
+  return 1 - progress
+}
+
+// Crash the Claw if the descending camera has reached a spike on the player's
+// current lane. Returns true when a crash occurred (the warp must not advance).
+function resolveWarpSpikeHit(s: GameState): boolean {
+  if (!s.player.alive) return false
+  const lane = currentLane(s.tube, s.player.lane)
+  const height = s.spikes[lane]
+  if (height > 0 && warpClawDepth(s.warp.progress) <= height) {
+    killPlayer(s)
+    return true
+  }
+  return false
+}
+
+// Advance the warp animation by dt. A spike on the player's lane crashes the Claw
+// mid-warp (death + life loss); otherwise on arrival (progress ≥ 1) advance level.
 function stepWarp(s: GameState, dt: number): void {
   s.warp.progress += dt * WARP_SPEED
+  if (resolveWarpSpikeHit(s)) return // crashed onto a spike — do not advance the level
   if (s.warp.progress >= 1) advanceLevel(s)
 }
 
