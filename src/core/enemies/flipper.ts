@@ -1,13 +1,13 @@
 // src/core/enemies/flipper.ts
-import { Enemy } from '../state'
+import { Flipper } from '../state'
 import { Rng, rngNext } from '../rng'
 import { Tube, wrapLane } from '../geometry'
 import { LevelParams } from '../rules'
 
 export function stepFlipper(
-  enemy: Enemy, dt: number, params: LevelParams, tube: Tube, rng: Rng,
-): { enemy: Enemy; rng: Rng } {
-  const e: Enemy = { ...enemy }
+  enemy: Flipper, dt: number, params: LevelParams, tube: Tube, rng: Rng,
+): { enemy: Flipper; rng: Rng } {
+  const e: Flipper = { ...enemy }
   let r = rng
 
   // Climb toward the near rim.

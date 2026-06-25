@@ -1,5 +1,5 @@
 // src/core/sim.ts
-import { GameState } from './state'
+import { GameState, Enemy } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
 import {
@@ -15,6 +15,7 @@ function cloneState(s: GameState): GameState {
     player: { ...s.player },
     bullets: s.bullets.map((b) => ({ ...b })),
     enemies: s.enemies.map((e) => ({ ...e })),
+    spikes: s.spikes.slice(),
     spawn: { ...s.spawn },
   }
 }
@@ -52,12 +53,19 @@ function stepEnemies(s: GameState, dt: number): void {
     }
   }
 
-  // Move every enemy, threading the RNG.
-  const moved = []
+  // Move every enemy by kind, threading the RNG.
+  const moved: Enemy[] = []
   for (const e of s.enemies) {
-    const res = stepFlipper(e, dt, params, s.tube, s.rng)
-    s.rng = res.rng
-    moved.push(res.enemy)
+    switch (e.kind) {
+      case 'flipper': {
+        const res = stepFlipper(e, dt, params, s.tube, s.rng)
+        s.rng = res.rng
+        moved.push(res.enemy)
+        break
+      }
+      default:
+        moved.push(e) // kinds without a stepper yet (added in later tasks) hold position
+    }
   }
   s.enemies = moved
 }
