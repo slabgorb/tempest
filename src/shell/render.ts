@@ -373,6 +373,81 @@ function drawHud(
   }
 }
 
+// End-of-level warp: the Claw dives down its lane from the near rim toward the
+// vanishing point as warp.progress goes 0 -> 1 (mirrors the core's
+// warpClawDepth = 1 - progress). Speed streaks rush outward along every spoke
+// for the "flying down the tube" sensation; spikes stay drawn (by the caller)
+// so the 3-3 spike crash reads on screen.
+function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): void {
+  const tube = s.tube
+  const progress = Math.max(0, Math.min(1, s.warp.progress))
+
+  // Speed streaks along each spoke, faster and brighter as the warp progresses.
+  const speed = 1.5 + progress * 4
+  const streaks = 3
+  const segLen = 0.14
+  ctx.strokeStyle = color
+  ctx.shadowColor = color
+  for (let i = 0; i < tube.far.length; i++) {
+    const f = tube.far[i]
+    const n = tube.near[i]
+    for (let k = 0; k < streaks; k++) {
+      const t = (((renderTime * speed + k / streaks) % 1) + 1) % 1
+      const a = lerpP(f, n, t)
+      const b = lerpP(f, n, Math.min(1, t + segLen))
+      ctx.globalAlpha = 0.15 + t * 0.6
+      ctx.lineWidth = 1 + t * 2.5
+      ctx.shadowBlur = 6 + t * 12
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+    }
+  }
+  ctx.globalAlpha = 1
+
+  // The diving Claw, on the player's (still-rotatable) lane.
+  const lane = currentLane(tube, s.player.lane)
+  const clawDepth = 1 - progress
+  const rim = project(tube, lane, 1)
+  const p = project(tube, lane, clawDepth)
+
+  // Dive trail from the rim down to the current Claw position.
+  ctx.strokeStyle = CLAW_COLOR
+  ctx.shadowColor = CLAW_COLOR
+  ctx.globalAlpha = 0.25
+  ctx.lineWidth = 2
+  ctx.shadowBlur = 10
+  ctx.beginPath(); ctx.moveTo(rim.x, rim.y); ctx.lineTo(p.x, p.y); ctx.stroke()
+  ctx.globalAlpha = 1
+
+  // Claw glyph: muzzle points inward (toward the vanishing point), shrinks with depth.
+  const inward = project(tube, lane, Math.max(0, clawDepth - 0.1))
+  const outward = project(tube, lane, Math.min(1, clawDepth + 0.1))
+  let ux = outward.x - inward.x
+  let uy = outward.y - inward.y
+  const ulen = Math.hypot(ux, uy) || 1
+  ux /= ulen
+  uy /= ulen
+  const wx = -uy
+  const wy = ux
+  const size = 6 + clawDepth * 14
+  const apex = { x: p.x - ux * size * 0.8, y: p.y - uy * size * 0.8 }
+  const footL = { x: p.x + wx * size + ux * size * 0.4, y: p.y + wy * size + uy * size * 0.4 }
+  const footR = { x: p.x - wx * size + ux * size * 0.4, y: p.y - wy * size + uy * size * 0.4 }
+
+  ctx.strokeStyle = CLAW_COLOR
+  ctx.shadowColor = CLAW_COLOR
+  ctx.shadowBlur = 16
+  ctx.lineWidth = 2.5
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  ctx.moveTo(footL.x, footL.y); ctx.lineTo(apex.x, apex.y); ctx.lineTo(footR.x, footR.y)
+  ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(footL.x, footL.y); ctx.lineTo(footR.x, footR.y); ctx.stroke()
+  ctx.fillStyle = '#fff'
+  ctx.shadowBlur = 14
+  ctx.beginPath(); ctx.arc(apex.x, apex.y, 2.4, 0, Math.PI * 2); ctx.fill()
+}
+
 export function render(
   ctx: CanvasRenderingContext2D,
   s: GameState,
@@ -407,11 +482,16 @@ export function render(
 
   drawTube(ctx, s, color, currentLane(s.tube, s.player.lane))
   drawSpikes(ctx, s)
-  // Far enemies first so near ones overdraw them.
-  const ordered = s.enemies.slice().sort((a, b) => a.depth - b.depth)
-  for (const e of ordered) drawEnemy(ctx, s, e)
-  drawBullets(ctx, s)
-  drawPlayer(ctx, s)
+  if (s.mode === 'warp') {
+    // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
+    drawWarp(ctx, s, color)
+  } else {
+    // Far enemies first so near ones overdraw them.
+    const ordered = s.enemies.slice().sort((a, b) => a.depth - b.depth)
+    for (const e of ordered) drawEnemy(ctx, s, e)
+    drawBullets(ctx, s)
+    drawPlayer(ctx, s)
+  }
   drawParticles(ctx, fx)
   ctx.restore()
 
