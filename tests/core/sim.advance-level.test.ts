@@ -69,6 +69,9 @@ describe('advanceLevel — spike array resize (AC2)', () => {
   it('starts every lane of the new spike array at 0 — no stale heights carried over', () => {
     const s = clearedAtLevel(3, 0) // 16-lane source level
     s.spikes = new Array(s.tube.laneCount).fill(0.5) // pretend the level was full of spikes
+    s.spikes[0] = 0 // ...except the player's lane (0): a spike there now crashes the Claw
+                    // mid-warp (Story 3-3), so clear it to let the transition complete. The
+                    // remaining 15 stale heights still prove the new array isn't carried over.
     let out = stepGame(s, NEUTRAL, 1 / 60)
     for (let i = 0; i < 1000 && out.mode === 'warp'; i++) out = stepGame(out, NEUTRAL, 1 / 60)
 
