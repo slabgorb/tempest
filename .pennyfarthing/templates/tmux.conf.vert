@@ -1,0 +1,158 @@
+# Pennyfarthing Development - tmux config
+# Usage: just start (or ./start-session)
+#
+# Layout (top/bottom):
+# ┌──────────────────────────────────────┐
+# │            claude code               │
+# ├──────────────────────────────────────┤
+# │              TUI                     │
+# └──────────────────────────────────────┘
+
+# --- Key passthrough ---
+# extended-keys disabled: causes DA response leak (?62;22;52c) with Ghostty,
+# even on tmux next-3.7. Ghostty handles shift+enter natively via its own
+# CSI-u implementation, so tmux's extended-keys is unnecessary here.
+# set -s extended-keys always
+# set -s extended-keys-format csi-u
+# set -as terminal-features ",*:extkeys"
+set -as terminal-features ",*:clipboard"
+
+# --- Clipboard (OSC 52) ---
+# Claude Code uses OSC 52 for copy-to-clipboard. Without this, copy
+# operations silently fail because tmux strips the escape sequences.
+set -g set-clipboard on
+set -as terminal-overrides ",*:Ms=\\E]52;c;%p2%s\\7"
+
+# --- Bracketed paste ---
+# Prevent tmux from double-wrapping paste sequences, which causes garbled
+# input or character-by-character interpretation in Claude Code CLI
+set -as terminal-overrides ",*:Ss=\\E[%p1%d q:Se=\\E[2 q"
+
+# --- Image passthrough ---
+# Allow inline image protocols (Kitty, iTerm2, Sixel) to pass through tmux
+# so portraits and logos render in the terminal
+set -g allow-passthrough all
+
+# Propagate Kitty env vars into tmux sessions so image protocol
+# detection works (tmux overwrites TERM to tmux-256color)
+set -ga update-environment "KITTY_WINDOW_ID"
+set -ga update-environment "TERM_PROGRAM"
+
+# --- Terminal capabilities ---
+# Truecolor support
+set -g default-terminal "tmux-256color"
+set -as terminal-overrides ",*:Tc"
+
+# Unicode/wide character rendering — tell tmux to trust the terminal's
+# width calculations rather than guessing, reduces box-drawing corruption
+set -gq utf8-option on
+
+# --- Mouse ---
+# Full mouse support: click to select pane, scroll, drag borders to resize
+set -g mouse on
+
+# --- Copy mode (macOS clipboard) ---
+# Mouse copy while Claude Code is running:
+#   Kitty:   Shift+drag to select, auto-copies to clipboard
+#   iTerm2:  Option+drag to select, auto-copies to clipboard
+#   Manual:  Prefix+[ enters copy mode, Space to start, y/Enter to yank
+#
+# Kitty users: ensure kitty.conf has:
+#   clipboard_control write-clipboard write-primary no-append
+
+# Default clipboard pipe target (tmux 3.2+)
+set -s copy-command 'pbcopy'
+
+# Use vi-style keys in copy mode
+set -g mode-keys vi
+# Mouse drag in copy mode → yank to clipboard on release
+bind -T copy-mode-vi MouseDragEnd1Pane send -X copy-pipe-and-cancel "pbcopy"
+# 'y' in copy mode also copies to clipboard
+bind -T copy-mode-vi y send -X copy-pipe-and-cancel "pbcopy"
+# Enter in copy mode copies to clipboard
+bind -T copy-mode-vi Enter send -X copy-pipe-and-cancel "pbcopy"
+
+# --- Responsiveness ---
+# Zero escape delay — we're always local, Kitty handles this fine
+set -g escape-time 0
+
+# Pass focus events so apps can detect pane focus/blur
+set -g focus-events on
+
+# Generous scrollback for when you do enter copy-mode
+set -g history-limit 50000
+
+# --- Pane splitting ---
+# New splits target the top pane (Claude Code work area) rather than
+# rearranging the whole layout. The bottom pane (TUI) stays untouched.
+# Vertical split (left/right) within top pane
+bind | split-window -h -t '{top}'
+bind \\ split-window -h -t '{top}'
+# Horizontal split (top/bottom) within top pane
+bind - split-window -v -t '{top}'
+
+# --- Pane resize ---
+# Aggressively resize windows when switching between clients with different
+# terminal sizes (avoids the "small dots" problem in shared sessions)
+set -g aggressive-resize on
+
+# --- Window numbering ---
+# Start at 1 so prefix+1 reaches the first window (matches status-bar display)
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+
+# --- No-prefix navigation ---
+# Shift+Left/Right cycles windows ("tabs"); Alt+arrows jump between panes.
+# Terminals pass these through unmodified in Ghostty/Kitty/iTerm2.
+bind -n S-Left  previous-window
+bind -n S-Right next-window
+bind -n M-Left  select-pane -L
+bind -n M-Right select-pane -R
+bind -n M-Up    select-pane -U
+bind -n M-Down  select-pane -D
+
+# --- Status line ---
+# Left/right read from .pennyfarthing/ cache files (written by hooks)
+set -g status on
+set -g status-interval 5
+set -g status-position bottom
+set -g status-style "bg=default,fg=colour248"
+set -g status-justify centre
+
+set -g status-left-length 60
+set -g status-right-length 60
+
+# Left: story + directory
+set -g status-left " #(cat #{pane_current_path}/.pennyfarthing/tmux-status-left 2>/dev/null)"
+
+# Right: context bar + clock (flush right)
+set -g status-right "#(cat #{pane_current_path}/.pennyfarthing/tmux-status-right 2>/dev/null) #[fg=colour238]│#[default] #[fg=colour248]%I:%M%p "
+
+# Center: tool activity (via window-status, since status-justify centre positions it)
+set -g window-status-style "default"
+set -g window-status-current-style "default"
+set -g window-status-format ""
+set -g window-status-current-format "#[fg=colour240,dim,italics]#(cat #{pane_current_path}/.pennyfarthing/tmux-activity 2>/dev/null)#[default]"
+
+# --- Pane labels ---
+set -g pane-border-status top
+set -g pane-border-format " #{pane_index}: #{pane_title} "
+set -g pane-border-style "fg=colour238"
+set -g pane-active-border-style "fg=colour214"
+set -g pane-border-indicators colour
+
+# --- Popup & menus ---
+# Prefix+Space → popup shell (80% width, 75% height, centered)
+bind Space display-popup -E -w 80% -h 75% -d "#{pane_current_path}"
+
+# Prefix+a → agent selection menu
+bind a display-menu -T "Agents" -x C -y C \
+    "Scrum Master"    s "send-keys '/pf-sm' Enter" \
+    "Developer"       d "send-keys '/pf-dev' Enter" \
+    "Test Engineer"   t "send-keys '/pf-tea' Enter" \
+    "Reviewer"        r "send-keys '/pf-reviewer' Enter" \
+    "Architect"       A "send-keys '/pf-architect' Enter" \
+    ""                "" "" \
+    "DevOps"          D "send-keys '/pf-devops' Enter" \
+    "Product Manager" p "send-keys '/pf-pm' Enter"
