@@ -1,12 +1,8 @@
 // src/core/enemies/tanker.ts
 import { Tanker, Enemy } from '../state'
 import { Tube, wrapLane } from '../geometry'
-import { LevelParams } from '../rules'
+import { LevelParams, SPLIT_CHILD_DEPTH } from '../rules'
 import { makeEnemy } from '../sim'
-
-// Children appear just below grab depth (PLAYER_RIM_DEPTH = 0.92) so a tanker
-// that splits AT the rim does not instantly grab the player on the same frame.
-const SPLIT_CHILD_DEPTH = 0.85
 
 export function stepTanker(
   enemy: Tanker, dt: number, params: LevelParams,

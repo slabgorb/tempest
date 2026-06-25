@@ -226,6 +226,7 @@ function startGame(s: GameState): void {
   s.lives = START_LIVES
   s.player = { lane: 0, alive: true, respawnTimer: 0 }
   s.enemies = []
+  s.spikes = new Array(s.tube.laneCount).fill(0)
   startLevel(s)
 }
 

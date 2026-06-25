@@ -22,6 +22,8 @@ export const EXTRA_LIFE_INTERVAL = 10000
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth
+// Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab.
+export const SPLIT_CHILD_DEPTH = 0.85
 
 export interface LevelParams {
   enemyCount: number

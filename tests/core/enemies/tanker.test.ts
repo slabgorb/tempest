@@ -46,5 +46,6 @@ describe('tanker splitting', () => {
     expect(out.mode).toBe('playing')                 // tanker does not grab
     expect(out.enemies).toHaveLength(2)
     expect(out.enemies.every((e) => e.kind === 'flipper')).toBe(true)
+    expect(out.enemies.every((e) => e.depth <= 0.85)).toBe(true)
   })
 })
