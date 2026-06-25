@@ -125,6 +125,13 @@ function startGame(s: GameState): void {
   startLevel(s)
 }
 
+function checkLevelClear(s: GameState): void {
+  if (s.enemies.length === 0 && s.spawn.remaining === 0) {
+    s.level += 1
+    startLevel(s)
+  }
+}
+
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
   const s = cloneState(state)
   switch (s.mode) {
@@ -135,6 +142,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       stepEnemies(s, dt)
       resolveBulletHits(s)
       resolvePlayerHits(s)
+      checkLevelClear(s)
       break
     case 'dying':
       s.player.respawnTimer -= dt

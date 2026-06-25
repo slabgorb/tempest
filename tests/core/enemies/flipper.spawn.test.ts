@@ -27,9 +27,10 @@ describe('flipper spawning', () => {
   it('never spawns more than the level budget', () => {
     const s = run(3000)
     const total = s.enemies.length + s.spawn.remaining
-    // total spawned + remaining + killed should not exceed the budget; with no
-    // shooting, killed = 0, so spawned ≤ enemyCount.
-    expect(total).toBeLessThanOrEqual(levelParams(1).enemyCount)
+    // total spawned + remaining + killed should not exceed the current level's
+    // budget; with no shooting, killed = 0, so spawned ≤ enemyCount.
+    // The level may have advanced if all enemies were cleared.
+    expect(total).toBeLessThanOrEqual(levelParams(s.level).enemyCount)
   })
 })
 
