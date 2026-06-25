@@ -3,7 +3,7 @@ import { GameState, Enemy } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
 import {
-  SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, SCORE_FLIPPER,
+  SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
 } from './rules'
 import { rngInt } from './rng'
@@ -72,6 +72,13 @@ function stepEnemies(s: GameState, dt: number): void {
 
 const HIT_DEPTH = 0.06
 
+function awardScore(s: GameState, points: number): void {
+  const before = s.score
+  s.score += points
+  const crossed = Math.floor(s.score / EXTRA_LIFE_INTERVAL) - Math.floor(before / EXTRA_LIFE_INTERVAL)
+  if (crossed > 0) s.lives += crossed
+}
+
 function resolveBulletHits(s: GameState): void {
   const deadBullets = new Set<number>()
   const deadEnemies = new Set<number>()
@@ -83,7 +90,7 @@ function resolveBulletHits(s: GameState): void {
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= HIT_DEPTH) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
-        s.score += SCORE_FLIPPER
+        awardScore(s, scoreFor(e))
         break
       }
     }
