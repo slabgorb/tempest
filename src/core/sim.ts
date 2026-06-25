@@ -1,5 +1,5 @@
 // src/core/sim.ts
-import { GameState, Enemy } from './state'
+import { GameState, Enemy, EnemyKind } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
 import {
@@ -10,6 +10,7 @@ import {
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
+import { stepPulsar } from './enemies/pulsar'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -72,12 +73,22 @@ function stepEnemies(s: GameState, dt: number): void {
         moved.push(sp)
         break
       }
+      case 'pulsar': {
+        const res = stepPulsar(e, dt, params, s.tube, s.rng)
+        s.rng = res.rng
+        moved.push(res.enemy)
+        break
+      }
       default:
         moved.push(e) // kinds without a stepper yet (added in later tasks) hold position
     }
   }
   s.enemies = moved
 }
+
+// Enemies that kill the player by reaching its rim segment. Tankers split
+// before the rim; spikers never reach grab depth.
+const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
 
 const HIT_DEPTH = 0.06
 
@@ -140,8 +151,11 @@ function killPlayer(s: GameState): void {
 function resolvePlayerHits(s: GameState): void {
   if (!s.player.alive) return
   const pl = currentLane(s.tube, s.player.lane)
-  const grabbed = s.enemies.some((e) => e.depth >= PLAYER_RIM_DEPTH && e.lane === pl)
-  if (grabbed) killPlayer(s)
+  const grabbed = s.enemies.some(
+    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl,
+  )
+  const pulsed = s.enemies.some((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)
+  if (grabbed || pulsed) killPlayer(s)
 }
 
 function respawn(s: GameState): void {

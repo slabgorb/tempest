@@ -18,6 +18,7 @@ export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade
 export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
+export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 
 export interface LevelParams {
   enemyCount: number
@@ -25,6 +26,7 @@ export interface LevelParams {
   flipInterval: number   // seconds between flips
   spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
+  pulseInterval: number  // seconds between pulsar pulses
 }
 
 export function levelParams(level: number): LevelParams {
@@ -35,6 +37,7 @@ export function levelParams(level: number): LevelParams {
     flipInterval: Math.max(0.4, 1.5 / ramp),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
+    pulseInterval: Math.max(1.2, 3.0 / ramp),
   }
 }
 
