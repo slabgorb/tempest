@@ -1,6 +1,7 @@
 // src/core/rules.ts
 
-import type { Enemy } from './state'
+import { Rng, rngNext } from './rng'
+import type { Enemy, EnemyKind, TankerCargo } from './state'
 
 export const SPIN_SENSITIVITY = 0.15
 export const BULLET_SPEED = 2.0       // depth units per second (near → far)
@@ -65,4 +66,38 @@ export function scoreFor(enemy: Enemy): number {
     case 'pulsar':   return SCORE_PULSAR
     case 'fuseball': return fuseballScore(enemy.depth)
   }
+}
+
+function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): { value: T; rng: Rng } {
+  const total = table.reduce((sum, [, w]) => sum + w, 0)
+  const roll = rngNext(rng)
+  let pick = roll.value * total
+  for (const [value, w] of table) {
+    if (w <= 0) continue
+    pick -= w
+    if (pick < 0) return { value, rng: roll.rng }
+  }
+  return { value: table[0][0], rng: roll.rng }
+}
+
+export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: Rng } {
+  const table: ReadonlyArray<readonly [EnemyKind, number]> = [
+    ['flipper', 10],
+    ['tanker', level >= 3 ? 4 : 0],
+    ['spiker', level >= 3 ? 3 : 0],
+    ['pulsar', level >= 5 ? 3 : 0],
+    ['fuseball', level >= 5 ? 3 : 0],
+  ]
+  const res = weightedPick(table, rng)
+  return { kind: res.value, rng: res.rng }
+}
+
+export function rollTankerCargo(level: number, rng: Rng): { cargo: TankerCargo; rng: Rng } {
+  const table: ReadonlyArray<readonly [TankerCargo, number]> = [
+    ['flipper', 10],
+    ['fuseball', level >= 5 ? 4 : 0],
+    ['pulsar', level >= 5 ? 4 : 0],
+  ]
+  const res = weightedPick(table, rng)
+  return { cargo: res.value, rng: res.rng }
 }

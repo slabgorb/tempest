@@ -6,6 +6,7 @@ import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
+  rollSpawnKind, rollTankerCargo,
 } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
@@ -62,9 +63,17 @@ function stepEnemies(s: GameState, dt: number): void {
   if (s.spawn.remaining > 0) {
     s.spawn.timer -= dt
     if (s.spawn.timer <= 0) {
-      const pick = rngInt(s.rng, s.tube.laneCount)
-      s.rng = pick.rng
-      s.enemies.push({ kind: 'flipper', lane: pick.value, depth: 0, flipTimer: params.flipInterval })
+      const kindRoll = rollSpawnKind(s.level, s.rng)
+      s.rng = kindRoll.rng
+      const laneRoll = rngInt(s.rng, s.tube.laneCount)
+      s.rng = laneRoll.rng
+      let cargo: TankerCargo = 'flipper'
+      if (kindRoll.kind === 'tanker') {
+        const cargoRoll = rollTankerCargo(s.level, s.rng)
+        s.rng = cargoRoll.rng
+        cargo = cargoRoll.cargo
+      }
+      s.enemies.push(makeEnemy(kindRoll.kind, laneRoll.value, 0, params, cargo))
       s.spawn.remaining -= 1
       s.spawn.timer = params.spawnInterval
     }
