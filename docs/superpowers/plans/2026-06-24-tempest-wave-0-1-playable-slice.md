@@ -1252,7 +1252,7 @@ git commit -m "feat(core): fire and move bullets down lanes with a cap"
 
 **Interfaces:**
 - Consumes: `Enemy` (state), `Rng`/`rngNext` (rng), `Tube`/`wrapLane` (geometry), `LevelParams`/`levelParams`/`rngInt` (rules/rng)
-- Produces: `stepFlipper(enemy, dt, params, tube, rng) → { enemy, rng }`; spawning + enemy movement in `stepGame`; internal `startLevel`
+- Produces: `stepFlipper(enemy, dt, params, tube, rng) → { enemy, rng }`; spawning + enemy movement in `stepGame`. (Note: `startLevel` is introduced later in Task 13 where it is first called — defining it here would be unused code and `noUnusedLocals` would fail `tsc`.)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1344,7 +1344,7 @@ The full file is now:
 import { GameState } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
-import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, levelParams, spawnForLevel } from './rules'
+import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, levelParams } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
 
@@ -1356,11 +1356,6 @@ function cloneState(s: GameState): GameState {
     enemies: s.enemies.map((e) => ({ ...e })),
     spawn: { ...s.spawn },
   }
-}
-
-function startLevel(s: GameState): void {
-  s.spawn = spawnForLevel(s.level)
-  s.bullets = []
 }
 
 function stepPlayer(s: GameState, input: Input): void {
@@ -1767,9 +1762,14 @@ import {
 } from './rules'
 ```
 
-Add these functions (after `resolveBulletHits`):
+Add these functions (after `resolveBulletHits`). `startLevel` is introduced here — this is the first task that calls it (from `startGame` below, and from `checkLevelClear` in Task 14):
 
 ```typescript
+function startLevel(s: GameState): void {
+  s.spawn = spawnForLevel(s.level)
+  s.bullets = []
+}
+
 function killPlayer(s: GameState): void {
   s.player.alive = false
   s.lives -= 1
