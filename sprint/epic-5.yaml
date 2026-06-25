@@ -24,16 +24,20 @@ stories:
     title: Particle system and screen-shake
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    assigned_to: slabgorb
     repos: tempest
     workflow: trivial
+    completed: '2026-06-25'
   - id: 5-4
     title: Render particles, screen-shake, and glow tuning
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    assigned_to: slabgorb
     repos: tempest
     workflow: trivial
+    completed: '2026-06-25'
   - id: 5-5
     title: Wire audio and particles into loop and bootstrap
     points: 2
