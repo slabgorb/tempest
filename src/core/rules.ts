@@ -19,6 +19,7 @@ export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
+export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 
 export interface LevelParams {
   enemyCount: number
@@ -27,6 +28,7 @@ export interface LevelParams {
   spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
   pulseInterval: number  // seconds between pulsar pulses
+  fuseballSpeed: number  // depth units/s climb for fuseballs
 }
 
 export function levelParams(level: number): LevelParams {
@@ -38,6 +40,7 @@ export function levelParams(level: number): LevelParams {
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
     pulseInterval: Math.max(1.2, 3.0 / ramp),
+    fuseballSpeed: 0.26 * ramp,
   }
 }
 

@@ -11,6 +11,7 @@ import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
 import { stepPulsar } from './enemies/pulsar'
+import { stepFuseball } from './enemies/fuseball'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -75,6 +76,12 @@ function stepEnemies(s: GameState, dt: number): void {
       }
       case 'pulsar': {
         const res = stepPulsar(e, dt, params, s.tube, s.rng)
+        s.rng = res.rng
+        moved.push(res.enemy)
+        break
+      }
+      case 'fuseball': {
+        const res = stepFuseball(e, dt, params, s.tube, s.rng)
         s.rng = res.rng
         moved.push(res.enemy)
         break
