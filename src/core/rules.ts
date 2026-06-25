@@ -19,6 +19,7 @@ export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade
 export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
+export const WARP_SPEED = 2           // warp progress units per second (0 → 1 in 0.5s)
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth

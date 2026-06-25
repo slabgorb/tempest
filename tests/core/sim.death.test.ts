@@ -35,7 +35,14 @@ describe('enemy ↔ player collision and death', () => {
     let s = initialState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+    // The lane-4 enemy kills the player (and is cleared on respawn). A second
+    // enemy on a far lane sits below the rim and survives the respawn, so the
+    // level is NOT incidentally clear afterward — this test exercises the
+    // respawn mechanic, not the end-of-level warp (see sim.warp.test.ts).
+    s.enemies = [
+      { kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 },
+      { kind: 'flipper', lane: 9, depth: 0.3, flipTimer: 999 },
+    ]
     s = stepGame(s, NEUTRAL, 1 / 60)            // → dying
     expect(s.mode).toBe('dying')
 

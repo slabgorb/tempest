@@ -3,7 +3,7 @@ import { Tube, tubeForLevel } from './geometry'
 import { Rng, makeRng } from './rng'
 import { START_LIVES, spawnForLevel } from './rules'
 
-export type Mode = 'playing' | 'dying' | 'gameover'
+export type Mode = 'playing' | 'dying' | 'gameover' | 'warp'
 
 export interface Player {
   lane: number          // continuous, wrapped into [0, laneCount)
@@ -58,6 +58,10 @@ export interface SpawnState {
   timer: number         // seconds until next spawn
 }
 
+export interface WarpState {
+  progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level
+}
+
 export interface GameState {
   mode: Mode
   level: number
@@ -69,6 +73,7 @@ export interface GameState {
   score: number
   lives: number
   spawn: SpawnState
+  warp: WarpState
   rng: Rng
 }
 
@@ -85,6 +90,7 @@ export function initialState(seed: number): GameState {
     score: 0,
     lives: START_LIVES,
     spawn: spawnForLevel(1),
+    warp: { progress: 0 },
     rng: makeRng(seed),
   }
 }
