@@ -1,0 +1,8 @@
+id: '4'
+type: epic
+title: Wave 4 — Superzapper & framing
+description: Superzapper (full + weak), HUD, extra-life thresholds, attract/title screen, game-over + high-score (localStorage), start-level select.
+priority: p1
+status: backlog
+repos: tempest
+stories: []

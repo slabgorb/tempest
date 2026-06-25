@@ -1,0 +1,71 @@
+id: '1'
+type: epic
+title: Wave 1 — Playable slice
+description: Bullets fire down lanes; Flippers spawn, climb, and flip; bullet-vs-enemy and enemy-vs-player collisions; player death + lives; score; level-clear to same geometry, harder.
+priority: p1
+status: done
+repos: tempest
+stories:
+  - id: 1-1
+    title: Fire and move bullets down lanes with a cap
+    points: 2
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: tdd
+    completed: '2026-06-25'
+  - id: 1-2
+    title: Spawn flippers from the level budget and climb
+    points: 3
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: tdd
+    completed: '2026-06-25'
+  - id: 1-3
+    title: Flipper flip across lanes
+    points: 2
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: tdd
+    completed: '2026-06-25'
+  - id: 1-4
+    title: Bullet-vs-enemy collision and scoring
+    points: 2
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: tdd
+    completed: '2026-06-25'
+  - id: 1-5
+    title: Enemy-vs-player collision, death, lives, respawn
+    points: 3
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: tdd
+    completed: '2026-06-25'
+  - id: 1-6
+    title: Level clear to next level, harder
+    points: 2
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: tdd
+    completed: '2026-06-25'
+  - id: 1-7
+    title: Render enemies, bullets, HUD, and final wiring
+    points: 2
+    priority: p1
+    status: done
+    started: '2026-06-24'
+    repos: tempest
+    workflow: trivial
+    completed: '2026-06-25'

@@ -1,11 +1,19 @@
 // src/shell/render.ts
-import { GameState } from '../core/state'
+import { GameState, Enemy } from '../core/state'
 import { Tube, currentLane, project } from '../core/geometry'
 
 const TUBE_COLOR = '#1e90ff'
 const CLAW_COLOR = '#ffea00'
 const BULLET_COLOR = '#ffffff'
-const FLIPPER_COLOR = '#ff2bd6'
+const SPIKE_COLOR = '#8a2be2'
+
+const ENEMY_COLOR: Record<Enemy['kind'], string> = {
+  flipper: '#ff2bd6',
+  tanker: '#39ff14',
+  spiker: '#ffa500',
+  fuseball: '#ff3030',
+  pulsar: '#00e5ff',
+}
 
 function strokePoly(
   ctx: CanvasRenderingContext2D, pts: readonly { x: number; y: number }[], closed: boolean,
@@ -32,6 +40,23 @@ function drawTube(ctx: CanvasRenderingContext2D, tube: Tube): void {
   }
 }
 
+function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
+  ctx.lineWidth = 2
+  ctx.strokeStyle = SPIKE_COLOR
+  ctx.shadowColor = SPIKE_COLOR
+  ctx.shadowBlur = 10
+  for (let lane = 0; lane < s.spikes.length; lane++) {
+    const h = s.spikes[lane]
+    if (h <= 0) continue
+    const a = project(s.tube, lane, 0)
+    const b = project(s.tube, lane, h)
+    ctx.beginPath()
+    ctx.moveTo(a.x, a.y)
+    ctx.lineTo(b.x, b.y)
+    ctx.stroke()
+  }
+}
+
 function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   ctx.fillStyle = BULLET_COLOR
   ctx.shadowColor = BULLET_COLOR
@@ -44,21 +69,50 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   }
 }
 
-function drawEnemies(ctx: CanvasRenderingContext2D, s: GameState): void {
+function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void {
+  const p = project(s.tube, e.lane, e.depth)
+  const r = 5 + e.depth * 9 // grows as it nears the rim
+  const color = ENEMY_COLOR[e.kind]
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.shadowColor = color
   ctx.lineWidth = 2
-  ctx.strokeStyle = FLIPPER_COLOR
-  ctx.shadowColor = FLIPPER_COLOR
-  ctx.shadowBlur = 14
-  for (const e of s.enemies) {
-    const p = project(s.tube, e.lane, e.depth)
-    const r = 5 + e.depth * 9 // grows as it approaches the near rim
-    ctx.beginPath()
-    ctx.moveTo(p.x - r, p.y)
-    ctx.lineTo(p.x, p.y - r)
-    ctx.lineTo(p.x + r, p.y)
-    ctx.lineTo(p.x, p.y + r)
-    ctx.closePath()
-    ctx.stroke()
+
+  switch (e.kind) {
+    case 'flipper': // diamond (matches Wave 1)
+      ctx.shadowBlur = 14
+      ctx.beginPath()
+      ctx.moveTo(p.x - r, p.y)
+      ctx.lineTo(p.x, p.y - r)
+      ctx.lineTo(p.x + r, p.y)
+      ctx.lineTo(p.x, p.y + r)
+      ctx.closePath()
+      ctx.stroke()
+      break
+    case 'tanker': // square box
+      ctx.shadowBlur = 14
+      ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2)
+      break
+    case 'spiker': // spinning cross
+      ctx.shadowBlur = 12
+      ctx.beginPath()
+      ctx.moveTo(p.x - r, p.y); ctx.lineTo(p.x + r, p.y)
+      ctx.moveTo(p.x, p.y - r); ctx.lineTo(p.x, p.y + r)
+      ctx.stroke()
+      break
+    case 'fuseball': // filled crackling ball
+      ctx.shadowBlur = 16
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+      ctx.fill()
+      break
+    case 'pulsar': // ring, bright while pulsing
+      ctx.shadowBlur = e.pulsing ? 28 : 12
+      ctx.lineWidth = e.pulsing ? 4 : 2
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+      ctx.stroke()
+      break
   }
 }
 
@@ -103,8 +157,9 @@ export function render(
   ctx.save()
   ctx.translate(width / 2, height / 2)
   drawTube(ctx, s.tube)
+  drawSpikes(ctx, s)
   drawBullets(ctx, s)
-  drawEnemies(ctx, s)
+  for (const e of s.enemies) drawEnemy(ctx, s, e)
   drawPlayer(ctx, s)
   ctx.restore()
   drawHud(ctx, s, width)

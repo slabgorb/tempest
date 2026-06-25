@@ -62,9 +62,11 @@ describe('enemy ↔ player collision and death', () => {
     let s = initialState(1)
     s.mode = 'gameover'
     s.score = 5000
+    s.spikes[2] = 0.5
     s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60)
     expect(s.mode).toBe('playing')
     expect(s.score).toBe(0)
     expect(s.lives).toBe(3)
+    expect(s.spikes.every((h) => h === 0)).toBe(true)
   })
 })
