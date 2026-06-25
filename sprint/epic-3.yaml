@@ -39,9 +39,12 @@ stories:
     title: Spikes crash the Claw during the warp
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-25'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-25'
+    review_verdict: approved
   - id: 3-4
     title: Difficulty ramp continues past the geometry cycle
     points: 2
