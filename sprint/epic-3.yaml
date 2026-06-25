@@ -5,4 +5,41 @@ description: All 16 tube geometries (open + closed), color cycling, the end-of-l
 priority: p1
 status: backlog
 repos: tempest
-stories: []
+stories:
+  - id: 3-1
+    title: 16-geometry roster and tubeForLevel selector
+    points: 3
+    priority: p1
+    status: in_progress
+    assigned_to: slabgorb
+    started: '2026-06-25'
+    repos: tempest
+    workflow: tdd
+  - id: 3-2
+    title: End-of-level warp transition with geometry switch
+    points: 3
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 3-3
+    title: Spikes crash the Claw during the warp
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 3-4
+    title: Difficulty ramp continues past the geometry cycle
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 3-5
+    title: Per-level color cycling, open-tube and warp rendering
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: trivial
