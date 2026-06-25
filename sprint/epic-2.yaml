@@ -5,4 +5,61 @@ description: Tankers (split on death/at-rim), Spikers + persistent per-lane spik
 priority: p1
 status: backlog
 repos: tempest
-stories: []
+stories:
+  - id: 2-1
+    title: Enemy discriminated union and per-lane spikes field
+    points: 3
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    type: refactor
+  - id: 2-2
+    title: Authentic per-kind scoring and extra-life thresholds
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 2-3
+    title: Spikers lay persistent spikes that bullets clear
+    points: 3
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 2-4
+    title: Pulsars climb, flip, and electrify their lane
+    points: 3
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 2-5
+    title: Fuseballs climb erratically and grab at the rim
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 2-6
+    title: Tankers split into two cargo enemies on death or at rim
+    points: 3
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 2-7
+    title: Per-level weighted spawn mix across the roster
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+  - id: 2-8
+    title: Render the full enemy roster and spikes
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: trivial
