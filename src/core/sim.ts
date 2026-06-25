@@ -2,7 +2,7 @@
 import { GameState } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
-import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, levelParams } from './rules'
+import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, SCORE_FLIPPER, levelParams } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
 
@@ -59,6 +59,28 @@ function stepEnemies(s: GameState, dt: number): void {
   s.enemies = moved
 }
 
+const HIT_DEPTH = 0.06
+
+function resolveBulletHits(s: GameState): void {
+  const deadBullets = new Set<number>()
+  const deadEnemies = new Set<number>()
+  s.bullets.forEach((b, bi) => {
+    if (deadBullets.has(bi)) return
+    for (let ei = 0; ei < s.enemies.length; ei++) {
+      if (deadEnemies.has(ei)) continue
+      const e = s.enemies[ei]
+      if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= HIT_DEPTH) {
+        deadBullets.add(bi)
+        deadEnemies.add(ei)
+        s.score += SCORE_FLIPPER
+        break
+      }
+    }
+  })
+  if (deadBullets.size > 0) s.bullets = s.bullets.filter((_, i) => !deadBullets.has(i))
+  if (deadEnemies.size > 0) s.enemies = s.enemies.filter((_, i) => !deadEnemies.has(i))
+}
+
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
   const s = cloneState(state)
   if (s.mode === 'playing') {
@@ -66,6 +88,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
     stepFiring(s, input)
     stepBullets(s, dt)
     stepEnemies(s, dt)
+    resolveBulletHits(s)
   }
   return s
 }
