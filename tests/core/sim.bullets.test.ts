@@ -32,7 +32,7 @@ describe('stepGame firing and bullets', () => {
     for (let i = 0; i < MAX_BULLETS + 5; i++) {
       s = stepGame(s, { ...NEUTRAL, fire: true }, 1 / 60)
     }
-    expect(s.bullets.length).toBeLessThanOrEqual(MAX_BULLETS)
+    expect(s.bullets.length).toBe(MAX_BULLETS)
   })
 
   it('removes bullets that reach the far end', () => {
