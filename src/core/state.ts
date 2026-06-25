@@ -1,5 +1,5 @@
 // src/core/state.ts
-import { Tube, makeCircleTube } from './geometry'
+import { Tube, tubeForLevel } from './geometry'
 import { Rng, makeRng } from './rng'
 import { START_LIVES, spawnForLevel } from './rules'
 
@@ -73,7 +73,7 @@ export interface GameState {
 }
 
 export function initialState(seed: number): GameState {
-  const tube: Tube = makeCircleTube(16, { x: 0, y: 0 }, 60, 300)
+  const tube: Tube = tubeForLevel(1)
   return {
     mode: 'playing',
     level: 1,
