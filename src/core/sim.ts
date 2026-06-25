@@ -126,6 +126,7 @@ function startGame(s: GameState): void {
 }
 
 function checkLevelClear(s: GameState): void {
+  if (s.mode !== 'playing') return
   if (s.enemies.length === 0 && s.spawn.remaining === 0) {
     s.level += 1
     startLevel(s)

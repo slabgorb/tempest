@@ -38,4 +38,15 @@ describe('level clear', () => {
     expect(levelParams(2).enemyCount).toBeGreaterThan(levelParams(1).enemyCount)
     expect(levelParams(2).flipperSpeed).toBeGreaterThan(levelParams(1).flipperSpeed)
   })
+
+  it('does not advance the level when the player is killed by the final enemy', () => {
+    const s = initialState(1)
+    s.spawn.remaining = 0
+    s.lives = 1
+    s.player.lane = 4
+    s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+    const out = stepGame(s, NEUTRAL, 1 / 60)
+    expect(out.mode).toBe('gameover')   // player died
+    expect(out.level).toBe(1)           // level did NOT advance
+  })
 })
