@@ -10,11 +10,13 @@ stories:
     title: 16-geometry roster and tubeForLevel selector
     points: 3
     priority: p1
-    status: in_progress
+    status: done
     assigned_to: slabgorb
     started: '2026-06-25'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-25'
+    review_verdict: approved
   - id: 3-2
     title: End-of-level warp transition with geometry switch
     points: 3
