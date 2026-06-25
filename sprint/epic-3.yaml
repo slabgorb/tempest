@@ -22,7 +22,9 @@ stories:
     description: 'End-of-level warp transition that SWAPS THE GEOMETRY (Wave 3 plan Task 2 -> advanceLevel). CARRYOVER FROM STORY 3-1 REVIEW: today startLevel/checkLevelClear (src/core/sim.ts) increment s.level but never call tubeForLevel(s.level) or resize s.spikes, so the 16-geometry roster built in 3-1 is only used at level 1. This story MUST wire the per-level geometry swap + spike-array resize, or the entire Wave 3 roster stays invisible past level 1. Ref: docs/superpowers/plans/2026-06-25-tempest-wave-3-levels-warp.md Task 2; sprint/archive/3-1-session.md Delivery Findings (Reviewer).'
     points: 3
     priority: p1
-    status: backlog
+    status: in_progress
+    assigned_to: slabgorb
+    started: '2026-06-25'
     repos: tempest
     workflow: tdd
     acceptance_criteria:
