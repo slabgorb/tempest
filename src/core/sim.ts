@@ -2,7 +2,7 @@
 import { GameState } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
-import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, levelParams, spawnForLevel } from './rules'
+import { SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, levelParams } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
 
@@ -14,11 +14,6 @@ function cloneState(s: GameState): GameState {
     enemies: s.enemies.map((e) => ({ ...e })),
     spawn: { ...s.spawn },
   }
-}
-
-function startLevel(s: GameState): void {
-  s.spawn = spawnForLevel(s.level)
-  s.bullets = []
 }
 
 function stepPlayer(s: GameState, input: Input): void {
