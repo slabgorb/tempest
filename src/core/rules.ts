@@ -20,6 +20,7 @@ export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spi
 export const EXTRA_LIFE_INTERVAL = 10000
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
+export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth
 
 export interface LevelParams {
   enemyCount: number
@@ -29,6 +30,7 @@ export interface LevelParams {
   spikerSpeed: number    // depth units/s for spiker oscillation
   pulseInterval: number  // seconds between pulsar pulses
   fuseballSpeed: number  // depth units/s climb for fuseballs
+  tankerSpeed: number    // depth units/s climb for tankers
 }
 
 export function levelParams(level: number): LevelParams {
@@ -41,6 +43,7 @@ export function levelParams(level: number): LevelParams {
     spikerSpeed: 0.22 * ramp,
     pulseInterval: Math.max(1.2, 3.0 / ramp),
     fuseballSpeed: 0.26 * ramp,
+    tankerSpeed: 0.14 * ramp,
   }
 }
 

@@ -1,17 +1,18 @@
 // src/core/sim.ts
-import { GameState, Enemy, EnemyKind } from './state'
+import { GameState, Enemy, EnemyKind, TankerCargo } from './state'
 import { Input } from './input'
 import { wrapLane, currentLane } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
-  SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN,
+  SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
 } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
 import { stepPulsar } from './enemies/pulsar'
 import { stepFuseball } from './enemies/fuseball'
+import { stepTanker, splitTanker } from './enemies/tanker'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -40,6 +41,18 @@ function stepBullets(s: GameState, dt: number): void {
     b.depth -= BULLET_SPEED * dt
   }
   s.bullets = s.bullets.filter((b) => b.depth > 0)
+}
+
+export function makeEnemy(
+  kind: EnemyKind, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
+): Enemy {
+  switch (kind) {
+    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipInterval }
+    case 'tanker':   return { kind, lane, depth, contains: cargo }
+    case 'spiker':   return { kind, lane, depth, direction: 1 }
+    case 'fuseball': return { kind, lane, depth, jitterTimer: 0 }
+    case 'pulsar':   return { kind, lane, depth, flipTimer: params.flipInterval, pulseTimer: params.pulseInterval, pulsing: false }
+  }
 }
 
 function stepEnemies(s: GameState, dt: number): void {
@@ -86,6 +99,11 @@ function stepEnemies(s: GameState, dt: number): void {
         moved.push(res.enemy)
         break
       }
+      case 'tanker': {
+        const res = stepTanker(e, dt, params)
+        moved.push(res.enemy)
+        break
+      }
       default:
         moved.push(e) // kinds without a stepper yet (added in later tasks) hold position
     }
@@ -107,8 +125,10 @@ function awardScore(s: GameState, points: number): void {
 }
 
 function resolveBulletHits(s: GameState): void {
+  const params = levelParams(s.level)
   const deadBullets = new Set<number>()
   const deadEnemies = new Set<number>()
+  const spawned: Enemy[] = []
   s.bullets.forEach((b, bi) => {
     if (deadBullets.has(bi)) return
     for (let ei = 0; ei < s.enemies.length; ei++) {
@@ -118,12 +138,14 @@ function resolveBulletHits(s: GameState): void {
         deadBullets.add(bi)
         deadEnemies.add(ei)
         awardScore(s, scoreFor(e))
+        if (e.kind === 'tanker') spawned.push(...splitTanker(e, s.tube, params))
         break
       }
     }
   })
   if (deadBullets.size > 0) s.bullets = s.bullets.filter((_, i) => !deadBullets.has(i))
   if (deadEnemies.size > 0) s.enemies = s.enemies.filter((_, i) => !deadEnemies.has(i))
+  if (spawned.length > 0) s.enemies = s.enemies.concat(spawned)
 }
 
 function resolveSpikeHits(s: GameState): void {
@@ -137,6 +159,21 @@ function resolveSpikeHits(s: GameState): void {
     }
   })
   if (dead.size > 0) s.bullets = s.bullets.filter((_, i) => !dead.has(i))
+}
+
+function resolveTankerArrivals(s: GameState): void {
+  if (!s.enemies.some((e) => e.kind === 'tanker' && e.depth >= TANKER_SPLIT_DEPTH)) return
+  const params = levelParams(s.level)
+  const survivors: Enemy[] = []
+  const spawned: Enemy[] = []
+  for (const e of s.enemies) {
+    if (e.kind === 'tanker' && e.depth >= TANKER_SPLIT_DEPTH) {
+      spawned.push(...splitTanker(e, s.tube, params))
+    } else {
+      survivors.push(e)
+    }
+  }
+  s.enemies = survivors.concat(spawned)
 }
 
 function startLevel(s: GameState): void {
@@ -201,6 +238,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       stepEnemies(s, dt)
       resolveBulletHits(s)
       resolveSpikeHits(s)
+      resolveTankerArrivals(s)
       resolvePlayerHits(s)
       checkLevelClear(s)
       break
