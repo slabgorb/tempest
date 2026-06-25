@@ -1,14 +1,27 @@
 // src/core/enemies/flipper.ts
 import { Enemy } from '../state'
-import { Rng } from '../rng'
-import { Tube } from '../geometry'
+import { Rng, rngNext } from '../rng'
+import { Tube, wrapLane } from '../geometry'
 import { LevelParams } from '../rules'
 
-// Climb toward the near rim. (Flipping across lanes is added in Task 11.)
 export function stepFlipper(
-  enemy: Enemy, dt: number, params: LevelParams, _tube: Tube, rng: Rng,
+  enemy: Enemy, dt: number, params: LevelParams, tube: Tube, rng: Rng,
 ): { enemy: Enemy; rng: Rng } {
   const e: Enemy = { ...enemy }
+  let r = rng
+
+  // Climb toward the near rim.
   e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)
-  return { enemy: e, rng }
+
+  // Flip across a lane boundary when the timer elapses.
+  e.flipTimer -= dt
+  if (e.flipTimer <= 0) {
+    const roll = rngNext(r)
+    r = roll.rng
+    const dir = roll.value < 0.5 ? -1 : 1
+    e.lane = wrapLane(tube, e.lane + dir)
+    e.flipTimer = params.flipInterval
+  }
+
+  return { enemy: e, rng: r }
 }
