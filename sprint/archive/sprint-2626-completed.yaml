@@ -150,3 +150,8 @@ completed_stories:
     title: High-score entry state machine and table
     points: 3
     completed: '2026-06-26'
+  - id: 4-7
+    epic: '4'
+    title: Framing screens and Claw-icon lives HUD
+    points: 2
+    completed: '2026-06-26'

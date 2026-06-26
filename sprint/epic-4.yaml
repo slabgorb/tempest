@@ -64,6 +64,8 @@ stories:
     title: Framing screens and Claw-icon lives HUD
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: trivial
+    completed: '2026-06-26'
