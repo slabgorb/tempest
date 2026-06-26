@@ -29,9 +29,11 @@ stories:
     title: High-score entry state machine and table
     points: 3
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-26'
   - id: 4-4
     title: High-score persistence seam in shell/storage.ts
     points: 2
