@@ -5,10 +5,16 @@ import { START_LIVES, spawnForLevel } from './rules'
 
 export type Mode = 'playing' | 'dying' | 'gameover' | 'warp'
 
+// Once-per-level Superzapper charge: a 'full' blast vaporises every enemy, then
+// a 'used-once' weak shot vaporises one (nearest the rim), then it is 'spent'
+// until the next level rearms it.
+export type Superzapper = 'full' | 'used-once' | 'spent'
+
 export interface Player {
   lane: number          // continuous, wrapped into [0, laneCount)
   alive: boolean
   respawnTimer: number  // seconds remaining while mode === 'dying'
+  superzapper: Superzapper
 }
 
 export interface Bullet {
@@ -83,7 +89,7 @@ export function initialState(seed: number): GameState {
     mode: 'playing',
     level: 1,
     tube,
-    player: { lane: 0, alive: true, respawnTimer: 0 },
+    player: { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' },
     bullets: [],
     enemies: [],
     spikes: new Array(tube.laneCount).fill(0),

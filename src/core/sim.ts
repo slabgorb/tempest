@@ -189,6 +189,7 @@ function resolveTankerArrivals(s: GameState): void {
 function startLevel(s: GameState): void {
   s.spawn = spawnForLevel(s.level)
   s.bullets = []
+  s.player.superzapper = 'full' // rearm the once-per-level Superzapper
 }
 
 function killPlayer(s: GameState): void {
@@ -236,12 +237,41 @@ function startGame(s: GameState): void {
   s.level = 1
   s.score = 0
   s.lives = START_LIVES
-  s.player = { lane: 0, alive: true, respawnTimer: 0 }
+  s.player = { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' }
   s.enemies = []
   s.tube = tubeForLevel(1)
   s.spikes = new Array(s.tube.laneCount).fill(0)
   s.warp.progress = 0
   startLevel(s)
+}
+
+// Superzapper: once per level. The first activation vaporises every enemy on
+// screen (no tanker split — it is a kill, not a hit); the second vaporises one
+// enemy, the nearest the rim (max depth, ties → lowest index); after that it is
+// spent until the next level. Scoring flows through awardScore so a zap can
+// grant extra lives just like a bullet kill. Targeting is fully deterministic.
+function stepZap(s: GameState, input: Input): void {
+  if (!input.zap || !s.player.alive) return
+  if (s.player.superzapper === 'spent' || s.enemies.length === 0) {
+    // A full charge is still consumed even with nothing to hit; a weak shot with
+    // no target is wasted-but-not-spent (nothing to destroy this frame).
+    if (s.player.superzapper === 'full') s.player.superzapper = 'used-once'
+    return
+  }
+  if (s.player.superzapper === 'full') {
+    for (const e of s.enemies) awardScore(s, scoreFor(e))
+    s.enemies = []
+    s.player.superzapper = 'used-once'
+    return
+  }
+  // 'used-once' → destroy the single enemy nearest the rim.
+  let target = 0
+  for (let i = 1; i < s.enemies.length; i++) {
+    if (s.enemies[i].depth > s.enemies[target].depth) target = i
+  }
+  awardScore(s, scoreFor(s.enemies[target]))
+  s.enemies = s.enemies.filter((_, i) => i !== target)
+  s.player.superzapper = 'spent'
 }
 
 // Clearing a level no longer advances immediately — it enters the warp. The
@@ -301,6 +331,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
     case 'playing':
       stepPlayer(s, input)
       stepFiring(s, input)
+      stepZap(s, input)
       stepBullets(s, dt)
       stepEnemies(s, dt)
       resolveBulletHits(s)
