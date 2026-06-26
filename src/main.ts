@@ -4,6 +4,7 @@ import { createInputController } from './shell/input'
 import { createLoop } from './shell/loop'
 import { createFx } from './shell/fx'
 import { render } from './shell/render'
+import { loadHighScores, saveHighScores } from './shell/storage'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
@@ -28,8 +29,13 @@ const input = createInputController(canvas)
 const fx = createFx()
 let lastDraw = performance.now()
 
+// Seed the in-memory high-score table from persisted storage so saved scores
+// appear on the attract screen immediately at boot.
+const initial = initialState((Math.random() * 0xffffffff) >>> 0)
+initial.highScoreTable = loadHighScores()
+
 const loop = createLoop(
-  initialState((Math.random() * 0xffffffff) >>> 0),
+  initial,
   () => input.sample(),
   (s) => {
     const t = performance.now()
@@ -41,5 +47,13 @@ const loop = createLoop(
     render(ctx, s, W, H, fx, dpr)
   },
   () => performance.now(),
+  // The 4-3 state machine inserts the committed entry and transitions
+  // 'highscore' → 'attract'. That is the only exit from 'highscore', so saving
+  // whenever the OLD mode was 'highscore' persists the updated table. Referencing
+  // `loop` here is safe: this callback only runs at frame time, after `loop` is
+  // assigned (createLoop never invokes it synchronously).
+  (oldMode) => {
+    if (oldMode === 'highscore') saveHighScores(loop.getState().highScoreTable)
+  },
 )
 loop.start()
