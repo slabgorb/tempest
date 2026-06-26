@@ -76,15 +76,16 @@ stories:
       Non-blocking polish follow-ups from the Epic 4 framing-screens reviews (4-2 / 4-7), shell-only in src/shell/render.ts. (1) The gameover and attract overlays draw over the additive-blended scene with no dimming scrim, so the high-score table overlaps the centered tube and contrast suffers — add a dark scrim behind the framing text/table. (2) drawHighScoreTable relies on textAlign='center' persisting from a prior drawGlowText call (implicit caller coupling) — it should set its own textAlign (save/restore) so it is correct in isolation. Context: sprint/archive/4-7-session.md Reviewer Assessment (Low #1, #2); sprint/archive/4-2-session.md F1 follow-up.
     points: 1
     priority: p3
-    status: in_progress
+    status: done
     started: '2026-06-26'
     repos: tempest
     workflow: trivial
-    branch: feat/5-7-framing-render-polish
     acceptance_criteria:
       - The gameover (and attract) framing overlays draw a dimming scrim behind the text/table so they read clearly over the scene.
       - drawHighScoreTable sets its own textAlign and renders correctly without depending on canvas state left by the caller.
       - Shell-only — no src/core changes; npx tsc --noEmit and npm run build both clean.
+    completed: '2026-06-26'
+    branch: feat/5-7-framing-render-polish
     type: chore
   - id: 5-8
     title: 'Harden high-score persistence: per-entry load validation and readonly save API'

@@ -181,3 +181,8 @@ completed_stories:
     title: Distinct SFX and visual for a warp spike crash
     points: 1
     completed: '2026-06-26'
+  - id: 5-7
+    epic: '5'
+    title: 'Framing-screen render polish: gameover scrim and high-score table self-containment'
+    points: 1
+    completed: '2026-06-26'
