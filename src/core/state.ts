@@ -3,6 +3,7 @@ import { Tube, tubeForLevel } from './geometry'
 import { Rng, makeRng } from './rng'
 import { START_LIVES, spawnForLevel } from './rules'
 import type { HighScoreTable } from './highscore'
+import type { GameEvent } from './events'
 
 export type Mode = 'attract' | 'select' | 'playing' | 'dying' | 'gameover' | 'warp' | 'highscore'
 
@@ -97,6 +98,7 @@ export interface GameState {
   select: SelectState
   entry: HighScoreEntryState | null  // non-null only while mode === 'highscore'
   highScoreTable: HighScoreTable     // in-memory top scores (persistence is 4-6)
+  events: GameEvent[]                // gameplay events emitted this frame (5-1); cleared each step
   rng: Rng
 }
 
@@ -117,6 +119,7 @@ export function initialState(seed: number): GameState {
     select: { selectedLevel: 1 },
     entry: null,
     highScoreTable: [],
+    events: [],
     rng: makeRng(seed),
   }
 }

@@ -28,6 +28,7 @@ function cloneState(s: GameState): GameState {
     select: { ...s.select },
     entry: s.entry ? { ...s.entry } : null,
     highScoreTable: s.highScoreTable.slice(),
+    events: [], // fresh event channel each frame: clears last frame's events and never aliases the input
   }
 }
 
@@ -70,7 +71,9 @@ function stepPlayer(s: GameState, input: Input): void {
 function stepFiring(s: GameState, input: Input): void {
   if (!input.fire || !s.player.alive) return
   if (s.bullets.length >= MAX_BULLETS) return
-  s.bullets.push({ lane: currentLane(s.tube, s.player.lane), depth: 1 })
+  const lane = currentLane(s.tube, s.player.lane)
+  s.bullets.push({ lane, depth: 1 })
+  s.events.push({ type: 'fire', lane, depth: 1 })
 }
 
 function stepBullets(s: GameState, dt: number): void {
@@ -183,6 +186,7 @@ function resolveBulletHits(s: GameState): void {
         deadBullets.add(bi)
         deadEnemies.add(ei)
         awardScore(s, scoreFor(e))
+        s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth })
         if (e.kind === 'tanker') spawned.push(...splitTanker(e, s.tube, params))
         break
       }
@@ -241,11 +245,16 @@ function killPlayer(s: GameState): void {
 function resolvePlayerHits(s: GameState): void {
   if (!s.player.alive) return
   const pl = currentLane(s.tube, s.player.lane)
-  const grabbed = s.enemies.some(
+  const grabber = s.enemies.find(
     (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl,
   )
-  const pulsed = s.enemies.some((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)
-  if (grabbed || pulsed) killPlayer(s)
+  // A grab takes precedence over a pulse; a pulse is still reported on the
+  // player-grab channel (Story 5-1), attributed to the pulsing pulsar.
+  const killer = grabber ?? s.enemies.find((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)
+  if (!killer) return
+  s.events.push({ type: 'player-grab', lane: pl, killedBy: killer.kind })
+  s.events.push({ type: 'player-death', cause: grabber ? 'grab' : 'pulse' })
+  killPlayer(s)
 }
 
 function respawn(s: GameState): void {
@@ -265,6 +274,7 @@ function respawn(s: GameState): void {
   // killed on the same frame.
   s.enemies = s.enemies.filter((e) => e.depth < PLAYER_RIM_DEPTH)
   s.mode = 'playing'
+  s.events.push({ type: 'player-spawn', lane: currentLane(s.tube, s.player.lane) })
 }
 
 // Provision a fresh game at the chosen start level: reset the player, score,
@@ -293,12 +303,18 @@ function stepZap(s: GameState, input: Input): void {
   if (!input.zap || !s.player.alive) return
   if (s.player.superzapper === 'spent' || s.enemies.length === 0) {
     // A full charge is still consumed even with nothing to hit; a weak shot with
-    // no target is wasted-but-not-spent (nothing to destroy this frame).
+    // no target is wasted-but-not-spent (nothing to destroy this frame). No
+    // enemies means no kill and (by design, Story 5-1) no activation event.
     if (s.player.superzapper === 'full') s.player.superzapper = 'used-once'
     return
   }
   if (s.player.superzapper === 'full') {
-    for (const e of s.enemies) awardScore(s, scoreFor(e))
+    const killCount = s.enemies.length
+    for (const e of s.enemies) {
+      awardScore(s, scoreFor(e))
+      s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth })
+    }
+    s.events.push({ type: 'superzapper-activate', killCount })
     s.enemies = []
     s.player.superzapper = 'used-once'
     return
@@ -308,7 +324,10 @@ function stepZap(s: GameState, input: Input): void {
   for (let i = 1; i < s.enemies.length; i++) {
     if (s.enemies[i].depth > s.enemies[target].depth) target = i
   }
-  awardScore(s, scoreFor(s.enemies[target]))
+  const victim = s.enemies[target]
+  awardScore(s, scoreFor(victim))
+  s.events.push({ type: 'enemy-death', enemyType: victim.kind, lane: victim.lane, depth: victim.depth })
+  s.events.push({ type: 'superzapper-activate', killCount: 1 })
   s.enemies = s.enemies.filter((_, i) => i !== target)
   s.player.superzapper = 'spent'
 }
@@ -318,6 +337,7 @@ function stepZap(s: GameState, input: Input): void {
 function checkLevelClear(s: GameState): void {
   if (s.mode !== 'playing') return
   if (s.enemies.length === 0 && s.spawn.remaining === 0) {
+    s.events.push({ type: 'level-clear', newLevel: s.level + 1 })
     s.mode = 'warp'
     s.warp.progress = 0
     s.bullets = []
@@ -350,6 +370,8 @@ function resolveWarpSpikeHit(s: GameState): boolean {
   const lane = currentLane(s.tube, s.player.lane)
   const height = s.spikes[lane]
   if (height > 0 && warpClawDepth(s.warp.progress) <= height) {
+    s.events.push({ type: 'warp-spike-crash', lane })
+    s.events.push({ type: 'player-death', cause: 'spike' })
     killPlayer(s)
     return true
   }
