@@ -373,6 +373,10 @@ function drawHighScoreTable(
   ctx: CanvasRenderingContext2D,
   table: HighScoreTable, cx: number, top: number, color: string, maxRows: number,
 ): void {
+  // Self-contained: set our own text alignment rather than inheriting whatever a
+  // prior drawGlowText left behind, and restore on exit so we leak no state.
+  ctx.save()
+  ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Orbitron', monospace", color, 14)
   if (table.length === 0) {
@@ -380,6 +384,7 @@ function drawHighScoreTable(
       ctx, '- NO SCORES YET -', cx, top + 40,
       "500 18px 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
     )
+    ctx.restore()
     return
   }
   ctx.font = "500 18px 'Orbitron', monospace"
@@ -393,6 +398,7 @@ function drawHighScoreTable(
     ctx.shadowBlur = i === 0 ? 14 : 8
     ctx.fillText(`${rank}   ${name}   ${score}`, cx, top + 36 + i * 26)
   }
+  ctx.restore()
 }
 
 // Subtle CRT scanlines, drawn in raw screen space over everything else.
@@ -403,9 +409,26 @@ function drawScanlines(ctx: CanvasRenderingContext2D, W: number, H: number): voi
   for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
 }
 
+// A dark modal backdrop behind the framing text/table so they read with good
+// contrast. MUST composite source-over: the scene is drawn additively
+// ('lighter'), so a fill in that mode would brighten instead of darken. save/
+// restore keeps the scrim from leaking compositing/alpha state to later draws.
+function drawScrim(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  ctx.save()
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+  ctx.shadowBlur = 0
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'
+  ctx.fillRect(0, 0, W, H)
+  ctx.restore()
+}
+
 function drawAttract(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
+  // Backdrop behind the title + high-score table for consistent contrast (and a
+  // safety net should the playing scene ever leak through here again — see 4-2 F1).
+  drawScrim(ctx, W, H)
   drawGlowText(ctx, 'TEMPEST', W / 2, H * 0.18, "900 96px 'Orbitron', monospace", color, 30)
   drawGlowText(
     ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74,
@@ -552,6 +575,9 @@ function drawHud(
   }
 
   if (s.mode === 'gameover') {
+    // Dim the still-drawn play scene so the overlay text + high-score table read
+    // clearly instead of fighting the tube/enemies behind them.
+    drawScrim(ctx, W, H)
     ctx.textBaseline = 'middle'
     drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Orbitron', monospace", '#ff3b5c', 26)
     drawGlowText(
