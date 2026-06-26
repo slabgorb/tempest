@@ -1,5 +1,6 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
+import { HighScoreTable } from '../core/highscore'
 import { Tube, Point, currentLane, project } from '../core/geometry'
 import { Fx } from './fx'
 
@@ -320,6 +321,192 @@ function drawParticles(ctx: CanvasRenderingContext2D, fx: Fx): void {
   ctx.globalAlpha = 1
 }
 
+// A compact Claw glyph for the lives HUD and framing screens — the same
+// chevron-with-crossbar silhouette the player ship and warp-dive Claw use,
+// shrunk to an icon. Drawn around (cx, cy) in whatever space the caller is in.
+function drawClawIcon(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string,
+): void {
+  const w = size
+  const h = size * 0.85
+  const lx = cx - w / 2
+  const rx = cx + w / 2
+  const apexY = cy - h / 2
+  const baseY = cy + h / 2
+  ctx.strokeStyle = color
+  ctx.shadowColor = color
+  ctx.shadowBlur = 10
+  ctx.lineWidth = 2
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  // Two legs meeting at the muzzle apex.
+  ctx.beginPath()
+  ctx.moveTo(lx, baseY); ctx.lineTo(cx, apexY); ctx.lineTo(rx, baseY)
+  ctx.stroke()
+  // Cross-brace body.
+  ctx.beginPath()
+  ctx.moveTo(lx + w * 0.2, baseY - h * 0.32)
+  ctx.lineTo(rx - w * 0.2, baseY - h * 0.32)
+  ctx.stroke()
+  // Bright muzzle tip.
+  ctx.fillStyle = '#fff'
+  ctx.shadowBlur = 8
+  ctx.beginPath(); ctx.arc(cx, apexY, 1.6, 0, Math.PI * 2); ctx.fill()
+}
+
+// Centered glowing vector-style text in screen space.
+function drawGlowText(
+  ctx: CanvasRenderingContext2D,
+  text: string, cx: number, y: number, font: string, color: string, blur: number,
+): void {
+  ctx.textAlign = 'center'
+  ctx.font = font
+  ctx.fillStyle = color
+  ctx.shadowColor = color
+  ctx.shadowBlur = blur
+  ctx.fillText(text, cx, y)
+}
+
+// The high-score board (rank · initials · score), monospace-aligned and centered
+// on cx. Shared by the attract and game-over screens.
+function drawHighScoreTable(
+  ctx: CanvasRenderingContext2D,
+  table: HighScoreTable, cx: number, top: number, color: string, maxRows: number,
+): void {
+  ctx.textBaseline = 'middle'
+  drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Orbitron', monospace", color, 14)
+  if (table.length === 0) {
+    drawGlowText(
+      ctx, '- NO SCORES YET -', cx, top + 40,
+      "500 18px 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
+    )
+    return
+  }
+  ctx.font = "500 18px 'Orbitron', monospace"
+  for (let i = 0; i < Math.min(maxRows, table.length); i++) {
+    const e = table[i]
+    const rank = String(i + 1).padStart(2, ' ')
+    const name = (e.name || '???').slice(0, 3).padEnd(3, ' ')
+    const score = String(e.score).padStart(7, '0')
+    ctx.fillStyle = i === 0 ? color : '#cfe3ff'
+    ctx.shadowColor = i === 0 ? color : '#6da8ff'
+    ctx.shadowBlur = i === 0 ? 14 : 8
+    ctx.fillText(`${rank}   ${name}   ${score}`, cx, top + 36 + i * 26)
+  }
+}
+
+// Subtle CRT scanlines, drawn in raw screen space over everything else.
+function drawScanlines(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+  ctx.fillStyle = 'rgba(0,0,0,0.10)'
+  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
+}
+
+function drawAttract(
+  ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
+): void {
+  drawGlowText(ctx, 'TEMPEST', W / 2, H * 0.18, "900 96px 'Orbitron', monospace", color, 30)
+  drawGlowText(
+    ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74,
+    "500 16px 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 8,
+  )
+  drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.42, color, 10)
+  const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
+  ctx.globalAlpha = blink
+  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, "700 26px 'Orbitron', monospace", CLAW_COLOR, 18)
+  ctx.globalAlpha = 1
+  drawGlowText(
+    ctx, 'CLICK OR ENTER TO START - SPINNER + SPACE TO PLAY', W / 2, H * 0.86 + 34,
+    "500 13px 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
+  )
+}
+
+function drawSelect(
+  ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
+): void {
+  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.28, "700 30px 'Orbitron', monospace", color, 16)
+  drawGlowText(
+    ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,
+    "900 72px 'Orbitron', monospace", CLAW_COLOR, 28,
+  )
+  drawGlowText(
+    ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72,
+    "500 16px 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
+  )
+  const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
+  ctx.globalAlpha = blink
+  drawGlowText(
+    ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32,
+    "700 18px 'Orbitron', monospace", color, 12,
+  )
+  ctx.globalAlpha = 1
+}
+
+function drawEntry(
+  ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
+): void {
+  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, "900 44px 'Orbitron', monospace", color, 24)
+  const entry = s.entry
+  if (!entry) {
+    // Defensive: 'highscore' mode should always carry an entry.
+    drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.5, "700 24px 'Orbitron', monospace", CLAW_COLOR, 14)
+    return
+  }
+  drawGlowText(
+    ctx, `SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.34,
+    "700 22px 'Orbitron', monospace", '#cfe3ff', 10,
+  )
+  // Three initial slots: confirmed chars, the active letter (highlighted), blanks.
+  const slotW = 84
+  const startX = W / 2 - slotW
+  const y = H * 0.54
+  ctx.textBaseline = 'middle'
+  for (let i = 0; i < 3; i++) {
+    const x = startX + i * slotW
+    let ch = '_'
+    let active = false
+    if (i < entry.charIndex) ch = entry.initials[i] ?? '_'
+    else if (i === entry.charIndex) { ch = entry.currentLetter; active = true }
+    if (active) {
+      drawGlowText(ctx, ch, x, y, "900 64px 'Orbitron', monospace", CLAW_COLOR, 22)
+      ctx.strokeStyle = CLAW_COLOR
+      ctx.shadowColor = CLAW_COLOR
+      ctx.shadowBlur = 14
+      ctx.lineWidth = 3
+      ctx.beginPath(); ctx.moveTo(x - 26, y + 44); ctx.lineTo(x + 26, y + 44); ctx.stroke()
+    } else {
+      const dim = ch === '_'
+      drawGlowText(
+        ctx, ch, x, y, "900 64px 'Orbitron', monospace",
+        dim ? 'rgba(150,190,255,0.4)' : color, dim ? 0 : 12,
+      )
+    }
+  }
+  const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
+  ctx.globalAlpha = blink
+  drawGlowText(
+    ctx, 'SPIN TO CHANGE - START TO CONFIRM', W / 2, H * 0.78,
+    "500 16px 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
+  )
+  ctx.globalAlpha = 1
+}
+
+// Framing-screen dispatcher: owns the whole frame for non-scene modes.
+function drawFrame(
+  ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
+): void {
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
+  ctx.textBaseline = 'middle'
+  switch (s.mode) {
+    case 'attract': drawAttract(ctx, s, W, H, color); break
+    case 'select': drawSelect(ctx, s, W, H, color); break
+    case 'highscore': drawEntry(ctx, s, W, H, color); break
+  }
+  ctx.shadowBlur = 0
+}
+
 function drawHud(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
@@ -347,29 +534,38 @@ function drawHud(
   ctx.fillStyle = 'rgba(150,190,255,0.6)'
   ctx.shadowBlur = 0
   ctx.fillText('LEVEL', W - 26, 50)
-  // Lives as little claw glyphs.
-  ctx.shadowColor = CLAW_COLOR
-  ctx.shadowBlur = 10
-  ctx.strokeStyle = CLAW_COLOR
-  ctx.lineWidth = 2
+  // High score (top center): the leading board entry, or 0 when the board is empty.
+  const hi = s.highScoreTable.length ? s.highScoreTable[0].score : 0
+  ctx.textAlign = 'center'
+  ctx.font = "700 22px 'Orbitron', monospace"
+  ctx.fillStyle = color
+  ctx.shadowColor = color
+  ctx.shadowBlur = 14
+  ctx.fillText(String(hi).padStart(6, '0'), W / 2, 22)
+  ctx.font = "500 11px 'Orbitron', monospace"
+  ctx.fillStyle = 'rgba(150,190,255,0.6)'
+  ctx.shadowBlur = 0
+  ctx.fillText('HI-SCORE', W / 2, 50)
+  // Remaining lives as little Claw-icon glyphs (the player ship in miniature).
   for (let i = 0; i < s.lives; i++) {
-    const x = 28 + i * 26
-    const y = H - 30
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 8, y - 11); ctx.lineTo(x + 16, y); ctx.stroke()
+    drawClawIcon(ctx, 36 + i * 26, H - 30, 18, CLAW_COLOR)
   }
 
   if (s.mode === 'gameover') {
-    ctx.textAlign = 'center'
-    ctx.fillStyle = '#ff3b5c'
-    ctx.shadowColor = '#ff3b5c'
-    ctx.shadowBlur = 26
-    ctx.font = "900 64px 'Orbitron', monospace"
-    ctx.fillText('GAME OVER', W / 2, H / 2 - 70)
-    ctx.fillStyle = '#cfe3ff'
-    ctx.shadowColor = '#6da8ff'
-    ctx.shadowBlur = 14
-    ctx.font = "500 18px 'Orbitron', monospace"
-    ctx.fillText('CLICK OR PRESS ENTER TO PLAY AGAIN', W / 2, H / 2 + 10)
+    ctx.textBaseline = 'middle'
+    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Orbitron', monospace", '#ff3b5c', 26)
+    drawGlowText(
+      ctx, `FINAL SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.28 + 50,
+      "700 22px 'Orbitron', monospace", '#cfe3ff', 12,
+    )
+    drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.46, color, 8)
+    const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
+    ctx.globalAlpha = blink
+    drawGlowText(
+      ctx, 'CLICK OR PRESS ENTER TO PLAY AGAIN', W / 2, H * 0.84,
+      "500 18px 'Orbitron', monospace", '#cfe3ff', 14,
+    )
+    ctx.globalAlpha = 1
   }
 }
 
@@ -469,6 +665,17 @@ export function render(
   ctx.fillRect(0, 0, W, H)
 
   const color = LEVEL_COLORS[(s.level - 1) % LEVEL_COLORS.length]
+
+  // Framing screens own the whole frame: draw them and SUPPRESS the (now stale)
+  // playing scene entirely. This is the 4-2 F1 fix — on boot/attract and after
+  // gameover→attract the renderer used to leak a ghost tube + frozen enemies.
+  if (s.mode === 'attract' || s.mode === 'select' || s.mode === 'highscore') {
+    drawFrame(ctx, s, W, H, color)
+    drawScanlines(ctx, W, H)
+    ctx.shadowBlur = 0
+    return
+  }
+
   const scale = Math.min(W, H) / 720
   const sx = (Math.random() - 0.5) * fx.shake
   const sy = (Math.random() - 0.5) * fx.shake
@@ -496,10 +703,7 @@ export function render(
   ctx.restore()
 
   // Subtle CRT scanlines.
-  ctx.globalCompositeOperation = 'source-over'
-  ctx.globalAlpha = 1
-  ctx.fillStyle = 'rgba(0,0,0,0.10)'
-  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1)
+  drawScanlines(ctx, W, H)
 
   // Hit/death flash.
   if (fx.flash > 0) {
