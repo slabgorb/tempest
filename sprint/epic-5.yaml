@@ -49,10 +49,13 @@ stories:
     title: Wire audio and particles into loop and bootstrap
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: trivial
+    completed: '2026-06-26'
     type: chore
+    review_verdict: approved
   - id: 5-6
     title: Distinct SFX and visual for a warp spike crash
     description: 'Follow-up from Story 3-3. A warp spike crash is currently indistinguishable from a normal enemy death in the core (both go through killPlayer). Wave 5 polish: give the warp crash a distinct SFX and/or visual cue. Shell-only (src/shell/render.ts + audio); the core already exposes the state needed. Context: sprint/archive/3-3-session.md Delivery Findings (TEA Improvement).'

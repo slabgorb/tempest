@@ -171,3 +171,8 @@ completed_stories:
     title: WebAudio SFX engine
     points: 2
     completed: '2026-06-26'
+  - id: 5-5
+    epic: '5'
+    title: Wire audio and particles into loop and bootstrap
+    points: 2
+    completed: '2026-06-26'
