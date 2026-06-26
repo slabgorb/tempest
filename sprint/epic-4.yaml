@@ -20,7 +20,8 @@ stories:
     title: 'Framing modes: attract screen and start-level select'
     points: 3
     priority: p1
-    status: backlog
+    status: in_progress
+    started: '2026-06-26T08:41:48Z'
     repos: tempest
     workflow: tdd
   - id: 4-3

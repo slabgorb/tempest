@@ -6,7 +6,7 @@ import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
-  rollSpawnKind, rollTankerCargo, WARP_SPEED,
+  rollSpawnKind, rollTankerCargo, WARP_SPEED, MAX_SELECT_LEVEL,
 } from './rules'
 import { rngInt } from './rng'
 import { stepFlipper } from './enemies/flipper'
@@ -24,6 +24,7 @@ function cloneState(s: GameState): GameState {
     spikes: s.spikes.slice(),
     spawn: { ...s.spawn },
     warp: { ...s.warp },
+    select: { ...s.select },
   }
 }
 
@@ -232,14 +233,18 @@ function respawn(s: GameState): void {
   s.mode = 'playing'
 }
 
-function startGame(s: GameState): void {
+// Provision a fresh game at the chosen start level: reset the player, score,
+// lives, geometry, spikes and warp, then arm the first level. RNG-free apart
+// from whatever startLevel does today (currently none). The framing commit
+// (select -> playing) routes through here.
+function startGameAtLevel(s: GameState, level: number): void {
   s.mode = 'playing'
-  s.level = 1
+  s.level = level
   s.score = 0
   s.lives = START_LIVES
   s.player = { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' }
   s.enemies = []
-  s.tube = tubeForLevel(1)
+  s.tube = tubeForLevel(level)
   s.spikes = new Array(s.tube.laneCount).fill(0)
   s.warp.progress = 0
   startLevel(s)
@@ -328,6 +333,25 @@ function stepWarp(s: GameState, dt: number): void {
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
   const s = cloneState(state)
   switch (s.mode) {
+    case 'attract':
+      // Idle title screen — only `start` matters; gameplay input is ignored.
+      // Entering select (re)initialises the chosen level to 1. RNG untouched.
+      if (input.start) {
+        s.mode = 'select'
+        s.select = { selectedLevel: 1 }
+      }
+      break
+    case 'select':
+      // `start` commits to a fresh game at the chosen level; otherwise `spin`
+      // steps the level by one (sign-based), clamped to [1, MAX_SELECT_LEVEL]
+      // with no wrap. Fire/zap are inert. RNG untouched by the framing step.
+      if (input.start) {
+        startGameAtLevel(s, s.select.selectedLevel)
+      } else if (input.spin !== 0) {
+        const next = s.select.selectedLevel + Math.sign(input.spin)
+        s.select.selectedLevel = Math.max(1, Math.min(MAX_SELECT_LEVEL, next))
+      }
+      break
     case 'playing':
       stepPlayer(s, input)
       stepFiring(s, input)
@@ -349,7 +373,9 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       if (s.player.respawnTimer <= 0) respawn(s)
       break
     case 'gameover':
-      if (input.start) startGame(s)
+      // Return to the attract screen (not straight into play). A new game is
+      // provisioned only when the player commits a level in select.
+      if (input.start) s.mode = 'attract'
       break
   }
   return s

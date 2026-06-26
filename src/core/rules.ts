@@ -9,6 +9,9 @@ export const MAX_BULLETS = 8
 export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
 export const RESPAWN_DELAY = 1.5      // seconds
 export const START_LIVES = 3
+// Highest selectable start level. There are 16 distinct tube geometries
+// (tubeForLevel cycles with period 16), so beyond 16 no new geometry exists.
+export const MAX_SELECT_LEVEL = 16
 export const SCORE_FLIPPER = 150
 export const SCORE_SPIKER = 50
 export const SCORE_TANKER = 100

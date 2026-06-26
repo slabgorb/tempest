@@ -3,7 +3,7 @@ import { Tube, tubeForLevel } from './geometry'
 import { Rng, makeRng } from './rng'
 import { START_LIVES, spawnForLevel } from './rules'
 
-export type Mode = 'playing' | 'dying' | 'gameover' | 'warp'
+export type Mode = 'attract' | 'select' | 'playing' | 'dying' | 'gameover' | 'warp'
 
 // Once-per-level Superzapper charge: a 'full' blast vaporises every enemy, then
 // a 'used-once' weak shot vaporises one (nearest the rim), then it is 'spent'
@@ -68,6 +68,10 @@ export interface WarpState {
   progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level
 }
 
+export interface SelectState {
+  selectedLevel: number // the level the player has chosen to start at (1..16)
+}
+
 export interface GameState {
   mode: Mode
   level: number
@@ -80,13 +84,14 @@ export interface GameState {
   lives: number
   spawn: SpawnState
   warp: WarpState
+  select: SelectState
   rng: Rng
 }
 
 export function initialState(seed: number): GameState {
   const tube: Tube = tubeForLevel(1)
   return {
-    mode: 'playing',
+    mode: 'attract',
     level: 1,
     tube,
     player: { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' },
@@ -97,6 +102,7 @@ export function initialState(seed: number): GameState {
     lives: START_LIVES,
     spawn: spawnForLevel(1),
     warp: { progress: 0 },
+    select: { selectedLevel: 1 },
     rng: makeRng(seed),
   }
 }
