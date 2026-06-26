@@ -41,9 +41,11 @@ stories:
     title: Loop onModeChange hook for mode transitions
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-26'
   - id: 4-6
     title: Wire high-score persistence at boot and on commit
     points: 1
