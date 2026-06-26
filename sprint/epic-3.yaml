@@ -96,3 +96,4 @@ stories:
       - tests/core/sim.warp-spikes.test.ts imports Input via 'import type'.
       - Full test suite and tsc --noEmit remain green.
     type: chore
+    review_verdict: approved
