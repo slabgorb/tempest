@@ -34,10 +34,11 @@ stories:
     title: High-score persistence seam in shell/storage.ts
     points: 2
     priority: p1
-    status: in_progress
+    status: done
     started: '2026-06-26T08:16:39Z'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-26'
   - id: 4-5
     title: Loop onModeChange hook for mode transitions
     points: 2
