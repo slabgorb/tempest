@@ -135,3 +135,8 @@ completed_stories:
     title: Loop onModeChange hook for mode transitions
     points: 2
     completed: '2026-06-26'
+  - id: 4-4
+    epic: '4'
+    title: High-score persistence seam in shell/storage.ts
+    points: 2
+    completed: '2026-06-26'
