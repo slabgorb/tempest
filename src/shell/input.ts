@@ -11,6 +11,7 @@ export interface InputController {
 export function createInputController(target: HTMLElement): InputController {
   let spinAccum = 0
   let fireQueued = false
+  let zapQueued = false
   let startQueued = false
   let leftHeld = false
   let rightHeld = false
@@ -45,6 +46,7 @@ export function createInputController(target: HTMLElement): InputController {
     spaceHeld = false
     leftHeld = false
     rightHeld = false
+    zapQueued = false
   })
 
   window.addEventListener('keydown', (e: KeyboardEvent) => {
@@ -59,6 +61,10 @@ export function createInputController(target: HTMLElement): InputController {
       fireQueued = true
       lastAutoFire = performance.now()
       e.preventDefault()
+    } else if (e.key === 'Shift') {
+      // Superzapper: a single edge per press. The `e.repeat` guard above keeps
+      // a held Shift from re-triggering; sample() consumes the edge each frame.
+      zapQueued = true
     } else if (e.key === 'Enter') startQueued = true
   })
 
@@ -82,11 +88,12 @@ export function createInputController(target: HTMLElement): InputController {
       const input: Input = {
         spin: spinAccum + keySpin,
         fire,
-        zap: false,
+        zap: zapQueued,
         start: startQueued,
       }
       spinAccum = 0
       fireQueued = false
+      zapQueued = false
       startQueued = false
       return input
     },
