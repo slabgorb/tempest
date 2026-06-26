@@ -54,7 +54,7 @@ const loop = createLoop(
     let rdt = (t - lastDraw) / 1000
     lastDraw = t
     if (rdt > 0.05) rdt = 0.05
-    fx.detect(s, rdt)
+    fx.detect(s, rdt, frameEvents)
     fx.update(rdt)
     // Play one sound per gameplay event the core emitted this frame. The loop
     // accumulates events across all sub-steps, so nothing is dropped when two
