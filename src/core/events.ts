@@ -10,11 +10,16 @@
 //
 // Narrow with the `type` discriminant (`switch (e.type)` / `e.type === '...'`).
 
+// `import type` ⇒ a compile-time-only reference, so no runtime import cycle with
+// state.ts. Typing enemy kinds as the `EnemyKind` union (not `string`) keeps
+// downstream consumers' `switch` exhaustive and rejects misspelled kinds.
+import type { EnemyKind } from './state'
+
 // An enemy was destroyed (by a bullet or the superzapper). `enemyType` is the
 // enemy's kind; `lane`/`depth` mark where it died, for particle/SFX placement.
 export interface EnemyDeathEvent {
   type: 'enemy-death'
-  enemyType: string
+  enemyType: EnemyKind
   lane: number
   depth: number
 }
@@ -24,7 +29,7 @@ export interface EnemyDeathEvent {
 export interface PlayerGrabEvent {
   type: 'player-grab'
   lane: number
-  killedBy: string
+  killedBy: EnemyKind
 }
 
 // A bullet was fired from the rim (depth 1) down `lane`.

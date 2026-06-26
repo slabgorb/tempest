@@ -17,7 +17,7 @@ import { initialState } from '../../src/core/state'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { GameEvent } from '../../src/core/events'
 import { stepGame } from '../../src/core/sim'
-import { Input } from '../../src/core/input'
+import type { Input } from '../../src/core/input'
 import { currentLane } from '../../src/core/geometry'
 import { SPIKE_MAX_DEPTH, MAX_BULLETS } from '../../src/core/rules'
 
