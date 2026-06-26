@@ -140,3 +140,8 @@ completed_stories:
     title: High-score persistence seam in shell/storage.ts
     points: 2
     completed: '2026-06-26'
+  - id: 4-2
+    epic: '4'
+    title: 'Framing modes: attract screen and start-level select'
+    points: 3
+    completed: '2026-06-26'

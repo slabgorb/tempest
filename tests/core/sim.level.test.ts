@@ -7,7 +7,7 @@
 // clear enter warp, when does it NOT); the geometry-swap detail lives in
 // sim.advance-level.test.ts and the warp mechanics in sim.warp.test.ts.
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
@@ -28,7 +28,7 @@ function runWarpToCompletion(start: GameState): GameState {
 
 describe('level clear → enters warp (not an immediate advance)', () => {
   it('enters warp, NOT the next level, when the budget is empty and enemies are gone', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = []
 
@@ -38,7 +38,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
   })
 
   it('advances to the next level + harder spawn budget once the warp completes', () => {
-    let s = initialState(1)
+    let s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = []
     s = stepGame(s, NEUTRAL, 1 / 60) // now warping
@@ -54,7 +54,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
   })
 
   it('does NOT enter warp while enemies remain', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 }]
 
@@ -64,7 +64,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
   })
 
   it('does NOT enter warp while the spawn budget still has enemies to release', () => {
-    const s = initialState(1) // spawn.remaining > 0, no enemies on field yet
+    const s = playingState(1) // spawn.remaining > 0, no enemies on field yet
     s.enemies = []
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -78,7 +78,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
   })
 
   it('does NOT enter warp when the player is killed by the final enemy', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.lives = 1
     s.player.lane = 4

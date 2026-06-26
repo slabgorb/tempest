@@ -20,9 +20,11 @@ stories:
     title: 'Framing modes: attract screen and start-level select'
     points: 3
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26T08:41:48Z'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-26'
   - id: 4-3
     title: High-score entry state machine and table
     points: 3

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../../src/core/state'
+import { playingState } from '../helpers'
 import { stepGame } from '../../../src/core/sim'
 import { Input } from '../../../src/core/input'
 import { stepFuseball } from '../../../src/core/enemies/fuseball'
@@ -31,7 +31,7 @@ describe('stepFuseball', () => {
 
 describe('fuseball at the rim', () => {
   it('grabs the player on its lane (lethal contact)', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 3
     s.enemies = [{ kind: 'fuseball', lane: 3, depth: 0.95, jitterTimer: 999 }]

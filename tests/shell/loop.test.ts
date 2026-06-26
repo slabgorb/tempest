@@ -10,7 +10,8 @@ vi.mock('../../src/core/sim', () => ({
 }))
 
 import { createLoop } from '../../src/shell/loop'
-import { initialState, GameState, Mode } from '../../src/core/state'
+import { GameState, Mode } from '../../src/core/state'
+import { playingState } from '../core/helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 
@@ -71,7 +72,7 @@ describe('createLoop onModeChange hook', () => {
   // AC3: callback fires with correct (oldMode, newMode).
   it('fires onModeChange with (oldMode, newMode) when the sim mode changes', () => {
     const onModeChange = vi.fn()
-    const loop = createLoop(initialState(1), sampleInput, draw, now, onModeChange)
+    const loop = createLoop(playingState(1), sampleInput, draw, now, onModeChange)
     loop.start()
 
     modeQueue = ['dying'] // one sub-step: playing -> dying
@@ -85,7 +86,7 @@ describe('createLoop onModeChange hook', () => {
   // Edge: no transition -> no fire.
   it('does not fire when the mode is unchanged across the frame', () => {
     const onModeChange = vi.fn()
-    const loop = createLoop(initialState(1), sampleInput, draw, now, onModeChange)
+    const loop = createLoop(playingState(1), sampleInput, draw, now, onModeChange)
     loop.start()
 
     modeQueue = ['playing', 'playing'] // two sub-steps, no change
@@ -98,7 +99,7 @@ describe('createLoop onModeChange hook', () => {
   // single actual transition.
   it('fires exactly once for a single transition spread across sub-steps', () => {
     const onModeChange = vi.fn()
-    const loop = createLoop(initialState(1), sampleInput, draw, now, onModeChange)
+    const loop = createLoop(playingState(1), sampleInput, draw, now, onModeChange)
     loop.start()
 
     // 3 sub-steps in one frame; mode only actually changes on the last one.
@@ -114,7 +115,7 @@ describe('createLoop onModeChange hook', () => {
   // distinct transitions within one frame fire once each, in order.
   it('fires once per actual transition even when several occur in one frame', () => {
     const onModeChange = vi.fn()
-    const loop = createLoop(initialState(1), sampleInput, draw, now, onModeChange)
+    const loop = createLoop(playingState(1), sampleInput, draw, now, onModeChange)
     loop.start()
 
     modeQueue = ['dying', 'gameover'] // two real transitions, one frame
@@ -128,7 +129,7 @@ describe('createLoop onModeChange hook', () => {
   // AC2: the previous mode is remembered across frames, not reset each frame.
   it('tracks the previous mode across separate frames', () => {
     const onModeChange = vi.fn()
-    const loop = createLoop(initialState(1), sampleInput, draw, now, onModeChange)
+    const loop = createLoop(playingState(1), sampleInput, draw, now, onModeChange)
     loop.start()
 
     modeQueue = ['dying']
@@ -145,10 +146,10 @@ describe('createLoop onModeChange hook', () => {
   // (no comparing the seed mode against an uninitialised/undefined previous).
   it('does not fire on the first frame when the mode stays at its initial value', () => {
     const onModeChange = vi.fn()
-    const loop = createLoop(initialState(1), sampleInput, draw, now, onModeChange)
+    const loop = createLoop(playingState(1), sampleInput, draw, now, onModeChange)
     loop.start()
 
-    // initialState mode is 'playing'; nothing scripted -> mode unchanged.
+    // seed (playingState) mode is 'playing'; nothing scripted -> mode unchanged.
     pump(1)
 
     expect(onModeChange).not.toHaveBeenCalled()
@@ -156,7 +157,7 @@ describe('createLoop onModeChange hook', () => {
 
   // AC5: the hook is optional — the loop runs and advances with no callback.
   it('runs without an onModeChange callback and still advances mode', () => {
-    const loop = createLoop(initialState(1), sampleInput, draw, now)
+    const loop = createLoop(playingState(1), sampleInput, draw, now)
     loop.start()
 
     modeQueue = ['dying']
