@@ -176,3 +176,8 @@ completed_stories:
     title: Wire audio and particles into loop and bootstrap
     points: 2
     completed: '2026-06-26'
+  - id: 5-6
+    epic: '5'
+    title: Distinct SFX and visual for a warp spike crash
+    points: 1
+    completed: '2026-06-26'
