@@ -10,9 +10,11 @@ stories:
     title: Superzapper full blast, weak shot, and per-level reset
     points: 3
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-26'
     review_verdict: approved
   - id: 4-2
     title: 'Framing modes: attract screen and start-level select'

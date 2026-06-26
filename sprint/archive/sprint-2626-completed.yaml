@@ -125,3 +125,8 @@ completed_stories:
     title: Render the full enemy roster and spikes
     points: 2
     completed: '2026-06-25'
+  - id: 4-1
+    epic: '4'
+    title: Superzapper full blast, weak shot, and per-level reset
+    points: 3
+    completed: '2026-06-26'
