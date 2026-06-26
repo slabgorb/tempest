@@ -15,6 +15,7 @@ export function createInputController(target: HTMLElement): InputController {
   let leftHeld = false
   let rightHeld = false
   let mouseHeld = false
+  let spaceHeld = false
   let lastAutoFire = 0
 
   target.addEventListener(
@@ -41,6 +42,7 @@ export function createInputController(target: HTMLElement): InputController {
   // Dropping focus must release every held control, or the Claw "sticks".
   window.addEventListener('blur', () => {
     mouseHeld = false
+    spaceHeld = false
     leftHeld = false
     rightHeld = false
   })
@@ -50,7 +52,12 @@ export function createInputController(target: HTMLElement): InputController {
     if (e.key === 'ArrowLeft') leftHeld = true
     else if (e.key === 'ArrowRight') rightHeld = true
     else if (e.key === ' ') {
+      // Hold space to autofire, mirroring held mouse — frees the hand on the
+      // wheel. The `e.repeat` guard above means we only see the initial press;
+      // sample() drives the repeat cadence off `spaceHeld`.
+      spaceHeld = true
       fireQueued = true
+      lastAutoFire = performance.now()
       e.preventDefault()
     } else if (e.key === 'Enter') startQueued = true
   })
@@ -58,6 +65,7 @@ export function createInputController(target: HTMLElement): InputController {
   window.addEventListener('keyup', (e: KeyboardEvent) => {
     if (e.key === 'ArrowLeft') leftHeld = false
     else if (e.key === 'ArrowRight') rightHeld = false
+    else if (e.key === ' ') spaceHeld = false
   })
 
   return {
@@ -66,7 +74,7 @@ export function createInputController(target: HTMLElement): InputController {
       const keySpin = (rightHeld ? 1 : 0) + (leftHeld ? -1 : 0)
 
       let fire = fireQueued
-      if (mouseHeld && t - lastAutoFire >= AUTOFIRE_MS) {
+      if ((mouseHeld || spaceHeld) && t - lastAutoFire >= AUTOFIRE_MS) {
         fire = true
         lastAutoFire = t
       }

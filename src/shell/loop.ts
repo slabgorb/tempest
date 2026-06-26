@@ -34,20 +34,27 @@ export function createLoop(
     if (delta > MAX_FRAME) delta = MAX_FRAME
     acc += delta
 
-    const input = sampleInput()
-    let first = true
-    while (acc >= STEP) {
-      // Apply the sampled edges (fire/start/spin) only on the first sub-step
-      // so a single input event can't fire multiple bullets in one frame.
-      state = stepGame(state, first ? input : NEUTRAL, STEP)
-      // Detect mode transitions per sub-step so two transitions in one frame
-      // each fire once, in order.
-      if (state.mode !== prevMode) {
-        onModeChange?.(prevMode, state.mode)
-        prevMode = state.mode
+    // Only sample input when a fixed step will actually consume it. sampleInput()
+    // drains and zeroes the accumulated spinner delta, so calling it on a frame
+    // that runs no sub-step (acc < STEP — happens constantly from rAF jitter and
+    // always on >60Hz displays) would read the wheel motion and throw it away
+    // before any step uses it. That dropped input is the "laggy spinner" feel.
+    if (acc >= STEP) {
+      const input = sampleInput()
+      let first = true
+      while (acc >= STEP) {
+        // Apply the sampled edges (fire/start/spin) only on the first sub-step
+        // so a single input event can't fire multiple bullets in one frame.
+        state = stepGame(state, first ? input : NEUTRAL, STEP)
+        // Detect mode transitions per sub-step so two transitions in one frame
+        // each fire once, in order.
+        if (state.mode !== prevMode) {
+          onModeChange?.(prevMode, state.mode)
+          prevMode = state.mode
+        }
+        acc -= STEP
+        first = false
       }
-      acc -= STEP
-      first = false
     }
     draw(state)
     raf = requestAnimationFrame(frame)
