@@ -9,6 +9,7 @@ completed_epics:
   - '0'
   - '1'
   - '2'
+  - '4'
 completed_stories:
   - id: 0-1
     epic: '0'
@@ -154,4 +155,9 @@ completed_stories:
     epic: '4'
     title: Framing screens and Claw-icon lives HUD
     points: 2
+    completed: '2026-06-26'
+  - id: 4-6
+    epic: '4'
+    title: Wire high-score persistence at boot and on commit
+    points: 1
     completed: '2026-06-26'
