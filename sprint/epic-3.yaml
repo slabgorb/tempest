@@ -72,7 +72,8 @@ stories:
     description: "Follow-up from Story 3-3 (spike↔Claw warp collision). After a warp crash, killPlayer→dying→respawn returns mode to 'playing'; the already-cleared level immediately re-enters the warp (checkLevelClear), so a spike still on the player's lane re-crashes every respawn unless the player steers — draining all lives with neutral input. Define and implement the intended post-warp-death resolution. Affects src/core/sim.ts (respawn / checkLevelClear / stepWarp / advanceLevel). Context: sprint/archive/3-3-session.md Delivery Findings (Reviewer/TEA/Dev)."
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-25'
     repos: tempest
     workflow: tdd
     acceptance_criteria:
@@ -80,7 +81,9 @@ stories:
       - After a warp-death respawn, the player is NOT instantly re-killed by the same persisted spike with neutral input.
       - A genuinely surviving warp (no spike on the player's lane) still advances to the next geometry exactly as today.
       - Deterministic and pure-core (no DOM/time/random); covered by tests.
+    completed: '2026-06-25'
     type: bug
+    review_verdict: approved
   - id: 3-7
     title: Use import type for Input in warp-spikes test
     description: Trivial cleanup from Story 3-3 review (Reviewer rule-checker, LOW). tests/core/sim.warp-spikes.test.ts:21 uses 'import { Input }' but Input is a type-only interface used only in annotations; should be 'import type { Input }' for consistency with line 18 (GameState). No compile/runtime impact under current tsconfig.
