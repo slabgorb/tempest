@@ -1,5 +1,6 @@
 // src/shell/loop.ts
 import { GameState, Mode } from '../core/state'
+import { GameEvent } from '../core/events'
 import { Input } from '../core/input'
 import { stepGame } from '../core/sim'
 
@@ -16,7 +17,7 @@ export interface Loop {
 export function createLoop(
   initial: GameState,
   sampleInput: () => Input,
-  draw: (s: GameState) => void,
+  draw: (s: GameState, frameEvents: readonly GameEvent[]) => void,
   now: () => number,
   onModeChange?: (oldMode: Mode, newMode: Mode) => void,
 ): Loop {
@@ -34,6 +35,12 @@ export function createLoop(
     if (delta > MAX_FRAME) delta = MAX_FRAME
     acc += delta
 
+    // Collect every sub-step's GameEvents for the shell (audio/fx). stepGame()
+    // clears state.events each step, so the post-loop state only carries the
+    // LAST sub-step's events — draining it alone would drop, e.g., one of two
+    // enemy deaths that landed in different sub-steps of the same render frame.
+    const frameEvents: GameEvent[] = []
+
     // Only sample input when a fixed step will actually consume it. sampleInput()
     // drains and zeroes the accumulated spinner delta, so calling it on a frame
     // that runs no sub-step (acc < STEP — happens constantly from rAF jitter and
@@ -46,6 +53,7 @@ export function createLoop(
         // Apply the sampled edges (fire/start/spin) only on the first sub-step
         // so a single input event can't fire multiple bullets in one frame.
         state = stepGame(state, first ? input : NEUTRAL, STEP)
+        for (const e of state.events) frameEvents.push(e)
         // Detect mode transitions per sub-step so two transitions in one frame
         // each fire once, in order.
         if (state.mode !== prevMode) {
@@ -56,7 +64,7 @@ export function createLoop(
         first = false
       }
     }
-    draw(state)
+    draw(state, frameEvents)
     raf = requestAnimationFrame(frame)
   }
 
