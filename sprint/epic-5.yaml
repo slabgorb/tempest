@@ -21,9 +21,12 @@ stories:
     title: WebAudio SFX engine
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: trivial
+    completed: '2026-06-26'
+    review_verdict: approved
   - id: 5-3
     title: Particle system and screen-shake
     points: 2
