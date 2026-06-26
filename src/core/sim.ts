@@ -9,6 +9,7 @@ import {
   rollSpawnKind, rollTankerCargo, WARP_SPEED, MAX_SELECT_LEVEL,
 } from './rules'
 import { rngInt } from './rng'
+import { qualifiesForHighScore, insertHighScore } from './highscore'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
 import { stepPulsar } from './enemies/pulsar'
@@ -25,6 +26,39 @@ function cloneState(s: GameState): GameState {
     spawn: { ...s.spawn },
     warp: { ...s.warp },
     select: { ...s.select },
+    entry: s.entry ? { ...s.entry } : null,
+    highScoreTable: s.highScoreTable.slice(),
+  }
+}
+
+// Sign-based ±1 letter cycle over A–Z with wrap in both directions (Z→A, A→Z),
+// mirroring the select-screen spin granularity (4-2).
+function cycleLetter(letter: string, spin: number): string {
+  const offset = letter.charCodeAt(0) - 65
+  const next = (offset + Math.sign(spin) + 26) % 26
+  return String.fromCharCode(65 + next)
+}
+
+// The 'highscore' initials-entry machine. `spin` cycles the current letter;
+// `fire` confirms it (append, advance, reset to 'A'); the 3rd confirm inserts the
+// completed entry into the in-memory table and returns to attract. `start` and
+// neutral input are inert. RNG is never consumed here.
+function stepHighScore(s: GameState, input: Input): void {
+  if (!s.entry) return
+  if (input.fire) {
+    const initials = s.entry.initials + s.entry.currentLetter
+    const charIndex = s.entry.charIndex + 1
+    if (charIndex >= 3) {
+      s.highScoreTable = insertHighScore(s.highScoreTable, {
+        name: initials, score: s.score, level: s.level,
+      })
+      s.entry = null
+      s.mode = 'attract'
+    } else {
+      s.entry = { initials, charIndex, currentLetter: 'A' }
+    }
+  } else if (input.spin !== 0) {
+    s.entry = { ...s.entry, currentLetter: cycleLetter(s.entry.currentLetter, input.spin) }
   }
 }
 
@@ -372,10 +406,20 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       s.player.respawnTimer -= dt
       if (s.player.respawnTimer <= 0) respawn(s)
       break
+    case 'highscore':
+      stepHighScore(s, input)
+      break
     case 'gameover':
-      // Return to the attract screen (not straight into play). A new game is
-      // provisioned only when the player commits a level in select.
-      if (input.start) s.mode = 'attract'
+      // On `start`, a qualifying ended-game score enters initials-entry (score and
+      // level are preserved for the eventual insert); otherwise return to attract.
+      if (input.start) {
+        if (qualifiesForHighScore(s.highScoreTable, s.score)) {
+          s.mode = 'highscore'
+          s.entry = { initials: '', charIndex: 0, currentLetter: 'A' }
+        } else {
+          s.mode = 'attract'
+        }
+      }
       break
   }
   return s

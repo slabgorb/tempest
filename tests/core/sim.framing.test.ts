@@ -154,7 +154,9 @@ describe('framing — gameover returns to attract', () => {
   // AC: 'gameover' + start -> 'attract' (NOT directly to 'playing').
   it('gameover + start returns to attract, not straight into play', () => {
     const s = gameoverState(1)
-    s.score = 5000
+    // Story 4-3: a QUALIFYING score now routes gameover+start to 'highscore'.
+    // This 4-2 test pins the non-qualifying branch (0 never qualifies) -> attract.
+    s.score = 0
     const out = start(s)
     expect(modeOf(out)).toBe('attract')
     expect(modeOf(out)).not.toBe('playing')
