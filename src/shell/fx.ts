@@ -5,6 +5,7 @@
 // the shell: it may use Math.random and wall-clock dt because it never feeds
 // back into the simulation. The core stays deterministic; fx is pure eye candy.
 import { GameState } from '../core/state'
+import type { GameEvent } from '../core/events'
 import { currentLane, project } from '../core/geometry'
 
 interface Particle {
@@ -18,8 +19,13 @@ interface Particle {
 }
 
 export interface Fx {
-  /** Compare the new state against the previous one and spawn effects. */
-  detect(s: GameState, dt: number): void
+  /**
+   * Compare the new state against the previous one and spawn effects. `events`
+   * are the gameplay events the core emitted this frame; cues that a state diff
+   * can't tell apart (a warp spike crash vs. a normal death — both just flip
+   * `player.alive`) are driven off the explicit event instead.
+   */
+  detect(s: GameState, dt: number, events?: readonly GameEvent[]): void
   /** Advance particle/shake/flash timers by dt. */
   update(dt: number): void
   readonly particles: readonly Particle[]
@@ -51,7 +57,7 @@ export function createFx(): Fx {
     }
   }
 
-  function detect(s: GameState): void {
+  function detect(s: GameState, _dt: number, events: readonly GameEvent[] = []): void {
     const tube = s.tube
 
     // A bullet that vanished mid-flight hit something → spark where it was.
@@ -81,6 +87,22 @@ export function createFx(): Fx {
       flashColor = '#ff5a3c'
     }
     prevAlive = s.player.alive
+
+    // A warp spike crash is a death too, so the generic block above already
+    // fired the red death cue. Override it with a DISTINCT electric-blue burst
+    // at the crash lane (paired with kaboom.wav in main.ts) so a spike crash
+    // reads differently from a normal grab/pulse death. Event-driven because the
+    // state diff alone can't tell the two deaths apart.
+    for (const e of events) {
+      if (e.type === 'warp-spike-crash') {
+        const p = project(tube, e.lane, 1.0)
+        burst(p, '#7df9ff', 24, 230, 0.7) // cyan shards spraying off the spike
+        burst(p, '#ffffff', 14, 130, 0.6) // white impact core
+        shake = 26 // harder jolt than a normal death (18)
+        flash = 0.6
+        flashColor = '#7df9ff' // electric blue, not the red death flash
+      }
+    }
 
     // Level cleared → white flash, gentle shake.
     if (s.level > prevLevel) {
