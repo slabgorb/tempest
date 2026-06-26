@@ -89,11 +89,13 @@ stories:
     description: Trivial cleanup from Story 3-3 review (Reviewer rule-checker, LOW). tests/core/sim.warp-spikes.test.ts:21 uses 'import { Input }' but Input is a type-only interface used only in annotations; should be 'import type { Input }' for consistency with line 18 (GameState). No compile/runtime impact under current tsconfig.
     points: 1
     priority: p3
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: trivial
     acceptance_criteria:
       - tests/core/sim.warp-spikes.test.ts imports Input via 'import type'.
       - Full test suite and tsc --noEmit remain green.
+    completed: '2026-06-26'
     type: chore
     review_verdict: approved
