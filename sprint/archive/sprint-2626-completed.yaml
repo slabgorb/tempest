@@ -166,3 +166,8 @@ completed_stories:
     title: Pure-core game event channel
     points: 3
     completed: '2026-06-26'
+  - id: 5-2
+    epic: '5'
+    title: WebAudio SFX engine
+    points: 2
+    completed: '2026-06-26'
