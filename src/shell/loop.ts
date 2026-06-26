@@ -1,5 +1,5 @@
 // src/shell/loop.ts
-import { GameState } from '../core/state'
+import { GameState, Mode } from '../core/state'
 import { Input } from '../core/input'
 import { stepGame } from '../core/sim'
 
@@ -18,11 +18,14 @@ export function createLoop(
   sampleInput: () => Input,
   draw: (s: GameState) => void,
   now: () => number,
+  onModeChange?: (oldMode: Mode, newMode: Mode) => void,
 ): Loop {
   let state = initial
   let acc = 0
   let last = now()
   let raf = 0
+  // Seeded to the initial mode so the first frame never fires a spurious event.
+  let prevMode = initial.mode
 
   function frame(): void {
     const t = now()
@@ -37,6 +40,12 @@ export function createLoop(
       // Apply the sampled edges (fire/start/spin) only on the first sub-step
       // so a single input event can't fire multiple bullets in one frame.
       state = stepGame(state, first ? input : NEUTRAL, STEP)
+      // Detect mode transitions per sub-step so two transitions in one frame
+      // each fire once, in order.
+      if (state.mode !== prevMode) {
+        onModeChange?.(prevMode, state.mode)
+        prevMode = state.mode
+      }
       acc -= STEP
       first = false
     }

@@ -41,7 +41,8 @@ stories:
     title: Loop onModeChange hook for mode transitions
     points: 2
     priority: p1
-    status: backlog
+    status: in_progress
+    started: '2026-06-26'
     repos: tempest
     workflow: tdd
   - id: 4-6
