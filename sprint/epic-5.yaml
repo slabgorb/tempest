@@ -10,9 +10,10 @@ stories:
     title: Pure-core game event channel
     points: 3
     priority: p1
-    status: backlog
+    status: in_progress
     repos: tempest
     workflow: tdd
+    assigned_to: slabgorb
   - id: 5-2
     title: WebAudio SFX engine
     points: 2

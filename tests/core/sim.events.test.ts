@@ -19,7 +19,7 @@ import type { GameEvent } from '../../src/core/events'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { currentLane } from '../../src/core/geometry'
-import { SPIKE_MAX_DEPTH, MAX_BULLETS, PLAYER_RIM_DEPTH } from '../../src/core/rules'
+import { SPIKE_MAX_DEPTH, MAX_BULLETS } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -53,6 +53,7 @@ const threeFlippers = (): Enemy[] => [
 describe('fire events', () => {
   it('emits a fire event at the rim when the player fires', () => {
     const s = playing([])
+    s.spawn.remaining = 1 // keep the empty board OUT of the level-clear path (which wipes bullets)
     s.player.lane = 4
     const out = stepGame(s, FIRE, DT)
 
@@ -72,6 +73,7 @@ describe('fire events', () => {
 
   it('emits no fire event when the bullet cap is already reached', () => {
     const s = playing([])
+    s.spawn.remaining = 1 // keep the empty board OUT of the level-clear path (which wipes bullets)
     s.bullets = Array.from({ length: MAX_BULLETS }, () => ({ lane: 0, depth: 0.5 }))
     const out = stepGame(s, FIRE, DT)
     expect(out.bullets).toHaveLength(MAX_BULLETS)   // nothing fired

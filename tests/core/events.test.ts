@@ -14,10 +14,14 @@
 // Nothing here exists yet: `src/core/events.ts` is absent and `GameState` has
 // no `events` field, so the whole file fails to compile today (valid RED).
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
 import type { GameEvent } from '../../src/core/events'
 import { initialState } from '../../src/core/state'
 import { playingState } from './helpers'
+// Read core source as text via Vite's `?raw` (no Node `fs` types — the project is
+// deliberately browser-pure, which is exactly the boundary this suite guards).
+import eventsSrc from '../../src/core/events.ts?raw'
+import simSrc from '../../src/core/sim.ts?raw'
+import stateSrc from '../../src/core/state.ts?raw'
 
 // One fixture per union member, in the documented shapes (context-story-5-1.md
 // §Technical Approach). This array compiles ONLY if `GameEvent` declares each
@@ -109,10 +113,12 @@ describe('GameState event channel — initial state (AC2)', () => {
 //
 // The event channel must remain DATA. Scan the core source the story touches
 // for the forbidden non-determinism / IO tokens the CLAUDE.md boundary bans,
-// and for debug residue in the new/extended files. `events.ts` does not exist
-// yet, so reading it throws — which fails the suite until Dev creates it clean.
-const read = (rel: string): string =>
-  readFileSync(new URL(rel, import.meta.url), 'utf8')
+// and for debug residue in the new/extended files.
+const CORE_SOURCES: ReadonlyArray<readonly [string, string]> = [
+  ['events.ts', eventsSrc],
+  ['sim.ts', simSrc],
+  ['state.ts', stateSrc],
+]
 
 const FORBIDDEN: ReadonlyArray<readonly [string, RegExp]> = [
   ['Math.random',            /\bMath\s*\.\s*random\b/],
@@ -126,11 +132,11 @@ const FORBIDDEN: ReadonlyArray<readonly [string, RegExp]> = [
 ]
 
 describe('pure-core boundary — event channel stays deterministic (AC6)', () => {
-  for (const file of ['../../src/core/events.ts', '../../src/core/sim.ts', '../../src/core/state.ts']) {
-    describe(file, () => {
-      for (const [name, pattern] of FORBIDDEN) {
-        it(`contains no ${name}`, () => {
-          expect(read(file)).not.toMatch(pattern)
+  for (const [name, src] of CORE_SOURCES) {
+    describe(name, () => {
+      for (const [token, pattern] of FORBIDDEN) {
+        it(`contains no ${token}`, () => {
+          expect(src).not.toMatch(pattern)
         })
       }
     })
@@ -138,9 +144,8 @@ describe('pure-core boundary — event channel stays deterministic (AC6)', () =>
 })
 
 describe('no debug residue in the event channel (AC7)', () => {
-  for (const file of ['../../src/core/events.ts', '../../src/core/state.ts']) {
-    it(`${file} has no console.log or debugger statements`, () => {
-      const src = read(file)
+  for (const [name, src] of CORE_SOURCES.filter(([n]) => n === 'events.ts' || n === 'state.ts')) {
+    it(`${name} has no console.log or debugger statements`, () => {
       expect(src).not.toMatch(/console\s*\.\s*log/)
       expect(src).not.toMatch(/\bdebugger\b/)
     })
