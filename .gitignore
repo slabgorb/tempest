@@ -21,3 +21,6 @@ tmux.conf
 
 # subagent-driven-development scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Audio assets — served from Cloudflare R2 (arcade.slabgorb.com/tempest/sfx/), not committed
+sfx/
