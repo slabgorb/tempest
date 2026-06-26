@@ -18,7 +18,7 @@ import { initialState } from '../../src/core/state'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { currentLane } from '../../src/core/geometry'
-import { Input } from '../../src/core/input'
+import type { Input } from '../../src/core/input'
 import { SPIKE_MAX_DEPTH, RESPAWN_DELAY, START_LIVES } from '../../src/core/rules'
 
 const DT = 1 / 60
