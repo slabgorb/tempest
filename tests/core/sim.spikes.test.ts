@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { SCORE_SPIKE_SEGMENT } from '../../src/core/rules'
@@ -8,7 +8,7 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 describe('spikes', () => {
   it('a spiker raises the spike height in its lane as it climbs', () => {
-    let s = initialState(1)
+    let s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'spiker', lane: 6, depth: 0, direction: 1 }]
     for (let i = 0; i < 30; i++) s = stepGame(s, NEUTRAL, 1 / 60)
@@ -16,7 +16,7 @@ describe('spikes', () => {
   })
 
   it('a bullet shortens the spike in its lane and scores', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.spikes[2] = 0.5
     s.bullets = [{ lane: 2, depth: 0.5 }]
@@ -27,7 +27,7 @@ describe('spikes', () => {
   })
 
   it('leaves spikes in other lanes alone', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.spikes[2] = 0.5
     s.bullets = [{ lane: 9, depth: 0.5 }]

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import {
@@ -25,7 +25,7 @@ describe('scoreFor', () => {
 
 describe('scoring through a collision', () => {
   it('awards the tanker value when a bullet kills a tanker', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }]
     s.bullets = [{ lane: 4, depth: 0.5 }]
@@ -34,7 +34,7 @@ describe('scoring through a collision', () => {
   })
 
   it('grants an extra life when the score crosses a 10,000 boundary', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.score = 9900
     s.lives = 3

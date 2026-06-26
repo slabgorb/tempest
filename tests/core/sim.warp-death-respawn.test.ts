@@ -21,7 +21,7 @@
 // That convergence is exactly what we assert, leaving Dev the latitude to choose
 // HOW while guaranteeing the loop is dead.
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { currentLane } from '../../src/core/geometry'
@@ -41,7 +41,7 @@ function warpDeathState(opts: {
   spikes?: ReadonlyArray<readonly [number, number]>
   lives?: number
 } = {}): GameState {
-  const s = initialState(1)
+  const s = playingState(1)
   s.spawn.remaining = 0
   s.enemies = []
   s.bullets = []
@@ -111,7 +111,7 @@ describe('post-warp-death re-warp loop is resolved (Story 3-6)', () => {
   // and the post-respawn loop must NOT drain lives. This is the reported bug,
   // reproduced through stepGame's public surface from a 'playing' state.
   it('resolves the loop end-to-end through the real level-clear path', () => {
-    const start = initialState(1)
+    const start = playingState(1)
     start.spawn.remaining = 0
     start.enemies = []
     start.bullets = []
@@ -155,7 +155,7 @@ describe('warp-death resolution preserves existing behavior (Story 3-6 regressio
   // enemy below the rim keeps the level un-cleared, so respawn must resume the
   // SAME level, not warp forward.
   it('a normal mid-level death respawn resumes the same level (does not advance)', () => {
-    let s = initialState(1)
+    let s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [

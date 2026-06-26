@@ -1,6 +1,6 @@
 // tests/core/enemies/pulsar.test.ts
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../../src/core/state'
+import { playingState } from '../helpers'
 import { stepGame } from '../../../src/core/sim'
 import { Input } from '../../../src/core/input'
 import { stepPulsar } from '../../../src/core/enemies/pulsar'
@@ -31,7 +31,7 @@ describe('stepPulsar', () => {
 
 describe('pulsar pulse kills the player', () => {
   it('kills the player when a pulse fires on the player lane', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [{ kind: 'pulsar', lane: 4, depth: 0.4, flipTimer: 999, pulseTimer: 0.001, pulsing: false }]
@@ -41,7 +41,7 @@ describe('pulsar pulse kills the player', () => {
   })
 
   it('does not kill when not pulsing', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [{ kind: 'pulsar', lane: 4, depth: 0.4, flipTimer: 999, pulseTimer: 999, pulsing: false }]

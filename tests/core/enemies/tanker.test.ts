@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../../src/core/state'
+import { playingState } from '../helpers'
 import { stepGame } from '../../../src/core/sim'
 import { Input } from '../../../src/core/input'
 import { stepTanker } from '../../../src/core/enemies/tanker'
@@ -17,7 +17,7 @@ describe('stepTanker', () => {
 
 describe('tanker splitting', () => {
   it('splits into two cargo enemies when shot, and scores the tanker', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }]
     s.bullets = [{ lane: 4, depth: 0.5 }]
@@ -28,7 +28,7 @@ describe('tanker splitting', () => {
   })
 
   it('places the two children on adjacent lanes at the tanker depth', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }]
     s.bullets = [{ lane: 4, depth: 0.5 }]
@@ -38,7 +38,7 @@ describe('tanker splitting', () => {
   })
 
   it('splits when it reaches the rim instead of grabbing the player', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.95, contains: 'flipper' }]

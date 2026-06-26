@@ -12,7 +12,7 @@
 // Everything is observed through the public stepGame API (advanceLevel stays a
 // private helper) — we assert behavior, not implementation shape.
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
@@ -24,7 +24,7 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 // `playerLane`: budget empty, no enemies, tube/spikes sized to this level.
 function clearedAtLevel(level: number, playerLane: number): GameState {
   const tube = tubeForLevel(level)
-  const s = initialState(1)
+  const s = playingState(1)
   s.level = level
   s.tube = tube
   s.spikes = new Array(tube.laneCount).fill(0)

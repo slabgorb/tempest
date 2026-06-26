@@ -1,6 +1,6 @@
 // tests/core/enemies/flipper.spawn.test.ts
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../../src/core/state'
+import { playingState } from '../helpers'
 import { stepGame } from '../../../src/core/sim'
 import { Input } from '../../../src/core/input'
 import { stepFlipper } from '../../../src/core/enemies/flipper'
@@ -11,7 +11,7 @@ import { makeCircleTube } from '../../../src/core/geometry'
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 function run(steps: number) {
-  let s = initialState(1)
+  let s = playingState(1)
   for (let i = 0; i < steps; i++) s = stepGame(s, NEUTRAL, 1 / 60)
   return s
 }

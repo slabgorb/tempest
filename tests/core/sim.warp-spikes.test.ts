@@ -14,7 +14,7 @@
 // They also guard the project's hard architectural boundary: the warp+collision
 // step must stay pure and deterministic (no input mutation, identical I/O).
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { currentLane } from '../../src/core/geometry'
@@ -32,7 +32,7 @@ function warpingState(opts: {
   spikes?: ReadonlyArray<readonly [number, number]>
   lives?: number
 }): GameState {
-  const s = initialState(1)
+  const s = playingState(1)
   s.spawn.remaining = 0
   s.enemies = []
   s.bullets = []
@@ -149,7 +149,7 @@ describe('spikes crash the Claw during the warp (Story 3-3)', () => {
   // Integration — a spike laid during play persists across warp entry (only
   // bullets are cleared) and crashes the Claw on the real level-clear → warp path.
   it('persists spikes into the warp and crashes on them via the real clear path', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = []
     s.player.lane = 0

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { rollSpawnKind } from '../../src/core/rules'
@@ -8,7 +8,7 @@ import { makeRng } from '../../src/core/rng'
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 function spawnedKinds(level: number, seed: number): Set<string> {
-  let s = initialState(seed)
+  let s = playingState(seed)
   s.level = level
   s.spawn = { remaining: 40, timer: 0 }
   const kinds = new Set<string>()

@@ -154,18 +154,26 @@ describe('initialState wiring', () => {
   })
 })
 
-describe('startGame wiring (restart resets to the level-1 geometry)', () => {
-  it('restores tubeForLevel(1) on restart even when a different geometry was active', () => {
-    const s = initialState(1)
+describe('startGameAtLevel wiring (a fresh game loads the chosen level geometry)', () => {
+  // Story 4-2: a restart is now framed through attract -> select -> playing. The
+  // geometry reset that used to happen on the gameover->start step now happens on
+  // the select->playing commit (startGameAtLevel). A stale deeper-level tube must
+  // still be discarded for the freshly chosen level.
+  it('restores tubeForLevel(1) for a fresh level-1 game, discarding a stale geometry', () => {
+    let s = initialState(1)
     s.mode = 'gameover'
     s.lives = 0
     // Stale geometry from a deeper level (wrong laneCount) must be discarded.
     s.tube = makeCircleTube(8, ORIGIN, 60, 300)
     s.spikes = new Array(8).fill(0)
 
-    const out = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60)
+    s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60) // gameover -> attract
+    expect(s.mode as string).toBe('attract')
+    s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60) // attract -> select (level 1)
+    expect(s.mode as string).toBe('select')
+    const out = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60) // select -> playing
 
-    expect(out.mode).toBe('playing')
+    expect(out.mode as string).toBe('playing')
     expect(out.level).toBe(1)
     expect(out.tube).toEqual(tubeForLevel(1))
     expect(out.tube.laneCount).toBe(16)
