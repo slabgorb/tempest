@@ -71,7 +71,10 @@ describe('enemy ↔ player collision and death', () => {
   it('returns to the attract screen from gameover on start (not straight to play)', () => {
     let s = playingState(1)
     s.mode = 'gameover'
-    s.score = 5000
+    // Story 4-3 routes a QUALIFYING ended-game score to the 'highscore' initials
+    // screen on gameover+start; only a non-qualifying score still goes straight to
+    // attract. A 0 score never qualifies, so it pins this gameover->attract branch.
+    s.score = 0
     s.spikes[2] = 0.5
     s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60)
     expect(s.mode as string).toBe('attract')

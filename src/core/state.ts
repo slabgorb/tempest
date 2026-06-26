@@ -2,8 +2,9 @@
 import { Tube, tubeForLevel } from './geometry'
 import { Rng, makeRng } from './rng'
 import { START_LIVES, spawnForLevel } from './rules'
+import type { HighScoreTable } from './highscore'
 
-export type Mode = 'attract' | 'select' | 'playing' | 'dying' | 'gameover' | 'warp'
+export type Mode = 'attract' | 'select' | 'playing' | 'dying' | 'gameover' | 'warp' | 'highscore'
 
 // Once-per-level Superzapper charge: a 'full' blast vaporises every enemy, then
 // a 'used-once' weak shot vaporises one (nearest the rim), then it is 'spent'
@@ -72,6 +73,15 @@ export interface SelectState {
   selectedLevel: number // the level the player has chosen to start at (1..16)
 }
 
+// Mid-flight state for the 'highscore' initials-entry machine. `initials` holds
+// the confirmed characters so far (0–3); `charIndex` is the position being
+// entered (0–2); `currentLetter` is the A–Z letter currently shown for it.
+export interface HighScoreEntryState {
+  initials: string
+  charIndex: number
+  currentLetter: string
+}
+
 export interface GameState {
   mode: Mode
   level: number
@@ -85,6 +95,8 @@ export interface GameState {
   spawn: SpawnState
   warp: WarpState
   select: SelectState
+  entry: HighScoreEntryState | null  // non-null only while mode === 'highscore'
+  highScoreTable: HighScoreTable     // in-memory top scores (persistence is 4-6)
   rng: Rng
 }
 
@@ -103,6 +115,8 @@ export function initialState(seed: number): GameState {
     spawn: spawnForLevel(1),
     warp: { progress: 0 },
     select: { selectedLevel: 1 },
+    entry: null,
+    highScoreTable: [],
     rng: makeRng(seed),
   }
 }

@@ -15,3 +15,31 @@ export interface HighScoreEntry {
 // Table: entries ordered descending by score. Ordering/truncation is the
 // state machine's concern (4-3); the persistence seam stores whatever it is given.
 export type HighScoreTable = HighScoreEntry[]
+
+import { MAX_HIGH_SCORES } from './rules'
+
+// True when `score` is worth recording. A non-positive score never qualifies.
+// While the board has open slots, any positive score makes it; once full, the
+// score must STRICTLY beat the lowest entry to displace it (a tie does not).
+export function qualifiesForHighScore(table: HighScoreTable, score: number): boolean {
+  if (score <= 0) return false
+  if (table.length < MAX_HIGH_SCORES) return true
+  const lowest = table[table.length - 1].score
+  return score > lowest
+}
+
+// Returns a NEW table with `entry` inserted in descending-score order, truncated
+// to MAX_HIGH_SCORES. Ties place the new entry AFTER existing equal-score entries
+// (existing holders keep the higher rank). The input table is not mutated.
+export function insertHighScore(table: HighScoreTable, entry: HighScoreEntry): HighScoreTable {
+  const out = table.slice()
+  let i = out.length
+  for (let k = 0; k < out.length; k++) {
+    if (out[k].score < entry.score) {
+      i = k
+      break
+    }
+  }
+  out.splice(i, 0, entry)
+  return out.slice(0, MAX_HIGH_SCORES)
+}
