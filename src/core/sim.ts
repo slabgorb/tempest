@@ -215,7 +215,18 @@ function resolvePlayerHits(s: GameState): void {
 function respawn(s: GameState): void {
   s.player.alive = true
   s.player.respawnTimer = 0
-  // Clear enemies already at the rim so the player isn't killed on the same frame.
+  // A warp crash is the only way to enter 'dying' with warp.progress > 0 (normal
+  // play keeps it at 0). Resolve it by completing the level transition instead of
+  // returning to 'playing' — the level is already cleared, so re-entering the warp
+  // would let the still-persisted spike on the player's lane re-crash every
+  // respawn, draining all lives on neutral input (Story 3-6). advanceLevel resets
+  // the spikes and warp, so the next geometry loads cleanly with one life spent.
+  if (s.warp.progress > 0) {
+    advanceLevel(s)
+    return
+  }
+  // Normal mid-level death: clear enemies already at the rim so the player isn't
+  // killed on the same frame.
   s.enemies = s.enemies.filter((e) => e.depth < PLAYER_RIM_DEPTH)
   s.mode = 'playing'
 }
