@@ -161,3 +161,8 @@ completed_stories:
     title: Wire high-score persistence at boot and on commit
     points: 1
     completed: '2026-06-26'
+  - id: 5-1
+    epic: '5'
+    title: Pure-core game event channel
+    points: 3
+    completed: '2026-06-26'
