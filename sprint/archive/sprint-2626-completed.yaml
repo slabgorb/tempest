@@ -130,3 +130,8 @@ completed_stories:
     title: Superzapper full blast, weak shot, and per-level reset
     points: 3
     completed: '2026-06-26'
+  - id: 4-5
+    epic: '4'
+    title: Loop onModeChange hook for mode transitions
+    points: 2
+    completed: '2026-06-26'
