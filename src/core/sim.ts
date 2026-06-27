@@ -403,7 +403,10 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       // with no wrap. Fire/zap are inert. RNG untouched by the framing step.
       if (input.start) {
         startGameAtLevel(s, s.select.selectedLevel)
-      } else if (input.spin !== 0) {
+      } else if (Number.isFinite(input.spin) && input.spin !== 0) {
+        // Number.isFinite rejects NaN and ±Infinity: a NaN spin would poison
+        // selectedLevel via Math.sign(NaN) = NaN, and ±Infinity would silently
+        // step the level via Math.sign(±Infinity) = ±1 (Story 5-9).
         const next = s.select.selectedLevel + Math.sign(input.spin)
         s.select.selectedLevel = Math.max(1, Math.min(MAX_SELECT_LEVEL, next))
       }
