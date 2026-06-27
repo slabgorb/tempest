@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant Browser as Browser (localStorage)
+    participant Shell as shell/storage.ts
+    participant Guard as isHighScoreEntry()
+    participant Core as core/highscore.ts
+    participant Renderer as Renderer
+
+    Note over Browser,Renderer: loadHighScores() — happy path
+    Shell->>Browser: getItem('tempest-high-scores')
+    Browser-->>Shell: raw JSON string
+    Shell->>Shell: JSON.parse()
+    Shell->>Shell: Array.isArray() check
+    Shell->>Guard: filter each entry
+    Guard-->>Shell: ✅ valid entries only
+    Shell-->>Core: HighScoreTable (clean)
+    Core-->>Renderer: display leaderboard
+
+    Note over Browser,Renderer: loadHighScores() — corrupt payload
+    Shell->>Browser: getItem('tempest-high-scores')
+    Browser-->>Shell: '[{}, {name:9, score:"x"}]'
+    Shell->>Shell: JSON.parse() ✅
+    Shell->>Shell: Array.isArray() ✅
+    Shell->>Guard: filter({}) → ❌ dropped
+    Shell->>Guard: filter({name:9}) → ❌ dropped
+    Guard-->>Shell: [] (empty — nothing passed)
+    Shell-->>Core: [] (safe empty table)
+    Core-->>Renderer: empty leaderboard (no crash)
+
+    Note over Browser,Renderer: saveHighScores(readonly table)
+    Core->>Shell: saveHighScores(readonly HighScoreEntry[])
+    Shell->>Browser: setItem('tempest-high-scores', JSON.stringify(table))
+    Browser-->>Shell: ✅ (or quota error, swallowed)

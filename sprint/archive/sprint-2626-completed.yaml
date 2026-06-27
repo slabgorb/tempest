@@ -222,3 +222,8 @@ completed_stories:
     title: Use import type for Input in warp-spikes test
     points: 1
     completed: '2026-06-26'
+  - id: 5-8
+    epic: '5'
+    title: 'Harden high-score persistence: per-entry load validation and readonly save API'
+    points: 1
+    completed: '2026-06-27'
