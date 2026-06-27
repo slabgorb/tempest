@@ -3,7 +3,7 @@ type: epic
 title: Wave 3 — Levels & warp
 description: All 16 tube geometries (open + closed), color cycling, the end-of-level warp with spike collision, difficulty ramp.
 priority: p1
-status: backlog
+status: done
 repos: tempest
 stories:
   - id: 3-1
@@ -49,9 +49,11 @@ stories:
     title: Difficulty ramp continues past the geometry cycle
     points: 2
     priority: p1
-    status: backlog
+    status: done
+    started: '2026-06-26'
     repos: tempest
     workflow: tdd
+    completed: '2026-06-27'
   - id: 3-5
     title: Per-level color cycling, open-tube and warp rendering
     description: "REMAINING SCOPE: warp rendering only. Per-level color cycling and open-tube rendering already shipped in PR #10 (feat/standalone-polish, merged 2026-06-25) via the shell-polish port — see src/shell/render.ts (LEVEL_COLORS cycling + boundary-safe open-tube spokes/rings). This story now covers the third deliverable from its title: a distinct visual for the end-of-level warp (mode === 'warp', warp.progress 0->1). Shell-only; core already exposes warp state. Ref: src/core/state.ts WarpState, src/core/sim.ts stepWarp/advanceLevel; warp collision landed in 3-3."
@@ -99,3 +101,4 @@ stories:
     completed: '2026-06-26'
     type: chore
     review_verdict: approved
+completed: '2026-06-27'

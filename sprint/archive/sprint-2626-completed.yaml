@@ -10,6 +10,7 @@ completed_epics:
   - '1'
   - '2'
   - '4'
+  - '3'
 completed_stories:
   - id: 0-1
     epic: '0'
@@ -184,5 +185,40 @@ completed_stories:
   - id: 5-7
     epic: '5'
     title: 'Framing-screen render polish: gameover scrim and high-score table self-containment'
+    points: 1
+    completed: '2026-06-26'
+  - id: 3-4
+    epic: '3'
+    title: Difficulty ramp continues past the geometry cycle
+    points: 2
+    completed: '2026-06-27'
+  - id: 3-1
+    epic: '3'
+    title: 16-geometry roster and tubeForLevel selector
+    points: 3
+    completed: '2026-06-25'
+  - id: 3-2
+    epic: '3'
+    title: End-of-level warp transition with geometry switch
+    points: 3
+    completed: '2026-06-25'
+  - id: 3-3
+    epic: '3'
+    title: Spikes crash the Claw during the warp
+    points: 2
+    completed: '2026-06-25'
+  - id: 3-5
+    epic: '3'
+    title: Per-level color cycling, open-tube and warp rendering
+    points: 2
+    completed: '2026-06-25'
+  - id: 3-6
+    epic: '3'
+    title: Resolve post-warp-death re-warp loop on persisted spikes
+    points: 2
+    completed: '2026-06-25'
+  - id: 3-7
+    epic: '3'
+    title: Use import type for Input in warp-spikes test
     points: 1
     completed: '2026-06-26'
