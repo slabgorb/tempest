@@ -88,13 +88,22 @@ function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): 
   return { value: table[0][0], rng: roll.rng }
 }
 
+// Each full pass through the 16 geometries (a "cycle") ramps the hard-enemy
+// spawn weights up by this fraction, so a repeated geometry plays meaner than
+// its first appearance. Flipper weight stays fixed, so its share shrinks as the
+// roster hardens — difficulty does not reset when the geometry table wraps.
+export const SPAWN_CYCLE_HARD_SCALE = 0.5
+
 export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: Rng } {
+  // cycle 0 for levels 1–16, 1 for 17–32, … (tubeForLevel wraps with period 16).
+  const cycle = Math.floor((level - 1) / 16)
+  const hard = 1 + cycle * SPAWN_CYCLE_HARD_SCALE
   const table: ReadonlyArray<readonly [EnemyKind, number]> = [
     ['flipper', 10],
-    ['tanker', level >= 3 ? 4 : 0],
-    ['spiker', level >= 3 ? 3 : 0],
-    ['pulsar', level >= 5 ? 3 : 0],
-    ['fuseball', level >= 5 ? 3 : 0],
+    ['tanker', level >= 3 ? 4 * hard : 0],
+    ['spiker', level >= 3 ? 3 * hard : 0],
+    ['pulsar', level >= 5 ? 3 * hard : 0],
+    ['fuseball', level >= 5 ? 3 * hard : 0],
   ]
   const res = weightedPick(table, rng)
   return { kind: res.value, rng: res.rng }
