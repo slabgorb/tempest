@@ -165,3 +165,103 @@ describe('createLoop onModeChange hook', () => {
     expect(loop.getState().mode).toBe('dying')
   })
 })
+
+// Story 5-9: the loop invokes sampleInput / onModeChange / draw before it
+// reschedules the next animation frame (requestAnimationFrame is the LAST thing
+// frame() does). If any callback throws, that reschedule is never reached and the
+// rAF chain dies — the game silently halts. The loop MUST survive a throwing
+// callback and keep scheduling frames. The decisive signal is the reschedule
+// count: a frame that survives a throw still calls requestAnimationFrame again.
+describe('createLoop callback robustness (Story 5-9)', () => {
+  let nowMs: number
+  let rafCb: FrameRequestCallback | null
+  let rafCount: number // total requestAnimationFrame() calls; +1 per scheduled frame
+  let modeQueue: Mode[]
+
+  const now = () => nowMs
+
+  function runFrame(): void {
+    const cb = rafCb
+    if (!cb) throw new Error('no animation frame scheduled')
+    cb(0)
+  }
+  function pump(n: number): void {
+    nowMs += n * STEP_MS + 0.5
+    runFrame()
+  }
+
+  beforeEach(() => {
+    nowMs = 0
+    rafCb = null
+    rafCount = 0
+    modeQueue = []
+
+    stepGameMock.mockReset()
+    stepGameMock.mockImplementation((state: GameState) => {
+      const mode = modeQueue.length ? (modeQueue.shift() as Mode) : state.mode
+      return { ...state, mode }
+    })
+
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCb = cb
+      rafCount += 1
+      return rafCount
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // AC1: a throwing onModeChange must not halt the loop — the rAF chain survives
+  // and the loop keeps advancing on subsequent frames.
+  it('keeps scheduling frames when onModeChange throws', () => {
+    const onModeChange = vi.fn(() => {
+      throw new Error('onModeChange boom')
+    })
+    const loop = createLoop(playingState(1), () => NEUTRAL, () => {}, now, onModeChange)
+    loop.start()
+    expect(rafCount).toBe(1) // start() scheduled the first frame
+
+    modeQueue = ['dying'] // forces the throwing callback to fire this frame
+    expect(() => pump(1)).not.toThrow()
+    expect(onModeChange).toHaveBeenCalledTimes(1)
+    expect(rafCount).toBe(2) // frame rescheduled despite the throw — chain alive
+
+    // The loop must still advance on the very next frame.
+    modeQueue = ['gameover']
+    expect(() => pump(1)).not.toThrow()
+    expect(rafCount).toBe(3)
+    expect(loop.getState().mode).toBe('gameover')
+  })
+
+  // AC1: a throwing draw callback must not halt the loop either.
+  it('keeps scheduling frames when draw throws', () => {
+    const draw = vi.fn(() => {
+      throw new Error('draw boom')
+    })
+    const loop = createLoop(playingState(1), () => NEUTRAL, draw, now)
+    loop.start()
+    expect(rafCount).toBe(1)
+
+    expect(() => pump(1)).not.toThrow()
+    expect(draw).toHaveBeenCalledTimes(1)
+    expect(rafCount).toBe(2) // rescheduled despite draw throwing
+  })
+
+  // AC1: a throwing sampleInput must not halt the loop. sampleInput only runs on a
+  // frame that consumes at least one sub-step, which pump(1) guarantees.
+  it('keeps scheduling frames when sampleInput throws', () => {
+    const sampleInput = vi.fn(() => {
+      throw new Error('sampleInput boom')
+    })
+    const loop = createLoop(playingState(1), sampleInput, () => {}, now)
+    loop.start()
+    expect(rafCount).toBe(1)
+
+    expect(() => pump(1)).not.toThrow()
+    expect(sampleInput).toHaveBeenCalledTimes(1)
+    expect(rafCount).toBe(2) // rescheduled despite sampleInput throwing
+  })
+})
