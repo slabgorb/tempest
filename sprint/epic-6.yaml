@@ -1,0 +1,137 @@
+id: '6'
+type: epic
+title: Wave 6 — Playtest feel & balance
+description: Gameplay feel and fairness fixes surfaced during hands-on playtest (post Waves 0-5). Warp instant-death, auto-fire cadence, and respawn chain-death.
+priority: p1
+status: ready
+repos: tempest
+stories:
+  - id: 6-1
+    title: Slow→fast warp ramp on level-clear (no instant warp-death)
+    description: 'On level-clear the warp triggers instantly with no speed ramp, so if the last enemy killed leaves you on/near a spiked lane you die with no chance to react. Implement the authentic accelerating dive with retained control. AUTHENTIC ROM CONSTANTS (rev-3, see design ref): the level-clear dive runs under game_state_zoom — initial velocity 0x0200 = 2.0 along-units/frame, accelerating EVERY frame by min(curlevel*4,0x30)+0x20; total descent (along 0x10 -> 0xf0) is ~45 frames (~0.75s) at level 1 down to ~33 frames (~0.55s) by level 12+. The player keeps FULL rotation control for the entire descent (move_player runs every frame). A ~30-frame (~0.5s) AVOID SPIKES countdown precedes the dive when any spike exists AND displayed level <= 7 (no warning above 7). A spike kills only when the descending claw passes its tip on its OWN segment (spike height < player along). Map per-frame values to dt-driven per-second rates (60 Hz source); our depth is [0=far,1=near] so invert. Area: src/core/sim.ts level-transition + warp speed curve; render in shell.'
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Warp descent uses a slow-start, then fast-accelerating speed curve (not a constant/instant speed).
+      - After the last enemy dies, the player has a brief slow window to rotate off a spiked lane before the warp commits to descent.
+      - A player parked on a spiked lane when the last enemy dies can survive by moving off that lane during the slow phase.
+      - Warp timing is driven entirely by dt (deterministic, frame-rate independent) — covered by a seeded core unit test.
+      - Descent is an accelerating ramp (slow ~2.0 units/frame start, continuous accel, ~0.55-0.75s total); spinner stays live throughout; ~0.5s AVOID SPIKES warning on levels <=7 when spikes present; spike kills only on the player's own lane once passed.
+    type: bug
+  - id: 6-2
+    title: Consistent, faster auto-fire cadence for spin-and-hold
+    description: "Holding auto-fire while spinning only lands a shot every ~2-3 frames, so spin-and-hold skips enemies. AUTHENTIC ROM CONSTANTS (rev-3): there is NO fire cooldown — firing is gated only by (a) the fire button held and (b) a free shot slot; max 8 concurrent player shots (n_player_bullets=8); ONE new shot spawned per frame while held; shots travel +9 along-units/frame and free their slot at 0xf0 (~25 frames / ~0.42s lifetime from the rim). The ~1-per-3-frames steady state is authentic (8 slots / ~25-frame lifetime); the full-sweep feel comes from up to 8 shots in flight spread down the tube. FIX = remove any artificial cooldown, gate on an 8-shot concurrent cap, verify bullet speed so the pool recycles at the arcade rate. This answers the open cooldown-vs-cap question: it is the CAP, not a cooldown. Area: fire/cooldown logic in src/core/sim.ts; auto-fire input wiring in shell."
+    points: 1
+    priority: p2
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Holding auto-fire produces a consistent shot cadence — no irregular 2-3 frame gaps between shots.
+      - Fire rate is fast enough that spin-and-hold clears a contiguous sweep of lanes without skipping enemies.
+      - 'Root cause identified and documented: cooldown tuning vs. on-screen bullet cap (and the chosen lever justified).'
+      - Cadence is deterministic (dt-driven) and covered by a seeded core unit test.
+      - No artificial fire cooldown; auto-fire gated by an 8-shot concurrent cap + free slot; one shot per sim tick while held; bullet speed verified so the 8-shot pool recycles at ~arcade rate.
+    type: bug
+  - id: 6-3
+    title: Safe respawn after death (no chain-death on death lanes)
+    description: 'On death the next ship respawns instantly at the death spot, so you chain-die on a blocked/crowded lane. DESIGN DECISION RESOLVED from the ROM (rev-3): the arcade does NOT use invulnerability — it RESETS THE BOARD. On death player_status goes negative; the death animation waits for all bullets to clear, then pushes surviving enemies back down the tube and zooms the claw down (along 0x10 -> 0xf0, +0x0f/frame ~= 15 frames / ~0.25s) — the enemies-vanish/claw-freezes/warp-to-blank the playtest observed. Then a life is deducted (40-frame / ~0.67s GAME OVER pause if it was the last); with lives remaining the board is FULLY RESET (remove_all_enemies_from_tube + setup_level + reset_pending_enemy_timers + clear_shots) and the player respawns at a FIXED lane (arcade segment 14), near rim, on the SAME level. NO invulnerability frames — the cleared board + spawn delay IS the grace, which is why the arcade never chain-deaths. Implement that model. Area: death/lives -> respawn transition in src/core/sim.ts.'
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Respawn model is decided and documented (chosen approach + rationale) before implementation.
+      - After death, the fresh ship does NOT instantly re-die from the same hazard that killed it (death lane / crowded lane).
+      - The player gets a recovery beat on respawn (e.g. brief invulnerability and/or board reset and/or safe spawn relocation, per the chosen model).
+      - Respawn behavior is deterministic (seeded RNG + dt) and covered by a core unit test reproducing the chain-death scenario.
+      - 'On respawn (lives remain): all enemies removed + spawn timers reset, same level restarts, claw at a fixed lane near rim; brief ~0.25s death-zoom animation first; NO invulnerability frames (cleared board + spawn delay is the grace).'
+    type: bug
+  - id: 6-4
+    title: Adopt Vector Battle vector font for HUD & framing text
+    description: "Adopt the 'Vector Battle' arcade vector font (VectorBattle-e9XO.ttf — ck!/freakyfonts, 1999; Freeware Non-Commercial) for HUD and framing-screen text, replacing the current default-font rendering, to match the glowing-vector aesthetic. SHELL/RENDER-ONLY — no src/core/ impact. Load via the FontFace API / @font-face and ship the 29KB TTF as a static asset honoring Vite base:'/tempest/'. The face is CAPS-ONLY, so render text uppercase. Thin strokes get fragile at small sizes — render HUD at >=18-20px and/or reduce glow blur. License cleared for this non-commercial project; a commercial license must be purchased from the designer if the project ever becomes commercial. Full UX spec: docs/ux/2026-06-27-tempest-arcade-feel-reference.md (Typography section)."
+    points: 1
+    priority: p3
+    status: backlog
+    repos: tempest
+    workflow: trivial
+    acceptance_criteria:
+      - Vector Battle loaded (FontFace/@font-face) and applied to HUD (score/lives/level) and framing screens (title/attract, high-score table, message banners).
+      - Designer attribution (ck! / freakyfonts, 1999) shown in a credits/about screen or recorded in the repo.
+      - Small-size HUD text legible (>=18-20px and/or reduced glow blur), verified on the real canvas.
+      - Graceful fallback to a system font if the custom face fails to load.
+      - 'Shell/render-only: src/core/ pure simulation untouched; TTF served as a static asset under the /tempest/ base path.'
+  - id: 6-5
+    title: Enemies fire energy bolts at the player
+    description: "Enemies currently do not fire - the basic enemy energy bolts are missing. AUTHENTIC ROM (rev-3, enemy-recon over tempest.a65). WHO FIRES (gate L028a bit 0x40 'can shoot', 1605): the literal VER=3 code sets the can-shoot bit for Flipper, Tanker, and Spiker (creation 8056-8136, gate 9548); Pulsar only L60+ (or all levels on hard); Fuseball NEVER. DECISION (user, 2026-06-27): MATCH THE LITERAL rev-3 CODE - Flippers, Tankers, and Spikers all fire whenever the per-frame gates pass; Pulsars fire L60+; Fuseball never. FIRE DECISION (enm_shoot 9539-9592): per-frame, gated by player-alive, enemy along >= 0x30, can-shoot bit, per-enemy shot_delay elapsed, not mid-flip, then RNG (pokey1_rand) vs a threshold table indexed by the number of LIVE bolts -> P(fire) approx: 0 bolts ~100%, 1 -> 12.5%, 2 -> 6.25%, 3 -> 2.3%, 4 -> 0.4% (self-limiting). Refire holdoff shot_holdoff (7000-7003): L1 80fr/1.33s, L20 23fr, L21-64 20fr, L65+ 10fr. SPAWN (9562-9577): bolt at the firing enemy along/seg; travels STRAIGHT DOWN its lane, no tracking. Max concurrent = enm_shotmax+1, cap 4 (n_enemy_bullets=4). SPEED enm_shotspd (7022) flipper-relative +0xc0 -> L1 -3.375/fr ~= -202/s (outruns flippers). BOLT->PLAYER (La1e4 9427): kills ONLY if the player is in the bolt's lane when it reaches the rim (player_status=0x81); dodge by leaving the lane. Bolts are SHOOTABLE/destroyable (La463 9846). BOLT SHAPE: vg_sub_image_enemy_shot_1..4 (5012-5245) = white pinwheel (4 corner hooks) + red central 4-dot cross, 4 spin frames. Deterministic via seeded RNG + dt; render bolt in shell. Full notes in design ref (Enemy roster section)."
+    points: 2
+    priority: p1
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Eligible enemy types fire energy bolts that travel up the lane toward the player.
+      - An enemy bolt reaching the player's claw (in the bolt's lane, at the rim) kills the player and triggers the death/respawn sequence.
+      - Concurrent enemy bolts are capped at 4 (arcade n_enemy_bullets=4).
+      - 'Authentic fire model: self-limiting per-live-bolt RNG (~100/12.5/6.25/2.3/0.4% for 0-4 live bolts) + shot_holdoff refire (L1 80fr -> L65+ 10fr).'
+      - Shooter set per user decision = Flippers + Tankers + Spikers (all fire when gates pass) + Pulsars L60+; Fuseball never.
+      - Bolt travels straight down its lane at ~-202/s (L1), is destroyable by player fire, and renders as the white-pinwheel/red-cross glyph.
+      - 'Deterministic: enemy fire driven by seeded RNG + dt; covered by seeded core unit tests.'
+      - Enemy-fire event emits the authentic enemy-fire SFX (sound_enemy_fire; produced by 6-6), or exposes a sound hook if 6-6 lands later.
+  - id: 6-6
+    title: Bake & wire authentic POKEY SFX from ROM (incl. enemy-fire)
+    description: 'Audio production + integration. Tempest has NO PCM samples in ROM — every sound is live POKEY synthesis. A bake utility ALREADY EXISTS at tools/pokey-bake/ (vendored web-pokey POKEY core, MIT; headless Node; verified producing valid 16-bit 48kHz mono WAV from timed POKEY register sequences in sfx-data.mjs). REMAINING WORK (this story): (1) extract the numeric POKEY envelope data for the 13 catalogued SFX from the rev-3 source and populate tools/pokey-bake/sfx-data.mjs in its register-event format; (2) bake to WAV; (3) host on R2 (arcade-assets.slabgorb.com/tempest/sfx/) and wire/audit vs the current SFX set; prioritize the enemy-fire bolt sound (pairs with 6-5). KEY ROM FACTS (sound-recon over tempest.a65): SFX are envelope programs (target/duration/ramp triples in table Lcbd1) streamed to AUDF/AUDC by update_sounds at the ~246 Hz sound IRQ (NOT 60 Hz) — envelope step N maps to time N/246 s. 13 distinct SFX (table Lcb01 at 0x16867; routines 17166-17435): segment-tick, player-fire, enemy-fire, spike-shot, enemy-death, player-explosion, pulsar-hum, pulsar-active, zoom-start, zoom-through/level-clear, countdown-beep, extra-life, slam. Enemy-fire = sound_enemy_fire at 17179 -> pokey2 voice4, envelopes sample_3b/sample_3e, triggered at 9575 (after sta enm_shotpos,y); shared by ALL enemy types. No dedicated superzapper sound (cascade of enemy-death SFX); no coin sound (mechanical); button-click is a direct-POKEY tone outside the table engine. Full catalog in docs/ux/2026-06-27-tempest-arcade-feel-reference.md (Sound section).'
+    points: 3
+    priority: p2
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Numeric POKEY envelope data for the 13 catalogued SFX extracted from the rev-3 source and encoded in tools/pokey-bake/sfx-data.mjs (register-event format; envelope timing at the ~246 Hz IRQ, step/246 s).
+      - SFX baked to WAV via tools/pokey-bake/bake-sfx.mjs (no SILENT warnings) and hosted on R2.
+      - Enemy-fire bolt sound produced and wired to the enemy-fire event (pairs with 6-5).
+      - Existing R2 SFX set audited vs the catalog; gaps filled (priority enemy-fire; secondary segment-tick, spike-shot, pulsar hum/active).
+      - 'Shell/asset-only: src/core/ pure simulation untouched; web-pokey MIT attribution retained.'
+  - id: 6-7
+    title: Survey authentic level geometries from ROM & reconcile our parametric set
+    description: "Arcade footage shows dramatic authentic well shapes our current set may flatten. Our clone builds its 16 geometries in src/core/geometry.ts from three PARAMETRIC primitives — makeCircleTube, makePolygonTube, makeOpenTube — using named strip profiles (FLAT, SHALLOW_V, DEEP_V, BOWL, W, STEP, RAMP, HUMP). These are STYLIZED approximations (8 closed, 8 open), NOT the authentic per-lane coordinate data from the ROM. SURVEY (primary deliverable): enumerate the authentic Tempest level well shapes from the rev-3 source (tempest.a65 and/or the vector ROMs at ~/Downloads/tempest/136002-136.lm1 + 138.np3) — the per-lane near/far endpoint tables and each well's open/closed topology — with source labels + file:line, into a geometry reference doc. AUDIT: compare each authentic shape vs src/core/geometry.ts and produce a gap list (missing, simplified, or wrong open/closed — especially the dramatic geometries). RECONCILE: bring geometry.ts to the authentic coordinate data (faithful reproduction), preserving the closed-vs-open wrap-vs-clamp semantics per level (pure core; geometry is unit-tested per CLAUDE.md). If the gap list is large, reconciliation may split into follow-up stories informed by the survey. Keep the level -> geometry cycle order matching the arcade."
+    points: 3
+    priority: p2
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Authentic Tempest level well-shapes enumerated from the rev-3 ROM source (per-lane near/far coords + open/closed topology) with source labels/file:line, captured in a geometry reference doc.
+      - Each authentic shape compared vs src/core/geometry.ts; gap list produced naming missing / simplified / wrong-topology geometries (the dramatic ones called out).
+      - src/core/geometry.ts reconciled to the authentic data (or faithful reproduction), preserving closed-vs-open (wrap vs clamp) per level; geometry unit tests updated and passing.
+      - 'Pure-core boundary respected: geometry.ts stays free of DOM/time/Math.random; deterministic.'
+      - 'Confirmed example to capture (user-observed in footage): the FIGURE-8 well — a self-crossing closed loop. Our current primitives (circle / polygon / open-strip) cannot represent it, so the survey must capture its real topology AND a new shape representation is likely required. Use it as the litmus test that geometry.ts can express authentic dramatic wells.'
+  - id: 6-8
+    title: Authentic enemy + bolt shapes (render fidelity)
+    description: "Our enemy shapes are go/nogo simplifications; replace with authentic vector glyphs from the rev-3 ROM (enemy-recon). SHELL/RENDER fidelity - no core change. FLIPPER draw_flipper 13035 (RED), point-vector graphic 0 at 14348-14366 = 8-segment closed bowtie/butterfly (2 outer V-wings + central crossing); flip/rotate at runtime. TANKER draw_tanker 13065, body L39b4 4874 = elongated X-diamond (color idx 2) with cargo emblem variants (4628/4711/4798) showing split type. SPIKER draw_spiker 13083, vg_sub_image_spiker_1..4 4261-4554 = outward spiral/pinwheel, 4 spin frames on timectr&3; the SPIKE is a dynamic line Lc6c7 15827 with length proportional to spike_ht and a flickering 4-dot tip. FUSEBALL draw_fuzzball 13180, vg_sub_image_fuzzball_1..4 5592-5881 = chaotic multi-color (red/yellow/cyan) ball-of-legs, legs fully redrawn each frame (writhe/flicker), 4 frames; rides/interpolates between lane endpoints on the rim. PULSAR draw_pulsar 13257, two pulse animations off 'pulsing': color strobes cyan<->white, jaggedness (pulsing+0x40)>>4 selects graphics 0x0d..0x09 = zig-zag bar _pv_offset_9..13 14465-14509 (variant1 sharpest +/-6 -> variant5 flat line). ENEMY BOLT vg_sub_image_enemy_shot_1..4 5012-5245 = white pinwheel + red central cross, 4 frames. PLAYER CLAW rotatable point-vectors graphics 1-8 _pv_t3 14368, draw_player 12954, YELLOW. PLAYER BULLET vg_sub_image_player_shot 3609 = two concentric dotted octagon rings. Reproduce as canvas vector paths matching the glow aesthetic; preserve animation frames (spin/pulse/writhe). May split per-enemy. Full notes in design ref (Enemy roster)."
+    points: 3
+    priority: p2
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - 'Each enemy + bolt renders as an authentic vector glyph WITH its animation frames: Flipper bowtie/butterfly (RED), Tanker X-diamond + cargo emblem, Spiker spinning pinwheel + dynamic spike, Fuseball writhing multi-color ball-of-legs, Pulsar strobing zig-zag bar (5 jaggedness variants), enemy bolt white-pinwheel/red-cross.'
+      - Player claw (yellow, rotatable) and player bullet (two concentric dotted octagons) match the authentic glyphs.
+      - 'Shell/render-only: src/core/ untouched; shapes match the glowing-vector aesthetic.'
+  - id: 6-9
+    title: Authentic enemy motion & behavior constants (core fidelity)
+    description: "Tune enemy motion/behavior to authentic constants from the rev-3 ROM (enemy-recon). CORE/sim - deterministic (dt + seeded RNG). GLOBAL: along 0x10=near rim/player .. 0xf0=far; enemies spawn 0xf0 and climb toward low along; 0x20 = near-rim trigger (split / spiker-reverse / grab). Speed bytes are signed, sign-extended x8; net ~ (byte)/32 along/frame, x60 -> per second. FLIPPER: climb spd_flipper L1 -1.375/fr (-82.5/s, ~2.7s up the tube), L33+ -3.375/fr; a flip sets 0x80+target angle then steps +/-1 per tick into the adjacent lane; per-level flip patterns (m_l0b 8-moves-then-flip, m_l19 constant flip, m_l24 2-then-3 alternating, m_l87 flip-away-then-4-moves); rim grab kills if same seg as player; flip_top_accel 2 (L1-32) / 3 (L33+). TANKER: straight up at flipper speed; SPLITS on reaching 0x20 OR on death into 2 children of cargo type into adjacent lanes (seg-1, seg+1); split-type 1 -> 2 flippers / 2 -> 2 pulsars / 3 -> 2 fuzzballs. SPIKER: spike grows only toward the rim (spike_ht=along when along<spike_ht), growth rate = climb speed; oscillates ~0x20 <-> far; at the far end hops to a random lane (prefers the tallest-spike lane), converts to flipper/tanker if none pending; speed flipper-relative (L21+ faster). FUSEBALL: spd_fuzzball = 2x spd_flipper (fastest; L1 -2.75/fr, -165/s); rolls along the rim + slides lanes toward the player gated by fuzz_move probability (pokey2_rand); KILLABLE ONLY on a lane in its vulnerable phase (L02cc bit7), NOT while rolling the rim; hit_tol 6 (wider); score 250/500/750 random. PULSAR: appears L17+; flipper speed when far, pulsar speed near (spd_pulsar const -82.5/s); pulse integrated by pulse_beat (4/6/8); pulsar_fliprate 40fr@L17 -> 10-20fr@L40+; LETHAL LANE: when pulsing is active and the player is in the pulsar's lane -> player death (standing in a pulsing pulsar's lane kills you). SPAWN/MIX (verify vs our difficulty): flippers-only L1-4; tankers L5+; spikers L5-16; fuseballs L11+; pulsars L17+; steady L33+ (5F/3P/3T/1S/3Fz); wave_enemies released via 64 staggered ~16fr/0.27s countdowns while in-tube < max_enm=6. SCORES (verify): Flipper 150, Pulsar 200, Tanker 100, Spiker 50, Fuseball 250/500/750. May split per-enemy. Full notes in design ref (Enemy roster)."
+    points: 5
+    priority: p2
+    status: backlog
+    repos: tempest
+    workflow: tdd
+    acceptance_criteria:
+      - Enemy climb / flip / split / spike-growth / fuseball-rim / pulsar-lethal-lane behavior matches the authentic constants (speeds per second, timers in frames), driven by dt + seeded RNG; covered by seeded core unit tests.
+      - Fuseball killable only in its on-lane vulnerable phase (not on the rim); Tanker splits into 2 cargo-type children on 0x20/death; Spiker spike grows toward rim and hops at the far end; Pulsar lethal-lane kills a player standing in a pulsing lane.
+      - Spawn mix by level and scoring verified vs the ROM (Flipper150 / Pulsar200 / Tanker100 / Spiker50 / Fuseball250-500-750).
+      - 'Pure-core boundary preserved: no DOM / time / Math.random; deterministic and frame-rate independent.'
