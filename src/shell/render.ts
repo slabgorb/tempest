@@ -739,6 +739,14 @@ export function render(
     ctx.globalAlpha = 1
   }
 
+  // AVOID SPIKES countdown (Story 6-1): while the warp holds the Claw at the rim,
+  // flash the warning so the player knows to rotate off a spiked lane. Blinks via
+  // renderTime; the dive (warning === 0) clears it automatically.
+  if (s.mode === 'warp' && s.warp.warning > 0 && Math.floor(renderTime * 4) % 2 === 0) {
+    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Orbitron', monospace", '#ff5a3c', 18)
+    ctx.shadowBlur = 0
+  }
+
   drawHud(ctx, s, W, H, color)
   ctx.shadowBlur = 0
 }

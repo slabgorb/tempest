@@ -6,7 +6,8 @@ import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
-  rollSpawnKind, rollTankerCargo, WARP_SPEED, MAX_SELECT_LEVEL,
+  rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
+  WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
 } from './rules'
 import { rngInt } from './rng'
 import { qualifiesForHighScore, insertHighScore } from './highscore'
@@ -291,6 +292,8 @@ function startGameAtLevel(s: GameState, level: number): void {
   s.tube = tubeForLevel(level)
   s.spikes = new Array(s.tube.laneCount).fill(0)
   s.warp.progress = 0
+  s.warp.velocity = 0
+  s.warp.warning = 0
   startLevel(s)
 }
 
@@ -340,6 +343,13 @@ function checkLevelClear(s: GameState): void {
     s.events.push({ type: 'level-clear', newLevel: s.level + 1 })
     s.mode = 'warp'
     s.warp.progress = 0
+    s.warp.velocity = WARP_INITIAL_SPEED // dive starts slow, then accelerates (6-1)
+    // AVOID SPIKES grace: hold the Claw at the rim for a beat so the player can
+    // rotate off a spiked lane before the dive commits — but only when a spike
+    // actually threatens AND the displayed level is still low enough to warn.
+    const spikeThreat = s.spikes.some((h) => h > 0)
+    s.warp.warning =
+      spikeThreat && s.level <= WARP_AVOID_SPIKES_MAX_LEVEL ? WARP_AVOID_SPIKES_SECONDS : 0
     s.bullets = []
   }
 }
@@ -353,6 +363,8 @@ function advanceLevel(s: GameState): void {
   s.player.lane = wrapLane(s.tube, s.player.lane)
   startLevel(s)
   s.warp.progress = 0
+  s.warp.velocity = 0
+  s.warp.warning = 0
   s.mode = 'playing'
 }
 
@@ -378,10 +390,19 @@ function resolveWarpSpikeHit(s: GameState): boolean {
   return false
 }
 
-// Advance the warp animation by dt. A spike on the player's lane crashes the Claw
-// mid-warp (death + life loss); otherwise on arrival (progress ≥ 1) advance level.
+// Advance the warp by dt (Story 6-1). First an AVOID SPIKES countdown holds the
+// Claw at the rim — no descent, no crash — so the player can still rotate off a
+// spiked lane. Once it elapses the Claw dives with an accelerating slow→fast
+// speed curve (velocity ramps every frame). A spike on the player's lane crashes
+// the Claw mid-dive (death + life loss); otherwise on arrival (progress ≥ 1) the
+// level advances.
 function stepWarp(s: GameState, dt: number): void {
-  s.warp.progress += dt * WARP_SPEED
+  if (s.warp.warning > 0) {
+    s.warp.warning = Math.max(0, s.warp.warning - dt)
+    return // still at the rim — the dive (and any spike crash) waits for the countdown
+  }
+  s.warp.velocity += warpAccel(s.level) * dt
+  s.warp.progress += s.warp.velocity * dt
   if (resolveWarpSpikeHit(s)) return // crashed onto a spike — do not advance the level
   if (s.warp.progress >= 1) advanceLevel(s)
 }
