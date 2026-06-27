@@ -8,6 +8,10 @@ export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev
 export const MAX_BULLETS = 8
 export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
 export const RESPAWN_DELAY = 1.5      // seconds
+// Fixed lane the Claw returns to after a death (arcade rev-3: segment 14, near
+// rim) — never the death spot. A constant landing lane plus a fully reset board
+// is why the arcade never chain-deaths. Valid in every geometry (15/16 lanes).
+export const RESPAWN_LANE = 14
 export const START_LIVES = 3
 // Highest selectable start level. There are 16 distinct tube geometries
 // (tubeForLevel cycles with period 16), so beyond 16 no new geometry exists.
