@@ -189,3 +189,38 @@ describe('framing — full flow and determinism', () => {
     expect(a.rng).toEqual(b.rng)
   })
 })
+
+// Story 5-9: the select handler must reject NON-FINITE spin. A NaN spin passes the
+// `!== 0` check and, via Math.sign(NaN) = NaN, poisons selectedLevel into NaN;
+// ±Infinity slip through as Math.sign = ±1 and silently step the level. All three
+// are invalid spinner deltas and must be IGNORED — selectedLevel stays put.
+describe('framing — select rejects non-finite spin (Story 5-9)', () => {
+  it('ignores a NaN spin: selectedLevel stays put and is never poisoned to NaN', () => {
+    const out = spin(selectState(1, 5), NaN)
+    expect(modeOf(out)).toBe('select')
+    const lvl = lvlOf(out)
+    expect(Number.isNaN(lvl as number)).toBe(false) // must NOT be poisoned
+    expect(lvl).toBe(5) // unchanged
+  })
+
+  it('ignores +Infinity spin: selectedLevel does not step', () => {
+    const out = spin(selectState(1, 5), Number.POSITIVE_INFINITY)
+    expect(modeOf(out)).toBe('select')
+    expect(lvlOf(out)).toBe(5)
+  })
+
+  it('ignores -Infinity spin: selectedLevel does not step', () => {
+    const out = spin(selectState(1, 5), Number.NEGATIVE_INFINITY)
+    expect(modeOf(out)).toBe('select')
+    expect(lvlOf(out)).toBe(5)
+  })
+
+  // Regression guard: the fix must reject only NON-finite spin. A normal finite
+  // spin must still advance exactly one level — no over-broad guard that drops all
+  // input. This holds in both RED and GREEN.
+  it('still steps selectedLevel on a normal finite spin', () => {
+    const out = spin(selectState(1, 5), 1)
+    expect(modeOf(out)).toBe('select')
+    expect(lvlOf(out)).toBe(6)
+  })
+})
