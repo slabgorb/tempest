@@ -24,7 +24,27 @@ export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade
 export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
-export const WARP_SPEED = 2           // warp progress units per second (0 → 1 in 0.5s)
+// --- Level-clear warp dive (Story 6-1) ---------------------------------------
+// The authentic accelerating "zoom": the Claw starts slow and ramps up, so a
+// player parked on a spiked lane gets a beat to react instead of an instant
+// warp-death. ROM (rev-3) values are 60 Hz per-frame; we map them to dt-driven
+// per-second rates. ROM "along" runs 0x10 → 0xf0 (span 224) over the descent;
+// our warp progress 0 → 1 spans that same range, so 1 along-unit = 1/224 progress.
+export const WARP_ALONG_SPAN = 0xf0 - 0x10  // 224 ROM along-units across the dive
+// Initial dive speed: ROM 0x0200 = 2.0 along-units/frame at 60 Hz → progress/sec.
+export const WARP_INITIAL_SPEED = (2.0 * 60) / WARP_ALONG_SPAN
+// Per-frame ROM acceleration min(level*4, 0x30) + 0x20 is stored in 8.8 fixed
+// point (along-units/frame²); convert to progress/sec². It grows with level —
+// ~0.75s descent at level 1 down to ~0.55s by level 12+ (where it caps at 0x30).
+export function warpAccel(level: number): number {
+  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²
+  return (perFrame8_8 / 256) * (60 * 60) / WARP_ALONG_SPAN
+}
+// AVOID SPIKES countdown: the Claw holds at the rim for this long before the dive
+// begins, but only when a spike actually threatens AND the displayed level is low
+// enough to still warn the player (no hand-holding past level 7).
+export const WARP_AVOID_SPIKES_SECONDS = 0.5
+export const WARP_AVOID_SPIKES_MAX_LEVEL = 7
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth

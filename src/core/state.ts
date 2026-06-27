@@ -68,6 +68,8 @@ export interface SpawnState {
 
 export interface WarpState {
   progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level
+  velocity: number      // dive speed in progress/sec; accelerates each frame (Story 6-1)
+  warning: number       // seconds left on the AVOID SPIKES countdown before the dive (0 = none)
 }
 
 export interface SelectState {
@@ -115,7 +117,7 @@ export function initialState(seed: number): GameState {
     score: 0,
     lives: START_LIVES,
     spawn: spawnForLevel(1),
-    warp: { progress: 0 },
+    warp: { progress: 0, velocity: 0, warning: 0 },
     select: { selectedLevel: 1 },
     entry: null,
     highScoreTable: [],
