@@ -96,8 +96,12 @@ const neutral = (s: GameState): GameState => stepGame(s, NEUTRAL, DT)
 // Confirm the letter at alphabet offset (0='A') for the current position:
 // spin up `offset` times (currentLetter resets to 'A' at each new position),
 // then fire to confirm.
+// Confirm one letter as a genuine DISCRETE tap: release fire first, then press.
+// Confirm is edge-triggered (Story 6-2: the shell now holds `fire` every frame,
+// so a multi-frame tap must register as one letter, not many).
 function enter(s: GameState, offset: number): GameState {
   for (let i = 0; i < offset; i++) s = spin(s, 1)
+  s = neutral(s) // release between confirms
   return fire(s)
 }
 
@@ -200,7 +204,7 @@ describe('highscore entry — completion inserts and returns to attract', () => 
       { name: 'YYY', score: 100, level: 1 },
     ]
     let s = entryState({ score: 5000, level: 4, table: existing })
-    s = fire(s); s = fire(s); s = fire(s) // 'AAA'
+    s = enter(s, 0); s = enter(s, 0); s = enter(s, 0) // 'AAA' (three discrete taps)
     expect(modeOf(s)).toBe('attract')
     expect(tableOf(s).map((e) => e.name)).toEqual(['ZZZ', 'AAA', 'YYY'])
     expect(tableOf(s).map((e) => e.score)).toEqual([9000, 5000, 100])
@@ -209,14 +213,14 @@ describe('highscore entry — completion inserts and returns to attract', () => 
   // AC5 (purity): core cannot call Date — the inserted entry carries no date.
   it('does not stamp a date on the inserted entry (core is pure)', () => {
     let s = entryState({ score: 1, level: 1, table: [] })
-    s = fire(s); s = fire(s); s = fire(s)
+    s = enter(s, 0); s = enter(s, 0); s = enter(s, 0)
     expect(tableOf(s)[0].date).toBeUndefined()
   })
 
   // AC3: completion fires only on the 3rd confirm, not before.
   it('does not complete prematurely: after 2 confirms it stays in entry, board untouched', () => {
     let s = entryState({ score: 1234, level: 7, table: [] })
-    s = fire(s); s = fire(s) // only 2
+    s = enter(s, 0); s = enter(s, 0) // only 2 (each a discrete tap)
     expect(modeOf(s)).toBe('highscore')
     expect(entryOf(s)?.charIndex).toBe(2)
     expect(tableOf(s)).toHaveLength(0)
@@ -292,5 +296,50 @@ describe('highscore entry — determinism, purity, RNG', () => {
     const snapshot = JSON.parse(JSON.stringify(entryOf(base)))
     fire(base)
     expect(entryOf(base)).toEqual(snapshot)
+  })
+})
+
+describe('highscore entry — fire is edge-triggered, not level-triggered (Story 6-2 regression)', () => {
+  // Story 6-2 removed the shell AUTOFIRE_MS throttle, so the shell now delivers
+  // `fire` on EVERY frame the button is held. A real button tap spans several
+  // frames, so a LEVEL-triggered confirm registers one tap as many confirms and
+  // marches through all three initials. Confirm must fire on the RISING EDGE:
+  // one tap = one letter, however long the button is held. This is exactly the
+  // 4-3 design intent ("a fresh fire press is required per letter"), now enforced.
+
+  // A single tap held for several frames confirms exactly ONE letter.
+  it('confirms exactly one letter for a single multi-frame tap (held fire)', () => {
+    let s = entryState({ table: [] }) // fresh entry at A, charIndex 0
+    for (let i = 0; i < 6; i++) s = fire(s) // one tap, held 6 frames (never released)
+    expect(entryOf(s)?.charIndex).toBe(1) // exactly one confirm, not six
+    expect(entryOf(s)?.initials).toBe('A')
+    expect(modeOf(s)).toBe('highscore') // not marched through to completion
+  })
+
+  // The reported bug: at gameover a mouse click sets BOTH start and fire; the
+  // click enters highscore, then the still-held button must NOT auto-fill "AAA".
+  it('does not auto-fill initials when the restart click is held into highscore', () => {
+    // A mouse restart click delivers start + fire together for the press duration.
+    let s = stepGame(gameoverState(5000, []), { ...NEUTRAL, start: true, fire: true }, DT)
+    expect(modeOf(s)).toBe('highscore') // entered initials entry
+    for (let i = 0; i < 6; i++) s = stepGame(s, { ...NEUTRAL, fire: true }, DT) // button still down
+    expect(modeOf(s)).toBe('highscore') // still entering — NOT bounced to attract
+    expect(entryOf(s)).not.toBeNull()
+    expect(tableOf(s)).toHaveLength(0) // nothing auto-inserted
+  })
+
+  // Guard (stays green after the fix): a held tap followed by a release confirms
+  // one letter per tap, so genuine three-tap entry still completes correctly.
+  it('confirms one letter per tap when the button is released between taps', () => {
+    let s = entryState({ score: 1234, level: 7, table: [] })
+    for (let i = 0; i < 3; i++) {
+      s = fire(s) // tap...
+      s = fire(s) // ...still held — must not double-confirm
+      s = neutral(s) // release before the next tap
+    }
+    expect(modeOf(s)).toBe('attract') // exactly three confirms completed it
+    expect(entryOf(s)).toBeNull()
+    expect(tableOf(s)).toHaveLength(1)
+    expect(tableOf(s)[0].name).toBe('AAA')
   })
 })
