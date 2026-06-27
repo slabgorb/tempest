@@ -8,6 +8,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // so the RED failure below comes from the (not-yet-implemented) shell module.
 import type { HighScoreEntry, HighScoreTable } from '../../src/core/highscore'
 import { loadHighScores, saveHighScores } from '../../src/shell/storage'
+// Read the shell source as text (Vite `?raw`, no Node `fs` types) for the
+// signature-level AC check below — the same browser-pure idiom as events.test.ts.
+import storageSrc from '../../src/shell/storage.ts?raw'
 
 // The persisted key is part of the public contract (other code / future stories
 // read this same key), so we assert the literal rather than re-importing it.
@@ -202,5 +205,134 @@ describe('saveHighScores', () => {
   it('does not throw when accessing localStorage throws', () => {
     setThrowingLocalStorage()
     expect(() => saveHighScores(SAMPLE_TABLE)).not.toThrow()
+  })
+})
+
+// ---- loadHighScores: per-entry validation guard (Story 5-8) -----------------
+//
+// Pre-5-8, loadHighScores validates ARRAY SHAPE only (Array.isArray) and then
+// `return parsed as HighScoreTable` — a corrupt-but-array payload like `[{}]` or
+// `[{name:9,score:'x'}]` sails straight through to the renderer, which reads
+// entry.name / entry.score / entry.level (render.ts:394-395) and prints garbage.
+// Story 5-8 adds a per-entry `isHighScoreEntry` guard so only well-formed rows
+// survive (bad rows dropped; `[]` if none).
+//
+// TEA contract pinned here ("well-formed" == correct field TYPES):
+//   - name  : typeof === 'string'
+//   - score : typeof === 'number'
+//   - level : typeof === 'number'
+//   - date  : optional; survivors keep it (the existing "preserves entry shape"
+//             test forbids reconstructing entries with a spurious `date` key, so
+//             the guard must FILTER, not rebuild).
+// NOT pinned: finiteness of score/level. NaN cannot survive JSON.parse, so the
+// only reachable non-finite case is numeric overflow (1e999 → Infinity); that
+// edge is raised as a non-blocking Delivery Finding rather than constrained here,
+// keeping the guard contract exactly matching the story's type-shape examples.
+describe('loadHighScores — per-entry validation guard (Story 5-8)', () => {
+  const loadFrom = (payload: unknown): HighScoreTable => {
+    setLocalStorage(makeFakeStorage({ [STORAGE_KEY]: JSON.stringify(payload) }))
+    return loadHighScores()
+  }
+
+  // The two corruption shapes named verbatim in the story.
+  it('drops an empty-object entry ([{}] → [])', () => {
+    expect(loadFrom([{}])).toEqual([])
+  })
+
+  it('drops a wrong-typed entry ([{name:9, score:"x"}] → [])', () => {
+    expect(loadFrom([{ name: 9, score: 'x' }])).toEqual([])
+  })
+
+  // Each required field, individually missing → entry is not well-formed.
+  it('drops entries missing any required field (name | score | level)', () => {
+    expect(loadFrom([{ score: 100, level: 3 }])).toEqual([]) // no name
+    expect(loadFrom([{ name: 'ABC', level: 3 }])).toEqual([]) // no score
+    expect(loadFrom([{ name: 'ABC', score: 100 }])).toEqual([]) // no level
+  })
+
+  // Each required field, individually wrong-typed → dropped.
+  it('drops entries whose required fields have the wrong type', () => {
+    expect(loadFrom([{ name: 9, score: 100, level: 3 }])).toEqual([]) // name not string
+    expect(loadFrom([{ name: 'ABC', score: '100', level: 3 }])).toEqual([]) // score not number
+    expect(loadFrom([{ name: 'ABC', score: 100, level: '3' }])).toEqual([]) // level not number
+  })
+
+  // Array members that are not objects at all.
+  it('drops non-object array members (null, number, string, boolean, array)', () => {
+    expect(loadFrom([null, 42, 'AAA', true, []])).toEqual([])
+  })
+
+  // The renderer never sees a malformed row: an all-garbage array collapses to [].
+  it('returns [] when every entry is malformed', () => {
+    const garbage: unknown[] = [
+      {},
+      { name: 9, score: 'x' },
+      { name: 'ABC', score: 100 },
+      { score: 100, level: 3 },
+      null,
+      42,
+      'AAA',
+      true,
+      [],
+    ]
+    expect(loadFrom(garbage)).toEqual([])
+  })
+
+  // Partial corruption: keep ONLY the well-formed rows, in order, with the
+  // optional `date` preserved on survivors.
+  it('keeps only the well-formed rows from a mixed array, preserving order and date', () => {
+    const mixed: unknown[] = [
+      { name: 'AAA', score: 50000, level: 9, date: '2026-06-26T00:00:00.000Z' }, // keep
+      {}, // drop
+      { name: 'BOB', score: 30000, level: 5 }, // keep
+      { name: 9, score: 'x' }, // drop
+      null, // drop
+      { name: 'CDE', score: 10000, level: 2 }, // keep
+    ]
+    expect(loadFrom(mixed)).toEqual([
+      { name: 'AAA', score: 50000, level: 9, date: '2026-06-26T00:00:00.000Z' },
+      { name: 'BOB', score: 30000, level: 5 },
+      { name: 'CDE', score: 10000, level: 2 },
+    ])
+  })
+
+  // The guard must not OVER-reject: a fully well-formed table returns unchanged.
+  it('returns a fully well-formed table unchanged', () => {
+    expect(loadFrom(SAMPLE_TABLE)).toEqual(SAMPLE_TABLE)
+  })
+
+  // Fail-safe parity with corrupt JSON: a garbage array must never throw.
+  it('never throws on a garbage array payload', () => {
+    expect(() => loadFrom([{}, null, { name: 1 }])).not.toThrow()
+  })
+})
+
+// ---- saveHighScores: readonly parameter (Story 5-8) -------------------------
+//
+// Story 5-8 widens the parameter to `readonly HighScoreEntry[]` (saveHighScores
+// never mutates its input). Two enforcement layers, because the test runner
+// (esbuild) strips types while the type runner (`tsc --noEmit`) does not:
+//   1. compile-time — the `readonlyTable` annotation below only type-checks once
+//      the signature is widened (a `readonly[]` is NOT assignable to a mutable
+//      `[]` parameter), so this is the real gate under `tsc --noEmit`.
+//   2. source-text — the declared signature literally names `readonly`, giving the
+//      type-stripped vitest run its own RED signal for the AC.
+describe('saveHighScores — readonly parameter (Story 5-8)', () => {
+  it('accepts a readonly HighScoreEntry[] and round-trips it', () => {
+    setLocalStorage(makeFakeStorage())
+    const readonlyTable: readonly HighScoreEntry[] = SAMPLE_TABLE
+    saveHighScores(readonlyTable)
+    expect(loadHighScores()).toEqual(SAMPLE_TABLE)
+  })
+
+  it('does not mutate a frozen input table', () => {
+    setLocalStorage(makeFakeStorage())
+    const frozen: readonly HighScoreEntry[] = Object.freeze(SAMPLE_TABLE.map((e) => ({ ...e })))
+    expect(() => saveHighScores(frozen)).not.toThrow()
+    expect(frozen).toEqual(SAMPLE_TABLE)
+  })
+
+  it('declares its parameter `readonly` in the source signature', () => {
+    expect(storageSrc).toMatch(/export function saveHighScores\s*\([^)]*\breadonly\b[^)]*\)/)
   })
 })

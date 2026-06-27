@@ -5,6 +5,8 @@
 // localStorage persistence seam (shell/storage.ts, story 4-4) imports these
 // types — the dependency points shell → core, never the reverse.
 
+import { MAX_HIGH_SCORES } from './rules'
+
 export interface HighScoreEntry {
   name: string          // player initials (3 chars, arcade convention)
   score: number         // points
@@ -16,8 +18,9 @@ export interface HighScoreEntry {
 // state machine's concern (4-3); the persistence seam stores whatever it is given.
 export type HighScoreTable = HighScoreEntry[]
 
-import { MAX_HIGH_SCORES } from './rules'
-
+// Precondition: `table` is assumed sorted DESCENDING by score (lowest entry
+// last) — the order insertHighScore maintains; the full-board branch below reads
+// table[length-1] as the lowest qualifying score.
 // True when `score` is worth recording. A non-positive score never qualifies.
 // While the board has open slots, any positive score makes it; once full, the
 // score must STRICTLY beat the lowest entry to displace it (a tie does not).
