@@ -25,6 +25,7 @@ const DEFAULT_BASE_URL = 'https://arcade-assets.slabgorb.com/tempest/sfx/'
 // Filenames are exact (R2 keys are case-sensitive).
 const SOUNDS = {
   fire: 'shot.wav', // player bullet fired
+  enemyFire: 'enemyfire.wav', // an enemy fired an energy bolt (6-5 hook; asset baked by 6-6)
   enemyDeath: 'explo.wav', // an enemy was destroyed
   playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim
   playerDeath: 'shipexplosion.wav', // the Claw was destroyed
