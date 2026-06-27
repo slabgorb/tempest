@@ -149,6 +149,47 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   }
 }
 
+// Enemy energy bolts (Story 6-5): a white 4-hook pinwheel around a red 4-dot
+// cross, spinning as it rides down its lane toward the rim. Rotation is derived
+// from depth so it stays deterministic with the sim. (Deeper shape fidelity to
+// the ROM glyph is 6-8's remit.)
+function drawEnemyBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
+  for (const b of s.enemyBullets) {
+    const p = project(s.tube, b.lane, b.depth)
+    const size = 4 + b.depth * 6      // grows as it nears the player
+    const spin = b.depth * Math.PI * 4 // four spin frames over the descent
+    ctx.save()
+    ctx.translate(p.x, p.y)
+    ctx.rotate(spin)
+    // White pinwheel: a hook off each of four corners.
+    ctx.strokeStyle = '#ffffff'
+    ctx.shadowColor = '#ffffff'
+    ctx.shadowBlur = 12
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2
+      const cx = Math.cos(a) * size
+      const cy = Math.sin(a) * size
+      ctx.moveTo(cx, cy)
+      ctx.lineTo(cx + Math.cos(a + Math.PI / 2) * size * 0.6,
+                 cy + Math.sin(a + Math.PI / 2) * size * 0.6)
+    }
+    ctx.stroke()
+    // Red central 4-dot cross.
+    ctx.fillStyle = '#ff3030'
+    ctx.shadowColor = '#ff3030'
+    ctx.shadowBlur = 10
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2
+      ctx.beginPath()
+      ctx.arc(Math.cos(a) * size * 0.45, Math.sin(a) * size * 0.45, 1.6, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+}
+
 function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void {
   const tube = s.tube
   const p = project(tube, e.lane, e.depth)
@@ -741,6 +782,7 @@ export function render(
     const ordered = s.enemies.slice().sort((a, b) => a.depth - b.depth)
     for (const e of ordered) drawEnemy(ctx, s, e)
     drawBullets(ctx, s)
+    drawEnemyBullets(ctx, s)
     drawPlayer(ctx, s)
   }
   drawParticles(ctx, fx)

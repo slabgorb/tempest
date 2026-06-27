@@ -49,6 +49,51 @@ export function warpAccel(level: number): number {
 // enough to still warn the player (no hand-holding past level 7).
 export const WARP_AVOID_SPIKES_SECONDS = 0.5
 export const WARP_AVOID_SPIKES_MAX_LEVEL = 7
+// --- Enemy energy bolts (Story 6-5), authentic rev-3 -------------------------
+// Max concurrent enemy bolts on screen (ROM n_enemy_bullets = 4). A hard cap;
+// it is also what makes the per-live-bolt fire odds self-limiting.
+export const MAX_ENEMY_BULLETS = 4
+// An enemy must be at least this far up the well ("along >= 0x30") before it may
+// fire — freshly spawned enemies near the far end stay silent.
+export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
+// ...and stops firing once it reaches the arrival zone: an enemy at the rim is
+// grabbing/splitting, not shooting. This also keeps every bolt dodgeable — a
+// point-blank shot from the rim would leave the player no lane to rotate to.
+export const ENEMY_FIRE_MAX_DEPTH = 0.9   // == TANKER_SPLIT_DEPTH; at/after this they grab or split
+// A bolt's depth/sec beyond its level's flipper speed ("flipper-relative +0xc0"),
+// so a bolt always OUTRUNS a flipper. L1 ≈ 0.18 + 0.72 = 0.9 (ROM ~-202/s).
+export const ENEMY_BOLT_SPEED_OFFSET = 0.72
+
+// WHO may fire (the can-shoot bit, gate L028a 0x40). User decision 2026-06-27:
+// match the literal rev-3 code — Flippers, Tankers and Spikers always; Pulsars
+// only at level 60+; Fuseballs never.
+export function enemyCanShoot(kind: EnemyKind, level: number): boolean {
+  switch (kind) {
+    case 'flipper': return true
+    case 'tanker':  return true
+    case 'spiker':  return true
+    case 'pulsar':  return level >= 60
+    case 'fuseball': return false
+  }
+}
+
+// Self-limiting fire probability indexed by the number of LIVE enemy bolts
+// (enm_shoot threshold table): 0 → ~100%, 1 → 1/8, 2 → 1/16, 3 → ~2.3%, 4 → ~0.4%.
+const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]
+export function enemyFireChance(liveBolts: number): number {
+  const i = Math.min(Math.max(liveBolts, 0), ENEMY_FIRE_CHANCE.length - 1)
+  return ENEMY_FIRE_CHANCE[i]
+}
+
+// Per-level refire holdoff in 60 Hz frames (shot_holdoff): L1 80, ramping down by
+// 3/level to L20 23, then 20 for L21-64, then 10 for L65+. Never increases.
+export function enemyFireHoldoffFrames(level: number): number {
+  if (level >= 65) return 10
+  if (level >= 21) return 20
+  if (level <= 1) return 80
+  return 80 - 3 * (level - 1)   // L2..L20: 77 → 23
+}
+
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth

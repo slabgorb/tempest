@@ -8,8 +8,10 @@ import {
   SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
+  MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
+  enemyCanShoot, enemyFireChance, enemyFireHoldoffFrames,
 } from './rules'
-import { rngInt } from './rng'
+import { rngInt, rngNext } from './rng'
 import { qualifiesForHighScore, insertHighScore } from './highscore'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
@@ -22,6 +24,7 @@ function cloneState(s: GameState): GameState {
     ...s,
     player: { ...s.player },
     bullets: s.bullets.map((b) => ({ ...b })),
+    enemyBullets: s.enemyBullets.map((b) => ({ ...b })),
     enemies: s.enemies.map((e) => ({ ...e })),
     spikes: s.spikes.slice(),
     spawn: { ...s.spawn },
@@ -164,6 +167,89 @@ function stepEnemies(s: GameState, dt: number): void {
   s.enemies = moved
 }
 
+// --- Enemy energy bolts (Story 6-5) ------------------------------------------
+
+// A bolt's depth/sec for the level — always faster than a flipper of that level
+// (flipper-relative +offset), so it outruns the enemies it is fired past.
+function enemyBoltSpeed(level: number): number {
+  return levelParams(level).flipperSpeed + ENEMY_BOLT_SPEED_OFFSET
+}
+
+// Per-frame enemy fire decision (enm_shoot). First ticks every enemy's refire
+// cooldown; then, for each enemy that may shoot, is far enough up the well, is off
+// cooldown, and wins the self-limiting RNG roll (against the live-bolt count),
+// spawns a bolt at the enemy and emits the enemy-fire SFX event (6-6 hook). Hard-
+// capped at MAX_ENEMY_BULLETS. Draws from the SEPARATE fireRng so the decision
+// never perturbs the movement RNG (and keeps existing seeds reproducible).
+function stepEnemyFire(s: GameState, dt: number): void {
+  for (const e of s.enemies) {
+    if (e.fireCooldown !== undefined && e.fireCooldown > 0) {
+      e.fireCooldown = Math.max(0, e.fireCooldown - dt)
+    }
+  }
+  if (!s.player.alive) return
+  const holdoffSeconds = enemyFireHoldoffFrames(s.level) / 60
+  for (const e of s.enemies) {
+    if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break // hard cap
+    if (!enemyCanShoot(e.kind, s.level)) continue
+    if (e.depth < ENEMY_FIRE_MIN_DEPTH || e.depth >= ENEMY_FIRE_MAX_DEPTH) continue
+    if ((e.fireCooldown ?? 0) > 0) continue
+    const roll = rngNext(s.fireRng)
+    s.fireRng = roll.rng
+    if (roll.value < enemyFireChance(s.enemyBullets.length)) {
+      s.enemyBullets.push({ lane: e.lane, depth: e.depth })
+      s.events.push({ type: 'enemy-fire', lane: e.lane, depth: e.depth })
+      e.fireCooldown = holdoffSeconds
+    }
+  }
+}
+
+// Bolts ride straight down their lane toward the player at the rim (depth → 1).
+function stepEnemyBullets(s: GameState, dt: number): void {
+  const speed = enemyBoltSpeed(s.level)
+  for (const b of s.enemyBullets) b.depth += speed * dt
+}
+
+// A player shot sharing a bolt's lane (and overlapping in depth) shoots it down;
+// the shot is spent too — one shot, one kill, mirroring bullet↔enemy.
+function resolveEnemyBulletHits(s: GameState): void {
+  if (s.bullets.length === 0 || s.enemyBullets.length === 0) return
+  const deadBullets = new Set<number>()
+  const deadBolts = new Set<number>()
+  s.bullets.forEach((bullet, bi) => {
+    for (let ci = 0; ci < s.enemyBullets.length; ci++) {
+      if (deadBolts.has(ci)) continue
+      const bolt = s.enemyBullets[ci]
+      if (bolt.lane === bullet.lane && Math.abs(bolt.depth - bullet.depth) <= HIT_DEPTH) {
+        deadBullets.add(bi)
+        deadBolts.add(ci)
+        break
+      }
+    }
+  })
+  if (deadBullets.size > 0) s.bullets = s.bullets.filter((_, i) => !deadBullets.has(i))
+  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))
+}
+
+// A bolt reaching the rim on the player's lane kills the Claw (death + life loss).
+// Dodge by rotating off the lane before it arrives.
+function resolveEnemyBoltHits(s: GameState): void {
+  if (!s.player.alive) return
+  const pl = currentLane(s.tube, s.player.lane)
+  const hit = s.enemyBullets.findIndex((b) => b.lane === pl && b.depth >= PLAYER_RIM_DEPTH)
+  if (hit === -1) return
+  s.enemyBullets = s.enemyBullets.filter((_, i) => i !== hit)
+  s.events.push({ type: 'player-death', cause: 'bolt' })
+  killPlayer(s)
+}
+
+// Drop bolts that have travelled past the rim without claiming the player.
+function cullEnemyBullets(s: GameState): void {
+  if (s.enemyBullets.some((b) => b.depth > 1)) {
+    s.enemyBullets = s.enemyBullets.filter((b) => b.depth <= 1)
+  }
+}
+
 // Enemies that kill the player by reaching its rim segment. Tankers split
 // before the rim; spikers never reach grab depth.
 const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
@@ -233,6 +319,7 @@ function resolveTankerArrivals(s: GameState): void {
 function startLevel(s: GameState): void {
   s.spawn = spawnForLevel(s.level)
   s.bullets = []
+  s.enemyBullets = [] // no lingering enemy bolts across a respawn/level (no chain-death)
   s.player.superzapper = 'full' // rearm the once-per-level Superzapper
 }
 
@@ -448,10 +535,15 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       stepZap(s, input)
       stepBullets(s, dt)
       stepEnemies(s, dt)
+      stepEnemyFire(s, dt)        // enemies decide to fire from their moved positions
+      stepEnemyBullets(s, dt)     // bolts (new and existing) ride down their lanes
       resolveBulletHits(s)
+      resolveEnemyBulletHits(s)   // player shots can destroy enemy bolts
       resolveSpikeHits(s)
       resolveTankerArrivals(s)
+      resolveEnemyBoltHits(s)     // a bolt at the rim on the player's lane kills
       resolvePlayerHits(s)
+      cullEnemyBullets(s)         // retire bolts that flew past the rim
       checkLevelClear(s)
       break
     case 'warp':

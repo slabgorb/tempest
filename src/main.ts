@@ -72,6 +72,9 @@ const loop = createLoop(
         case 'fire':
           audio.play('fire')
           break
+        case 'enemy-fire':
+          audio.play('enemyFire') // 6-5 hook; silent no-op until 6-6 bakes the asset
+          break
         case 'enemy-death':
           audio.play('enemyDeath')
           break

@@ -31,6 +31,7 @@ const ALL_EVENTS: GameEvent[] = [
   { type: 'enemy-death', enemyType: 'flipper', lane: 4, depth: 0.5 },
   { type: 'player-grab', lane: 4, killedBy: 'flipper' },
   { type: 'fire', lane: 4, depth: 1 },
+  { type: 'enemy-fire', lane: 4, depth: 0.5 }, // Story 6-5
   { type: 'warp-spike-crash', lane: 4 },
   { type: 'level-clear', newLevel: 2 },
   { type: 'superzapper-activate', killCount: 3 },
@@ -47,6 +48,7 @@ function discriminant(e: GameEvent): string {
     case 'enemy-death':         return `${e.enemyType}@${e.lane},${e.depth}`
     case 'player-grab':         return `${e.killedBy}@${e.lane}`
     case 'fire':                return `${e.lane},${e.depth}`
+    case 'enemy-fire':          return `${e.lane},${e.depth}`
     case 'warp-spike-crash':    return `${e.lane}`
     case 'level-clear':         return `${e.newLevel}`
     case 'superzapper-activate':return `${e.killCount}`
@@ -60,11 +62,11 @@ function discriminant(e: GameEvent): string {
 }
 
 describe('GameEvent — discriminated union (AC1)', () => {
-  it('covers eight distinct, documented event types', () => {
+  it('covers nine distinct, documented event types', () => {
     const kinds = ALL_EVENTS.map((e) => e.type)
-    expect(new Set(kinds).size).toBe(8)
+    expect(new Set(kinds).size).toBe(9) // 8 from 5-1 + enemy-fire (6-5)
     expect(kinds).toEqual([
-      'enemy-death', 'player-grab', 'fire', 'warp-spike-crash',
+      'enemy-death', 'player-grab', 'fire', 'enemy-fire', 'warp-spike-crash',
       'level-clear', 'superzapper-activate', 'player-spawn', 'player-death',
     ])
   })
@@ -79,13 +81,14 @@ describe('GameEvent — discriminated union (AC1)', () => {
     expect(discriminant({ type: 'superzapper-activate', killCount: 7 })).toBe('7')
   })
 
-  it('admits all three documented player-death causes', () => {
+  it('admits all four documented player-death causes', () => {
     const causes: GameEvent[] = [
       { type: 'player-death', cause: 'grab' },
       { type: 'player-death', cause: 'pulse' },
       { type: 'player-death', cause: 'spike' },
+      { type: 'player-death', cause: 'bolt' }, // Story 6-5
     ]
-    expect(causes.map(discriminant)).toEqual(['grab', 'pulse', 'spike'])
+    expect(causes.map(discriminant)).toEqual(['grab', 'pulse', 'spike', 'bolt'])
   })
 })
 

@@ -39,6 +39,14 @@ export interface FireEvent {
   depth: number
 }
 
+// An enemy fired an energy bolt (Story 6-5). `lane`/`depth` mark the spawn point;
+// this is the hook the shell's SFX engine consumes for the enemy-fire cue (6-6).
+export interface EnemyFireEvent {
+  type: 'enemy-fire'
+  lane: number
+  depth: number
+}
+
 // The Claw crashed onto a spike during the warp descent.
 export interface WarpSpikeCrashEvent {
   type: 'warp-spike-crash'
@@ -68,13 +76,14 @@ export interface PlayerSpawnEvent {
 // The Claw died; `cause` distinguishes the death channel for cue selection.
 export interface PlayerDeathEvent {
   type: 'player-death'
-  cause: 'grab' | 'pulse' | 'spike'
+  cause: 'grab' | 'pulse' | 'spike' | 'bolt'
 }
 
 export type GameEvent =
   | EnemyDeathEvent
   | PlayerGrabEvent
   | FireEvent
+  | EnemyFireEvent
   | WarpSpikeCrashEvent
   | LevelClearEvent
   | SuperzapperActivateEvent

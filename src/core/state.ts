@@ -24,12 +24,21 @@ export interface Bullet {
   depth: number         // 1 (near, just fired) → 0 (far)
 }
 
+// An enemy energy bolt (Story 6-5). Mirrors a Bullet but travels the OTHER way:
+// spawned at the firing enemy and climbing toward the player at the rim, so its
+// depth INCREASES (0 = far → 1 = near rim). No tracking — it rides one lane.
+export interface EnemyBullet {
+  lane: number          // integer lane the bolt travels down
+  depth: number         // 0 (far, at the firing enemy) → 1 (near rim)
+}
+
 export type EnemyKind = 'flipper' | 'tanker' | 'spiker' | 'fuseball' | 'pulsar'
 export type TankerCargo = 'flipper' | 'fuseball' | 'pulsar'
 
 interface EnemyBase {
   lane: number          // integer lane
   depth: number         // 0 (far, spawn) → 1 (near rim)
+  fireCooldown?: number // seconds left on the refire holdoff (Story 6-5); absent = ready to fire
 }
 
 export interface Flipper extends EnemyBase {
@@ -91,6 +100,7 @@ export interface GameState {
   tube: Tube
   player: Player
   bullets: Bullet[]
+  enemyBullets: EnemyBullet[]        // enemy energy bolts in flight (6-5), capped at 4
   enemies: Enemy[]
   spikes: number[]      // per-lane spike height in depth units (0 = none)
   score: number
@@ -103,6 +113,8 @@ export interface GameState {
   events: GameEvent[]                // gameplay events emitted this frame (5-1); cleared each step
   prevFire: boolean                  // last frame's input.fire — lets menu confirms edge-trigger (6-2)
   rng: Rng
+  fireRng: Rng                       // SEPARATE stream for enemy-fire rolls (6-5), so fire decisions
+                                     // never desync the movement RNG (mirrors the ROM's pokey1_rand)
 }
 
 export function initialState(seed: number): GameState {
@@ -113,6 +125,7 @@ export function initialState(seed: number): GameState {
     tube,
     player: { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' },
     bullets: [],
+    enemyBullets: [],
     enemies: [],
     spikes: new Array(tube.laneCount).fill(0),
     score: 0,
@@ -125,5 +138,7 @@ export function initialState(seed: number): GameState {
     events: [],
     prevFire: false,
     rng: makeRng(seed),
+    // Derive a distinct seed so the fire stream is decorrelated from movement.
+    fireRng: makeRng(seed ^ 0x9e3779b9),
   }
 }
