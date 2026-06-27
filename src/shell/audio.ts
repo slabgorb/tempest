@@ -15,7 +15,10 @@
 // Scope (5-2): the engine + sound manifest only. Mapping `GameEvent`s to sound
 // names and draining `state.events` each frame is Story 5-5's job.
 
-const DEFAULT_BASE_URL = 'https://arcade.slabgorb.com/tempest/sfx/'
+// R2 samples live on the dedicated assets host. arcade.slabgorb.com itself now
+// routes to the game's Cloudflare tunnel (the Vite origin), so the .wav samples
+// were moved to the arcade-assets custom domain to keep them edge-served.
+const DEFAULT_BASE_URL = 'https://arcade-assets.slabgorb.com/tempest/sfx/'
 
 // Logical sound name -> R2 filename. Keyed to the gameplay moments the 5-1
 // `GameEvent` channel reports, so 5-5's event->sound wiring is a thin lookup.
