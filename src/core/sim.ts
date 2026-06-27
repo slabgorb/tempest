@@ -4,7 +4,7 @@ import { Input } from './input'
 import { wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
-  PLAYER_RIM_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams, spawnForLevel,
+  PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
@@ -275,9 +275,15 @@ function respawn(s: GameState): void {
     advanceLevel(s)
     return
   }
-  // Normal mid-level death: clear enemies already at the rim so the player isn't
-  // killed on the same frame.
-  s.enemies = s.enemies.filter((e) => e.depth < PLAYER_RIM_DEPTH)
+  // Normal mid-level death: FULLY RESET the board (arcade rev-3 model). Every
+  // enemy is removed, shots are cleared and the spawn budget is re-armed; the
+  // Claw returns to a FIXED lane near the rim (segment 14) on the SAME level.
+  // There are NO invulnerability frames — the cleared board plus the spawn delay
+  // before the next wave IS the grace, which is why the arcade never chain-deaths
+  // on a blocked/crowded lane.
+  s.enemies = []
+  s.player.lane = RESPAWN_LANE
+  startLevel(s) // clears bullets, re-arms the spawn budget + Superzapper for this level
   s.mode = 'playing'
   s.events.push({ type: 'player-spawn', lane: currentLane(s.tube, s.player.lane) })
 }
