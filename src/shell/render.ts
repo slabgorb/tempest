@@ -354,17 +354,47 @@ function drawClawIcon(
   ctx.beginPath(); ctx.arc(cx, apexY, 1.6, 0, Math.PI * 2); ctx.fill()
 }
 
-// Centered glowing vector-style text in screen space.
+// Draw `text` at (x, y) with a neon bloom and return the cursor untouched.
+// Vector Battle's thin monoline strokes carry far less "ink" than the old bold
+// face, so a single glow pass reads dim. Stack two additive blurred passes (a
+// wide bloom + a tighter inner glow) under a crisp core so the thin vectors light
+// up like neon without losing definition. Respects the caller's current font /
+// textAlign / textBaseline; save/restore keeps the 'lighter' blend from leaking.
+function glowText(
+  ctx: CanvasRenderingContext2D,
+  text: string, x: number, y: number, color: string, blur: number,
+): void {
+  // Tracking: Vector Battle is a tight vector face, so add ~0.1em letter-spacing
+  // for an airy arcade-marquee look that also helps the thin caps read. Derived
+  // from the current font's px size so every text size gets proportional spacing.
+  // textAlign keeps centred/right text correctly positioned with tracking applied.
+  const px = /(\d+(?:\.\d+)?)px/.exec(ctx.font)
+  ctx.letterSpacing = `${((px ? parseFloat(px[1]) : 16) * 0.1).toFixed(2)}px`
+  ctx.fillStyle = color
+  ctx.shadowColor = color
+  if (blur > 0) {
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.shadowBlur = blur * 1.5
+    ctx.fillText(text, x, y)
+    ctx.shadowBlur = blur * 0.8
+    ctx.fillText(text, x, y)
+    ctx.restore()
+  }
+  ctx.shadowBlur = 0
+  ctx.fillText(text, x, y)
+}
+
+// Centered glowing vector-style text in screen space. Vector Battle is caps-only,
+// so uppercase here keeps the fallback fonts in caps and any dynamic text (e.g.
+// initials) consistent.
 function drawGlowText(
   ctx: CanvasRenderingContext2D,
   text: string, cx: number, y: number, font: string, color: string, blur: number,
 ): void {
   ctx.textAlign = 'center'
   ctx.font = font
-  ctx.fillStyle = color
-  ctx.shadowColor = color
-  ctx.shadowBlur = blur
-  ctx.fillText(text, cx, y)
+  glowText(ctx, text.toUpperCase(), cx, y, color, blur)
 }
 
 // The high-score board (rank · initials · score), monospace-aligned and centered
@@ -378,25 +408,23 @@ function drawHighScoreTable(
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Orbitron', monospace", color, 14)
+  drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Vector Battle', 'Orbitron', monospace", color, 14)
   if (table.length === 0) {
     drawGlowText(
       ctx, '- NO SCORES YET -', cx, top + 40,
-      "500 18px 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
+      "500 18px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
     )
     ctx.restore()
     return
   }
-  ctx.font = "500 18px 'Orbitron', monospace"
+  ctx.font = "500 18px 'Vector Battle', 'Orbitron', monospace"
   for (let i = 0; i < Math.min(maxRows, table.length); i++) {
     const e = table[i]
     const rank = String(i + 1).padStart(2, ' ')
-    const name = (e.name || '???').slice(0, 3).padEnd(3, ' ')
+    const name = (e.name || '???').toUpperCase().slice(0, 3).padEnd(3, ' ')
     const score = String(e.score).padStart(7, '0')
-    ctx.fillStyle = i === 0 ? color : '#cfe3ff'
-    ctx.shadowColor = i === 0 ? color : '#6da8ff'
-    ctx.shadowBlur = i === 0 ? 14 : 8
-    ctx.fillText(`${rank}   ${name}   ${score}`, cx, top + 36 + i * 26)
+    const rowColor = i === 0 ? color : '#cfe3ff'
+    glowText(ctx, `${rank}   ${name}   ${score}`, cx, top + 36 + i * 26, rowColor, i === 0 ? 14 : 10)
   }
   ctx.restore()
 }
@@ -429,39 +457,39 @@ function drawAttract(
   // Backdrop behind the title + high-score table for consistent contrast (and a
   // safety net should the playing scene ever leak through here again — see 4-2 F1).
   drawScrim(ctx, W, H)
-  drawGlowText(ctx, 'TEMPEST', W / 2, H * 0.18, "900 96px 'Orbitron', monospace", color, 30)
+  drawGlowText(ctx, 'TEMPEST', W / 2, H * 0.18, "900 96px 'Vector Battle', 'Orbitron', monospace", color, 30)
   drawGlowText(
     ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74,
-    "500 16px 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 8,
+    "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 8,
   )
   drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.42, color, 10)
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
-  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, "700 26px 'Orbitron', monospace", CLAW_COLOR, 18)
+  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, "700 26px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 18)
   ctx.globalAlpha = 1
   drawGlowText(
     ctx, 'CLICK OR ENTER TO START - SPINNER + SPACE TO PLAY', W / 2, H * 0.86 + 34,
-    "500 13px 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
+    "500 13px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
   )
 }
 
 function drawSelect(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
-  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.28, "700 30px 'Orbitron', monospace", color, 16)
+  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.28, "700 30px 'Vector Battle', 'Orbitron', monospace", color, 16)
   drawGlowText(
     ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,
-    "900 72px 'Orbitron', monospace", CLAW_COLOR, 28,
+    "900 72px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 28,
   )
   drawGlowText(
     ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72,
-    "500 16px 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
+    "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
   )
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
   drawGlowText(
     ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32,
-    "700 18px 'Orbitron', monospace", color, 12,
+    "700 18px 'Vector Battle', 'Orbitron', monospace", color, 12,
   )
   ctx.globalAlpha = 1
 }
@@ -469,16 +497,16 @@ function drawSelect(
 function drawEntry(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
-  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, "900 44px 'Orbitron', monospace", color, 24)
+  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, "900 44px 'Vector Battle', 'Orbitron', monospace", color, 24)
   const entry = s.entry
   if (!entry) {
     // Defensive: 'highscore' mode should always carry an entry.
-    drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.5, "700 24px 'Orbitron', monospace", CLAW_COLOR, 14)
+    drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.5, "700 24px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 14)
     return
   }
   drawGlowText(
     ctx, `SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.34,
-    "700 22px 'Orbitron', monospace", '#cfe3ff', 10,
+    "700 22px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 10,
   )
   // Three initial slots: confirmed chars, the active letter (highlighted), blanks.
   const slotW = 84
@@ -492,7 +520,7 @@ function drawEntry(
     if (i < entry.charIndex) ch = entry.initials[i] ?? '_'
     else if (i === entry.charIndex) { ch = entry.currentLetter; active = true }
     if (active) {
-      drawGlowText(ctx, ch, x, y, "900 64px 'Orbitron', monospace", CLAW_COLOR, 22)
+      drawGlowText(ctx, ch, x, y, "900 64px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 22)
       ctx.strokeStyle = CLAW_COLOR
       ctx.shadowColor = CLAW_COLOR
       ctx.shadowBlur = 14
@@ -501,7 +529,7 @@ function drawEntry(
     } else {
       const dim = ch === '_'
       drawGlowText(
-        ctx, ch, x, y, "900 64px 'Orbitron', monospace",
+        ctx, ch, x, y, "900 64px 'Vector Battle', 'Orbitron', monospace",
         dim ? 'rgba(150,190,255,0.4)' : color, dim ? 0 : 12,
       )
     }
@@ -510,7 +538,7 @@ function drawEntry(
   ctx.globalAlpha = blink
   drawGlowText(
     ctx, 'SPIN TO CHANGE - START TO CONFIRM', W / 2, H * 0.78,
-    "500 16px 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
+    "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
   )
   ctx.globalAlpha = 1
 }
@@ -535,40 +563,30 @@ function drawHud(
 ): void {
   ctx.shadowBlur = 0
   ctx.textBaseline = 'top'
+  // Labels: the thin face is fragile small, so render the HUD captions at 13px
+  // (up from 11) in a bright steel-blue with a touch of glow for legibility.
+  const NUM_FONT = "700 22px 'Vector Battle', 'Orbitron', monospace"
+  const LABEL_FONT = "700 13px 'Vector Battle', 'Orbitron', monospace"
+  const LABEL_COLOR = 'rgba(175,210,255,0.9)'
   // Score (left).
-  ctx.font = "700 22px 'Orbitron', monospace"
   ctx.textAlign = 'left'
-  ctx.fillStyle = color
-  ctx.shadowColor = color
-  ctx.shadowBlur = 14
-  ctx.fillText(String(s.score).padStart(6, '0'), 26, 22)
-  ctx.font = "500 11px 'Orbitron', monospace"
-  ctx.fillStyle = 'rgba(150,190,255,0.6)'
-  ctx.shadowBlur = 0
-  ctx.fillText('SCORE', 26, 50)
+  ctx.font = NUM_FONT
+  glowText(ctx, String(s.score).padStart(6, '0'), 26, 22, color, 12)
+  ctx.font = LABEL_FONT
+  glowText(ctx, 'SCORE', 26, 50, LABEL_COLOR, 5)
   // Level (right).
   ctx.textAlign = 'right'
-  ctx.font = "700 22px 'Orbitron', monospace"
-  ctx.fillStyle = color
-  ctx.shadowColor = color
-  ctx.shadowBlur = 14
-  ctx.fillText(String(s.level).padStart(2, '0'), W - 26, 22)
-  ctx.font = "500 11px 'Orbitron', monospace"
-  ctx.fillStyle = 'rgba(150,190,255,0.6)'
-  ctx.shadowBlur = 0
-  ctx.fillText('LEVEL', W - 26, 50)
+  ctx.font = NUM_FONT
+  glowText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, color, 12)
+  ctx.font = LABEL_FONT
+  glowText(ctx, 'LEVEL', W - 26, 50, LABEL_COLOR, 5)
   // High score (top center): the leading board entry, or 0 when the board is empty.
   const hi = s.highScoreTable.length ? s.highScoreTable[0].score : 0
   ctx.textAlign = 'center'
-  ctx.font = "700 22px 'Orbitron', monospace"
-  ctx.fillStyle = color
-  ctx.shadowColor = color
-  ctx.shadowBlur = 14
-  ctx.fillText(String(hi).padStart(6, '0'), W / 2, 22)
-  ctx.font = "500 11px 'Orbitron', monospace"
-  ctx.fillStyle = 'rgba(150,190,255,0.6)'
-  ctx.shadowBlur = 0
-  ctx.fillText('HI-SCORE', W / 2, 50)
+  ctx.font = NUM_FONT
+  glowText(ctx, String(hi).padStart(6, '0'), W / 2, 22, color, 12)
+  ctx.font = LABEL_FONT
+  glowText(ctx, 'HI-SCORE', W / 2, 50, LABEL_COLOR, 5)
   // Remaining lives as little Claw-icon glyphs (the player ship in miniature).
   for (let i = 0; i < s.lives; i++) {
     drawClawIcon(ctx, 36 + i * 26, H - 30, 18, CLAW_COLOR)
@@ -579,17 +597,17 @@ function drawHud(
     // clearly instead of fighting the tube/enemies behind them.
     drawScrim(ctx, W, H)
     ctx.textBaseline = 'middle'
-    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Orbitron', monospace", '#ff3b5c', 26)
+    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Vector Battle', 'Orbitron', monospace", '#ff3b5c', 26)
     drawGlowText(
       ctx, `FINAL SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.28 + 50,
-      "700 22px 'Orbitron', monospace", '#cfe3ff', 12,
+      "700 22px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 12,
     )
     drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.46, color, 8)
     const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
     ctx.globalAlpha = blink
     drawGlowText(
       ctx, 'CLICK OR PRESS ENTER TO PLAY AGAIN', W / 2, H * 0.84,
-      "500 18px 'Orbitron', monospace", '#cfe3ff', 14,
+      "500 18px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 14,
     )
     ctx.globalAlpha = 1
   }
@@ -743,7 +761,7 @@ export function render(
   // flash the warning so the player knows to rotate off a spiked lane. Blinks via
   // renderTime; the dive (warning === 0) clears it automatically.
   if (s.mode === 'warp' && s.warp.warning > 0 && Math.floor(renderTime * 4) % 2 === 0) {
-    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Orbitron', monospace", '#ff5a3c', 18)
+    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Vector Battle', 'Orbitron', monospace", '#ff5a3c', 18)
     ctx.shadowBlur = 0
   }
 
