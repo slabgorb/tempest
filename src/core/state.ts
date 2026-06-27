@@ -101,6 +101,7 @@ export interface GameState {
   entry: HighScoreEntryState | null  // non-null only while mode === 'highscore'
   highScoreTable: HighScoreTable     // in-memory top scores (persistence is 4-6)
   events: GameEvent[]                // gameplay events emitted this frame (5-1); cleared each step
+  prevFire: boolean                  // last frame's input.fire — lets menu confirms edge-trigger (6-2)
   rng: Rng
 }
 
@@ -122,6 +123,7 @@ export function initialState(seed: number): GameState {
     entry: null,
     highScoreTable: [],
     events: [],
+    prevFire: false,
     rng: makeRng(seed),
   }
 }

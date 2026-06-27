@@ -47,7 +47,11 @@ function cycleLetter(letter: string, spin: number): string {
 // neutral input are inert. RNG is never consumed here.
 function stepHighScore(s: GameState, input: Input): void {
   if (!s.entry) return
-  if (input.fire) {
+  // Confirm on the RISING edge of fire only. The shell holds `fire` every frame
+  // while the button is down (6-2), so a level check would march through all
+  // three initials on a single tap — and auto-fill "AAA" when the gameover
+  // restart click is still held as the screen flips to entry.
+  if (input.fire && !s.prevFire) {
     const initials = s.entry.initials + s.entry.currentLetter
     const charIndex = s.entry.charIndex + 1
     if (charIndex >= 3) {
@@ -468,5 +472,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       }
       break
   }
+  // Record this frame's fire so the next frame can detect a fresh press (6-2).
+  s.prevFire = input.fire
   return s
 }
