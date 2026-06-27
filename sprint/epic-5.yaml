@@ -94,9 +94,11 @@ stories:
       Hardening follow-ups from the Epic 4 high-score reviews (4-4 / 4-3 / 4-6). loadHighScores in src/shell/storage.ts currently validates array-shape only (Array.isArray), so a corrupt-but-array localStorage payload such as [{}] or [{name:9,score:'x'}] passes malformed entries through to the renderer, which reads entry.name/score/level. Add an isHighScoreEntry type guard so loadHighScores returns only well-formed {name,score,level} rows (dropping bad ones, or [] if none). Also tidy the API and core types: make saveHighScores(table) take readonly HighScoreEntry[] (it never mutates), move the MAX_HIGH_SCORES import to the top of src/core/highscore.ts, and add a doc-comment to qualifiesForHighScore noting it assumes a descending-sorted table. Context: sprint/archive/4-4-session.md Reviewer Assessment (rule-checker #2/#10) and sprint/archive/4-3-session.md / 4-6-session.md follow-ups.
     points: 1
     priority: p2
-    status: backlog
+    status: in_progress
+    started: '2026-06-27'
     repos: tempest
     workflow: tdd
+    branch: feat/5-8-harden-highscore-persistence
     acceptance_criteria:
       - loadHighScores rejects malformed entries via a per-entry isHighScoreEntry guard so a corrupt-but-array payload never reaches callers; covered by tests feeding arrays of garbage objects.
       - saveHighScores parameter is readonly; MAX_HIGH_SCORES import is at the top of highscore.ts; qualifiesForHighScore documents its sorted-descending precondition.

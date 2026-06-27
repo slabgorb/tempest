@@ -6,9 +6,24 @@
 // (missing, corrupt, unavailable, quota-exceeded storage) degrades gracefully —
 // the game keeps playing, scores just don't persist.
 
-import type { HighScoreTable } from '../core/highscore'
+import type { HighScoreEntry, HighScoreTable } from '../core/highscore'
 
 const STORAGE_KEY = 'tempest-high-scores'
+
+// Per-entry validation for a parsed localStorage payload. Array-shape alone is
+// not enough: a corrupt-but-array value like `[{}]` or `[{name:9,score:'x'}]`
+// would otherwise reach the renderer, which reads entry.name/score/level. A row
+// is well-formed only when its three required fields carry the right TYPES; the
+// optional `date` is left untouched (survivors keep it, absentees stay absent).
+function isHighScoreEntry(value: unknown): value is HighScoreEntry {
+  if (typeof value !== 'object' || value === null) return false
+  const entry = value as Record<string, unknown>
+  return (
+    typeof entry.name === 'string' &&
+    typeof entry.score === 'number' &&
+    typeof entry.level === 'number'
+  )
+}
 
 // Access localStorage defensively: in private-browsing / sandboxed contexts even
 // *reading* the global can throw, and outside a browser it is simply absent.
@@ -22,7 +37,8 @@ function getStorage(): Storage | null {
 }
 
 // Load the persisted table. Returns [] for any unhappy path (absent key,
-// unavailable storage, corrupt JSON, or JSON that is not a table array).
+// unavailable storage, corrupt JSON, or JSON that is not a table array), and
+// drops any individual entries that are not well-formed (see isHighScoreEntry).
 export function loadHighScores(): HighScoreTable {
   const storage = getStorage()
   if (!storage) return []
@@ -41,7 +57,7 @@ export function loadHighScores(): HighScoreTable {
       console.warn(`[storage] high-score data is not a table array; ignoring`)
       return []
     }
-    return parsed as HighScoreTable
+    return parsed.filter(isHighScoreEntry)
   } catch {
     console.warn(`[storage] high-score data is corrupt JSON; ignoring`)
     return []
@@ -49,8 +65,9 @@ export function loadHighScores(): HighScoreTable {
 }
 
 // Persist the table. Swallows write failures (quota exceeded, unavailable
-// storage) so a failed save never crashes the game.
-export function saveHighScores(table: HighScoreTable): void {
+// storage) so a failed save never crashes the game. Takes a `readonly` array —
+// it only serialises the table, never mutates it.
+export function saveHighScores(table: readonly HighScoreEntry[]): void {
   const storage = getStorage()
   if (!storage) return
   try {
