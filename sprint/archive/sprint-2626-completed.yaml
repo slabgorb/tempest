@@ -11,6 +11,7 @@ completed_epics:
   - '2'
   - '4'
   - '3'
+  - '5'
 completed_stories:
   - id: 0-1
     epic: '0'
@@ -227,3 +228,18 @@ completed_stories:
     title: 'Harden high-score persistence: per-entry load validation and readonly save API'
     points: 1
     completed: '2026-06-27'
+  - id: 5-9
+    epic: '5'
+    title: Robustify loop callbacks and select-spin input edges
+    points: 1
+    completed: '2026-06-27'
+  - id: 5-3
+    epic: '5'
+    title: Particle system and screen-shake
+    points: 2
+    completed: '2026-06-25'
+  - id: 5-4
+    epic: '5'
+    title: Render particles, screen-shake, and glow tuning
+    points: 2
+    completed: '2026-06-25'

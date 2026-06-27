@@ -3,7 +3,7 @@ type: epic
 title: Wave 5 — Audio & polish
 description: WebAudio SFX, particle/screen-shake polish, glow tuning.
 priority: p1
-status: backlog
+status: done
 repos: tempest
 stories:
   - id: 5-1
@@ -112,11 +112,15 @@ stories:
       Robustness follow-ups from the Epic 4 reviews (4-5 / 4-2). (1) In src/shell/loop.ts the onModeChange (and draw / sampleInput) callbacks are invoked unguarded — if a callback throws, the requestAnimationFrame chain dies and the game silently halts. Now that 4-6 registers a real onModeChange (save-on-commit), wrap the callback invocation so a throw cannot stop the loop (try/catch in one place, or a documented and enforced "callbacks must not throw" contract). (2) In the select-mode handler in src/core/sim.ts, input.spin is not finite-guarded — a NaN spin passes the !== 0 check and poisons selectedLevel via Math.sign(NaN); guard non-finite spin. (3) Remove the dead s.spikes[2]=0.5 setup line in tests/core/sim.death.test.ts (its assertion was already removed). Context: sprint/archive/4-5-session.md Reviewer Assessment (unguarded callback) and sprint/archive/4-2-session.md Reviewer Assessment (L2 NaN spin, dead test line).
     points: 1
     priority: p3
-    status: backlog
+    status: done
+    started: '2026-06-27'
     repos: tempest
     workflow: tdd
     acceptance_criteria:
       - A throwing onModeChange (or draw) callback does not halt the loop — the RAF chain survives; covered by a loop test that registers a throwing callback.
       - The select-mode handler ignores non-finite input.spin (no selectedLevel poisoning); covered by a core sim test.
       - The dead s.spikes[2]=0.5 line is removed; full suite and typecheck stay clean.
+    completed: '2026-06-27'
     type: chore
+    review_verdict: approved
+completed: '2026-06-27'

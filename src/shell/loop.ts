@@ -8,6 +8,20 @@ const STEP = 1 / 60
 const MAX_FRAME = 0.25
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
+// The shell-supplied callbacks (sampleInput / draw / onModeChange) cross the IO
+// boundary and may throw. frame() reschedules itself with requestAnimationFrame
+// as its LAST act, so an unguarded throw skips that reschedule and silently kills
+// the game (Story 5-9). Run each void callback guarded — log and swallow — so a
+// single bad frame can never stop the loop. sampleInput returns a value, so it is
+// guarded inline with a neutral-input fallback instead.
+function runGuarded(label: string, fn: () => void): void {
+  try {
+    fn()
+  } catch (e: unknown) {
+    console.error(`loop: ${label} callback threw; continuing`, e)
+  }
+}
+
 export interface Loop {
   start(): void
   stop(): void
@@ -47,7 +61,12 @@ export function createLoop(
     // always on >60Hz displays) would read the wheel motion and throw it away
     // before any step uses it. That dropped input is the "laggy spinner" feel.
     if (acc >= STEP) {
-      const input = sampleInput()
+      let input = NEUTRAL
+      try {
+        input = sampleInput()
+      } catch (e: unknown) {
+        console.error('loop: sampleInput callback threw; using neutral input', e)
+      }
       let first = true
       while (acc >= STEP) {
         // Apply the sampled edges (fire/start/spin) only on the first sub-step
@@ -55,16 +74,17 @@ export function createLoop(
         state = stepGame(state, first ? input : NEUTRAL, STEP)
         for (const e of state.events) frameEvents.push(e)
         // Detect mode transitions per sub-step so two transitions in one frame
-        // each fire once, in order.
+        // each fire once, in order. A throwing onModeChange must not stop the loop,
+        // and prevMode must still advance so the same transition can't re-fire.
         if (state.mode !== prevMode) {
-          onModeChange?.(prevMode, state.mode)
+          runGuarded('onModeChange', () => onModeChange?.(prevMode, state.mode))
           prevMode = state.mode
         }
         acc -= STEP
         first = false
       }
     }
-    draw(state, frameEvents)
+    runGuarded('draw', () => draw(state, frameEvents))
     raf = requestAnimationFrame(frame)
   }
 
