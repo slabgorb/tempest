@@ -4,7 +4,7 @@ import { Rng, rngNext } from './rng'
 import type { Enemy, EnemyKind, TankerCargo } from './state'
 
 export const SPIN_SENSITIVITY = 0.15
-export const BULLET_SPEED = 2.0       // depth units per second (near → far)
+export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev-3 frees the slot at ~25 frames / ~0.42s
 export const MAX_BULLETS = 8
 export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
 export const RESPAWN_DELAY = 1.5      // seconds

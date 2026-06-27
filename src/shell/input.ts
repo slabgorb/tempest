@@ -2,7 +2,6 @@
 import { Input } from '../core/input'
 
 const WHEEL_SCALE = 0.01
-const AUTOFIRE_MS = 120
 
 export interface InputController {
   sample(): Input
@@ -17,7 +16,6 @@ export function createInputController(target: HTMLElement): InputController {
   let rightHeld = false
   let mouseHeld = false
   let spaceHeld = false
-  let lastAutoFire = 0
 
   target.addEventListener(
     'wheel',
@@ -34,7 +32,6 @@ export function createInputController(target: HTMLElement): InputController {
     mouseHeld = true
     fireQueued = true
     startQueued = true
-    lastAutoFire = performance.now()
     e.preventDefault()
   })
   window.addEventListener('mouseup', (e: MouseEvent) => {
@@ -59,7 +56,6 @@ export function createInputController(target: HTMLElement): InputController {
       // sample() drives the repeat cadence off `spaceHeld`.
       spaceHeld = true
       fireQueued = true
-      lastAutoFire = performance.now()
       e.preventDefault()
     } else if (e.key === 'Shift') {
       // Superzapper: a single edge per press. The `e.repeat` guard above keeps
@@ -76,14 +72,12 @@ export function createInputController(target: HTMLElement): InputController {
 
   return {
     sample(): Input {
-      const t = performance.now()
       const keySpin = (rightHeld ? 1 : 0) + (leftHeld ? -1 : 0)
 
-      let fire = fireQueued
-      if ((mouseHeld || spaceHeld) && t - lastAutoFire >= AUTOFIRE_MS) {
-        fire = true
-        lastAutoFire = t
-      }
+      // A held button (mouse or space) requests fire on every frame; the core's
+      // 8-shot concurrent cap is the only gate on cadence (Story 6-2). A single
+      // click still fires once via fireQueued.
+      const fire = fireQueued || mouseHeld || spaceHeld
 
       const input: Input = {
         spin: spinAccum + keySpin,
