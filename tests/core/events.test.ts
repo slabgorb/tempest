@@ -37,10 +37,11 @@ const ALL_EVENTS: GameEvent[] = [
   { type: 'superzapper-activate', killCount: 3 },
   { type: 'player-spawn', lane: 4 },
   { type: 'player-death', cause: 'grab' },
+  { type: 'segment-cross', lane: 4 }, // Story 6-10
 ]
 
 // Exhaustive narrowing over the union: the `never` default fails to compile if a
-// NINTH variant is ever added without updating callers, and each arm reads the
+// further variant is ever added without updating callers, and each arm reads the
 // variant's payload field — pinning `enemyType`, `killedBy`, `newLevel`,
 // `killCount`, `cause`, `lane`, `depth` by name at type-check time.
 function discriminant(e: GameEvent): string {
@@ -54,6 +55,7 @@ function discriminant(e: GameEvent): string {
     case 'superzapper-activate':return `${e.killCount}`
     case 'player-spawn':        return `${e.lane}`
     case 'player-death':        return e.cause
+    case 'segment-cross':       return `${e.lane}`
     default: {
       const _exhaustive: never = e
       return _exhaustive
@@ -62,12 +64,13 @@ function discriminant(e: GameEvent): string {
 }
 
 describe('GameEvent — discriminated union (AC1)', () => {
-  it('covers nine distinct, documented event types', () => {
+  it('covers ten distinct, documented event types', () => {
     const kinds = ALL_EVENTS.map((e) => e.type)
-    expect(new Set(kinds).size).toBe(9) // 8 from 5-1 + enemy-fire (6-5)
+    expect(new Set(kinds).size).toBe(10) // 8 from 5-1 + enemy-fire (6-5) + segment-cross (6-10)
     expect(kinds).toEqual([
       'enemy-death', 'player-grab', 'fire', 'enemy-fire', 'warp-spike-crash',
       'level-clear', 'superzapper-activate', 'player-spawn', 'player-death',
+      'segment-cross',
     ])
   })
 

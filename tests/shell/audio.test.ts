@@ -106,3 +106,33 @@ describe('event -> sound wiring (AC#3: enemy-fire event)', () => {
     expect(mainSrc).toMatch(/case 'enemy-fire':\s*audio\.play\('enemyFire'\)/)
   })
 })
+
+// Story 6-10: the authentic segment_tick bake (ROM $cc39 — the cursor/claw
+// line-cross tick) was baked + hosted on R2 by 6-6 but had no game trigger. This
+// story registers it in the manifest and wires it to the new 'segment-cross'
+// core event (emitted when the Claw rotates into a new lane). It reuses the 6-6
+// asset — no new invented audio.
+//
+// NOTE (countdown_beep, ROM $cc69): DEFERRED. Its only authentic trigger is the
+// arcade's level-select timeout, and this clone's select mode has no countdown
+// timer (SelectState is just { selectedLevel }). Rather than invent a timer, the
+// countdown_beep half is scoped out — see the session's Design Deviations. No
+// countdownBeep manifest entry or wiring is added here, so no test asserts it.
+describe('segment-tick cue wiring (story 6-10)', () => {
+  it('loads the authentic segment_tick bake from the R2 base', () => {
+    createAudioEngine().resume()
+    expect(fetched).toContain(R2 + 'segment_tick.wav') // ★ ROM $cc39
+  })
+
+  it('resolves the segment_tick bake against a custom base URL too', () => {
+    createAudioEngine('https://cdn.test/x/').resume()
+    expect(fetched).toContain('https://cdn.test/x/segment_tick.wav')
+  })
+
+  it("plays the segmentTick sample on the core 'segment-cross' event", () => {
+    // Mirrors the enemy-fire wiring above: main.ts maps the new core event to the
+    // segmentTick manifest key. Asserted at the source level (main.ts boots a
+    // canvas and cannot be imported in the node test env).
+    expect(mainSrc).toMatch(/case 'segment-cross':\s*audio\.play\('segmentTick'\)/)
+  })
+})
