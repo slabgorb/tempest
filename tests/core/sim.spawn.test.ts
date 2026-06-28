@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { rollSpawnKind } from '../../src/core/rules'
+import { rollSpawnKind, rollTankerCargo } from '../../src/core/rules'
 import { makeRng } from '../../src/core/rng'
-import type { EnemyKind } from '../../src/core/state'
+import type { EnemyKind, TankerCargo } from '../../src/core/state'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
@@ -23,6 +23,20 @@ function rolledKinds(level: number, seed: number, n = 4000): Set<EnemyKind> {
     r = res.rng
   }
   return kinds
+}
+
+// Sample rollTankerCargo `n` times at `level` and return the set of cargo kinds
+// that can appear. Absence is EXACT (weight-0 cargo is skipped by weightedPick),
+// so a missing cargo type is a real gate, not an unlucky sample.
+function rolledCargo(level: number, seed: number, n = 4000): Set<TankerCargo> {
+  let r = makeRng(seed)
+  const cargo = new Set<TankerCargo>()
+  for (let i = 0; i < n; i++) {
+    const res = rollTankerCargo(level, r)
+    cargo.add(res.cargo)
+    r = res.rng
+  }
+  return cargo
 }
 
 function spawnedKinds(level: number, seed: number): Set<string> {
@@ -98,5 +112,30 @@ describe('spawn mix through the sim (story 6-13)', () => {
     const kinds = spawnedKinds(5, 1)
     expect(kinds.size).toBeGreaterThan(1)
     expect(kinds.has('flipper')).toBe(true)
+  })
+})
+
+// A tanker must not split into an enemy type that has not yet entered the roster.
+// rollSpawnKind gates fuseballs at L11+ and pulsars at L17+, so rollTankerCargo's
+// cargo gates are aligned to match (story 6-13 follow-up): below those levels a
+// tanker carries flippers only, keeping the roster-by-level promise consistent
+// even through tanker splits.
+describe('rollTankerCargo respects the roster introduction schedule (story 6-13 follow-up)', () => {
+  it('carries flippers only before fuseballs enter the roster (below L11)', () => {
+    for (const level of [5, 6, 10]) {
+      expect(rolledCargo(level, 55)).toEqual(new Set<TankerCargo>(['flipper']))
+    }
+  })
+
+  it('introduces fuseball cargo at L11, matching the fuseball roster gate', () => {
+    expect(rolledCargo(10, 66).has('fuseball')).toBe(false)
+    expect(rolledCargo(11, 66).has('fuseball')).toBe(true)
+  })
+
+  it('keeps pulsar cargo out until L17, matching the pulsar roster gate', () => {
+    for (const level of [11, 13, 16]) {
+      expect(rolledCargo(level, 77).has('pulsar')).toBe(false)
+    }
+    expect(rolledCargo(17, 77).has('pulsar')).toBe(true)
   })
 })

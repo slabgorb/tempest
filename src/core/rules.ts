@@ -205,11 +205,16 @@ export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: 
   return { kind: res.value, rng: res.rng }
 }
 
+// Cargo a tanker splits into must respect the same introduction schedule as the
+// roster (story 6-13 follow-up): a tanker cannot carry an enemy type that has not
+// yet entered the game. Gates mirror rollSpawnKind above — fuseball cargo L11+,
+// pulsar cargo L17+ — so a split can never manufacture a pulsar/fuseball before
+// it would otherwise appear. Below those levels a tanker carries flippers only.
 export function rollTankerCargo(level: number, rng: Rng): { cargo: TankerCargo; rng: Rng } {
   const table: ReadonlyArray<readonly [TankerCargo, number]> = [
     ['flipper', 10],
-    ['fuseball', level >= 5 ? 4 : 0],
-    ['pulsar', level >= 5 ? 4 : 0],
+    ['fuseball', level >= 11 ? 4 : 0],
+    ['pulsar', level >= 17 ? 4 : 0],
   ]
   const res = weightedPick(table, rng)
   return { cargo: res.value, rng: res.rng }
