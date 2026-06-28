@@ -174,7 +174,10 @@ vg_sub_image_spiker_1: vstat 12, 5, 1
 ```
 Outward-winding spiral/pinwheel (deltas grow 2→4→…→28/30); 4 frames rotate seed dir 90° (spins).
 Color idx 5. **The spike** = dynamic, NOT a stored glyph: `Lc6c7` l.15827-15891 emits one `vldraw`
-up the lane length ∝ `spike_ht[seg]`, capped with random 4-dot sparkle.
+up the lane, length ∝ `spike_ht[seg]`, capped with a **single white tip dot** (one zero-length
+white point — arcade routine `JADOT: VCTR 0,0,CB`; cross-confirmed Hogan 2026 p.288).
+[Correction 2026-06-27: an earlier "random 4-dot sparkle" gloss here was unsourced (no code block)
+and is superseded — the tip is one white dot, no flicker/randomness.]
 
 **MOTION** — p-code `m_l_spiker` verbatim l.9187-9192:
 ```
@@ -321,6 +324,18 @@ Pulsar L60+/hard only, Fuseball never.**
 > Unconfirmed without running the ROM.
 > **Decision (user, 2026-06-27):** match the literal code — Flippers + Tankers + Spikers all fire +
 > Pulsars @ L60+; Fuseball never.
+>
+> 🚩 **RE-FLAGGED 2026-06-27 (cross-source — STILL OPEN).** A second independent disassembly,
+> Hogan 2026 (*Tempest vs Tempest*, p.272), documents the same flag byte as `INVAC2`
+> (bit7 = direction, bit6 = fire, low-2 = carrier type) — **layout agrees** — but its tabulated
+> values **disagree on who fires**: the **flipper-carrier tanker = `10000001` → fire bit CLEAR
+> (no fire)**; only the **pulsar** (`11000010`) and **fuse** (`01000011`) carriers fire; the plain
+> `00000000` enemy also shows fire bit clear. That points the *opposite* way from the rev-3 reading
+> here (tanker `L028a = tanker_load|$40` → fire bit always set) and actually leans toward the narrower
+> "only some enemies shoot" lore. **Two disassemblies now conflict on whether flipper-tankers (and
+> basic enemies) fire — UNRESOLVED without running the ROM.** The user decision above (match literal
+> rev-3) still stands as the implementation choice, but **tanker/spiker fire is a live verification
+> item**, not settled fact. Cross-ref: `sprint/context/context-story-6-9.md` → Reference Notes.
 
 **Decision routine `enm_shoot` verbatim l.9539-9592:**
 ```
