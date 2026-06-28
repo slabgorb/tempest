@@ -59,6 +59,10 @@ export interface Spiker extends EnemyBase {
 export interface Fuseball extends EnemyBase {
   kind: 'fuseball'
   jitterTimer: number   // seconds until next erratic lane hop
+  // Authentic vulnerable bit (rev-3 L02cc bit7, story 6-9): a fuseball is killable
+  // by a bullet ONLY while `vulnerable` (settled on a lane), NOT while rolling the
+  // rim. It flips each time the fuseball rolls to a new lane (see stepFuseball).
+  vulnerable: boolean
 }
 
 export interface Pulsar extends EnemyBase {

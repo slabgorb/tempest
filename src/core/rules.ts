@@ -111,17 +111,33 @@ export interface LevelParams {
   tankerSpeed: number    // depth units/s climb for tankers
 }
 
+// Authentic rev-3 flipper climb speed (story 6-9). The ROM steps the flipper's
+// climb byte from -1.375 along/frame at L1 to -3.375 at L33+ (then flat), ramping
+// linearly between. The along axis spans 0x10..0xf0 = WARP_ALONG_SPAN units, so a
+// rate of `alongPerFrame` at 60 Hz is (alongPerFrame * 60) / WARP_ALONG_SPAN in
+// our depth/sec. L1 → 82.5/224 = 0.368 depth/s (~2.7 s up the tube); L33+ →
+// 202.5/224 = 0.904 depth/s. Tankers climb at flipper speed; fuseballs at 2×.
+const FLIPPER_ALONG_PER_FRAME_L1 = 1.375
+const FLIPPER_ALONG_PER_FRAME_L33 = 3.375
+export function flipperSpeedForLevel(level: number): number {
+  const t = Math.max(0, Math.min(1, (level - 1) / 32)) // 0 at L1, 1 at L33+, clamped
+  const alongPerFrame =
+    FLIPPER_ALONG_PER_FRAME_L1 + (FLIPPER_ALONG_PER_FRAME_L33 - FLIPPER_ALONG_PER_FRAME_L1) * t
+  return (alongPerFrame * 60) / WARP_ALONG_SPAN
+}
+
 export function levelParams(level: number): LevelParams {
   const ramp = 1 + (level - 1) * 0.15
+  const flipperSpeed = flipperSpeedForLevel(level)
   return {
     enemyCount: 6 + (level - 1) * 2,
-    flipperSpeed: 0.18 * ramp,
+    flipperSpeed,
     flipInterval: Math.max(0.4, 1.5 / ramp),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
     pulseInterval: Math.max(1.2, 3.0 / ramp),
-    fuseballSpeed: 0.26 * ramp,
-    tankerSpeed: 0.14 * ramp,
+    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)
+    tankerSpeed: flipperSpeed,         // tankers climb straight up at flipper speed
   }
 }
 

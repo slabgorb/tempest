@@ -76,7 +76,7 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
 
   it('fuseballs never fire — positive control: the tanker beside it does', () => {
     let s = fireBoard(1, [
-      { kind: 'fuseball', lane: 4, depth: 0.3, jitterTimer: 0 },
+      { kind: 'fuseball', lane: 4, depth: 0.3, jitterTimer: 0, vulnerable: false },
       { kind: 'tanker', lane: 8, depth: 0.4, contains: 'flipper' },
     ])
     const fireLanes = new Set<number>()

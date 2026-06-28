@@ -104,7 +104,7 @@ export function makeEnemy(
     case 'flipper':  return { kind, lane, depth, flipTimer: params.flipInterval }
     case 'tanker':   return { kind, lane, depth, contains: cargo }
     case 'spiker':   return { kind, lane, depth, direction: 1 }
-    case 'fuseball': return { kind, lane, depth, jitterTimer: 0 }
+    case 'fuseball': return { kind, lane, depth, jitterTimer: 0, vulnerable: false }
     case 'pulsar':   return { kind, lane, depth, flipTimer: params.flipInterval, pulseTimer: params.pulseInterval, pulsing: false }
   }
 }
@@ -143,8 +143,25 @@ function stepEnemies(s: GameState, dt: number): void {
         break
       }
       case 'spiker': {
+        const wasDescending = e.direction === -1
         const res = stepSpiker(e, dt, params)
         const sp = res.enemy
+        // Far-end hop (story 6-9): when a descending spiker bottoms out (now
+        // climbing from depth 0), it relocates to a new lane — preferring the one
+        // with the tallest standing spike, or a random lane when none stand yet.
+        if (wasDescending && sp.direction === 1 && sp.depth === 0) {
+          let target = -1
+          let tallest = 0
+          for (let i = 0; i < s.spikes.length; i++) {
+            if (s.spikes[i] > tallest) { tallest = s.spikes[i]; target = i }
+          }
+          if (target === -1) {
+            const roll = rngInt(s.rng, s.tube.laneCount)
+            s.rng = roll.rng
+            target = roll.value
+          }
+          sp.lane = target
+        }
         s.spikes[sp.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(s.spikes[sp.lane], sp.depth))
         moved.push(sp)
         break
@@ -279,6 +296,9 @@ function resolveBulletHits(s: GameState): void {
     for (let ei = 0; ei < s.enemies.length; ei++) {
       if (deadEnemies.has(ei)) continue
       const e = s.enemies[ei]
+      // A fuseball is bullet-proof while rolling the rim — killable by a bullet
+      // only in its on-lane vulnerable phase (story 6-9). Other kinds always hit.
+      if (e.kind === 'fuseball' && !e.vulnerable) continue
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= HIT_DEPTH) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
