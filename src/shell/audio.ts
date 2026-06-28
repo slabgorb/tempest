@@ -32,7 +32,7 @@ const DEFAULT_BASE_URL = 'https://arcade-assets.slabgorb.com/tempest/sfx/'
 const LOCAL = '/tempest/sfx/' // public/sfx under the pinned /tempest/ base
 const SOUNDS = {
   fire: LOCAL + 'player_fire.wav', // ★ authentic bake (ROM $cc5d) — player bullet fired
-  enemyFire: 'enemyfire.wav', // an enemy fired an energy bolt (6-5 hook; authentic bake pending 6-6 AC#3)
+  enemyFire: LOCAL + 'enemy_fire.wav', // ★ authentic ($cc45) — an enemy fired an energy bolt
   enemyDeath: LOCAL + 'enemy_explosion.wav', // ★ authentic ($cc81) — an enemy was destroyed
   playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim (community rip)
   playerDeath: 'shipexplosion.wav', // the Claw was destroyed (community rip)
