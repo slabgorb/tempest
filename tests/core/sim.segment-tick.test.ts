@@ -16,6 +16,7 @@ import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import type { GameState } from '../../src/core/state'
+import type { SegmentCrossEvent } from '../../src/core/events'
 import type { Input } from '../../src/core/input'
 import { currentLane } from '../../src/core/geometry'
 import { SPIN_SENSITIVITY } from '../../src/core/rules'
@@ -23,14 +24,11 @@ import { SPIN_SENSITIVITY } from '../../src/core/rules'
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
-// Loosely-typed read of the discriminant: the 'segment-cross' variant is absent
-// from the GameEvent union pre-GREEN, so the strict eventsOfType<> helper used by
-// the sister suites cannot narrow it. Filtering structurally lets these tests RUN
-// (and FAIL on the empty result) under vitest rather than only erroring in tsc.
-function segmentCrosses(s: GameState): { type: string; lane: number }[] {
-  return s.events.filter(
-    (e) => (e as { type: string }).type === 'segment-cross',
-  ) as unknown as { type: string; lane: number }[]
+// Narrow the event channel to the segment-cross variant with a type predicate —
+// the same idiom as the sister suite's eventsOfType<>. `segment-cross` is a full
+// GameEvent member, so this needs no cast.
+function segmentCrosses(s: GameState): SegmentCrossEvent[] {
+  return s.events.filter((e): e is SegmentCrossEvent => e.type === 'segment-cross')
 }
 
 // A board that isolates pure rotation: no enemies to grab the Claw, a parked
@@ -111,9 +109,9 @@ describe('segment-cross events (story 6-10: authentic segment_tick)', () => {
   })
 
   it('is deterministic: identical seed + input → identical segment-cross stream', () => {
-    const run = (): { type: string; lane: number }[] => {
+    const run = (): SegmentCrossEvent[] => {
       let s = rotatable(99)
-      const all: { type: string; lane: number }[] = []
+      const all: SegmentCrossEvent[] = []
       for (let i = 0; i < 30; i++) {
         s = stepGame(s, { ...NEUTRAL, spin: 2 }, DT)
         all.push(...segmentCrosses(s))
