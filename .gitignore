@@ -24,3 +24,8 @@ tmux.conf
 
 # Audio assets — served from Cloudflare R2 (arcade.slabgorb.com/tempest/sfx/), not committed
 sfx/
+
+# Reference material kept local-only: copyrighted arcade ROM dumps used for SFX
+# extraction, and the large "Tempest vs Tempest" PDF. Not committed.
+docs/rom/
+docs/TempestVsTempest_release.pdf

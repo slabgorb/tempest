@@ -13,14 +13,28 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SFX } from './sfx-data.mjs'
+// Namespace import so the 6-11 catalogue test can read an OPTIONAL `DEFERRED`
+// export without a hard ESM link error before it exists (a named `import
+// { DEFERRED }` would fail to load the whole module until Dev adds the export).
+import * as sfxData from './sfx-data.mjs'
+const { SFX } = sfxData
 
-// The in-scope subset story 6-6 delivers: the SFX with a confirmed sound->ROM
-// address (verified by ear against the real machine). AC#1's full catalogue is
-// 13; the remaining 7 are deferred (segment_tick + countdown_beep have data but
-// no game trigger -> story 6-10; the rest are not yet extracted). See the TEA
-// Delivery Findings in the session for the scope gap on AC#1.
-const IN_SCOPE = {
+// The streaming-engine parity test (story 6-11) drives the bake engine's
+// expandAlsoun / streamVoice / expandStream directly. NAMESPACE import (not a
+// named `import { expandStream }`) on purpose: until Dev's green phase exports
+// those functions, a named import would fail to LINK and take down the whole
+// file — a namespace import just leaves `bake.expandStream` === undefined, so
+// only the parity test fails (its intended RED). NOTE: importing bake-sfx.mjs
+// today also runs its top-level bake as a side effect (writes to the gitignored
+// out/ dir); Dev's green phase adds the isMain guard that makes import inert.
+import * as bake from './bake-sfx.mjs'
+
+// The 6-6 baseline: the six SFX story 6-6 delivered with a confirmed sound->ROM
+// address (verified by ear against the real machine). Story 6-11 expands the
+// catalogue past these six (see the remaining-7 block below), so this is now a
+// regression floor — every baseline sound must stay present at its address — not
+// the full set.
+const BASELINE_6_6 = {
   player_fire: '$cc5d',
   enemy_fire: '$cc45',
   enemy_explosion: '$cc81',
@@ -33,25 +47,55 @@ const here = (rel) => fileURLToPath(new URL(rel, import.meta.url))
 const bakeScript = here('./bake-sfx.mjs')
 
 describe('pokey-bake sfx-data (AC#1: authentic ALSOUN envelope data)', () => {
-  it('encodes every SFX as a pair of 6-byte ALSOUN records (audf + audc)', () => {
+  it('encodes every SFX as a clean ALSOUN record OR a streaming envelope', () => {
+    // 6-6's sounds are single 6-byte records (`spec.alsoun`); 6-11 added
+    // multi-note sounds the engine streams from ALSOUN_STREAM (`spec.stream`).
+    // Every entry must have exactly one of those shapes, plus a name/rom/gain.
+    const stream = sfxData.ALSOUN_STREAM ?? []
     expect(SFX.length).toBeGreaterThan(0)
     for (const spec of SFX) {
       expect(typeof spec.name).toBe('string')
       expect(spec.rom).toMatch(/^\$[0-9a-f]{4}$/i) // CPU address of the ROM record
-      for (const seq of [spec.alsoun.audf, spec.alsoun.audc]) {
-        expect(Array.isArray(seq)).toBe(true)
-        expect(seq).toHaveLength(6) // [value, beats, delta, count, restart, stop]
-        for (const b of seq) {
-          expect(Number.isInteger(b)).toBe(true)
-          expect(b).toBeGreaterThanOrEqual(0)
-          expect(b).toBeLessThanOrEqual(0xff)
-        }
-      }
-      expect(spec.alsoun.audf[5]).toBe(0x00) // stop terminator
-      expect(spec.alsoun.audc[5]).toBe(0x00)
       expect(typeof spec.gain).toBe('number')
       expect(spec.gain).toBeGreaterThan(0)
       expect(spec.gain).toBeLessThanOrEqual(1)
+
+      const isClean = !!spec.alsoun
+      const isStream = !!spec.stream
+      expect(isClean !== isStream, `${spec.name} must be exactly one of alsoun/stream`).toBe(true)
+
+      if (isClean) {
+        for (const seq of [spec.alsoun.audf, spec.alsoun.audc]) {
+          expect(Array.isArray(seq)).toBe(true)
+          expect(seq).toHaveLength(6) // [value, beats, delta, count, restart, stop]
+          for (const b of seq) {
+            expect(Number.isInteger(b)).toBe(true)
+            expect(b).toBeGreaterThanOrEqual(0)
+            expect(b).toBeLessThanOrEqual(0xff)
+          }
+        }
+        expect(spec.alsoun.audf[5]).toBe(0x00) // stop terminator
+        expect(spec.alsoun.audc[5]).toBe(0x00)
+      } else {
+        // streaming: audf/audc start indices into the embedded ALSOUN_STREAM
+        for (const v of [spec.stream.audfStart, spec.stream.audcStart]) {
+          expect(Number.isInteger(v)).toBe(true)
+          expect(v).toBeGreaterThan(0)
+          expect(v).toBeLessThanOrEqual(0xff)
+          // A start index must point at a REAL note INSIDE ALSOUN_STREAM, not past
+          // its end: streamByte() silently returns 0x00 out of bounds, so a typo'd
+          // index degrades the whole sound to SILENCE with no error. Derived from
+          // streamVoice (bake-sfx.mjs): the engine pre-advances Lc0 by 2, then reads
+          // the first 4-byte note record [value,beats,delta,count] at array indices
+          // value @ 2*v-2, beats @ 2*v-1, delta @ 2*v, count @ 2*v+1. All four of
+          // those reads must be in bounds or the sound starts on a phantom 0x00 note.
+          const firstReadIdx = 2 * v - 2
+          const lastReadIdx = 2 * v + 1
+          expect(firstReadIdx, `${spec.name} start ${v}: first-note value byte index >= 0`).toBeGreaterThanOrEqual(0)
+          expect(lastReadIdx, `${spec.name} start ${v}: first-note record stays within ALSOUN_STREAM`).toBeLessThan(stream.length)
+        }
+        expect(stream.length, 'ALSOUN_STREAM data present for streaming SFX').toBeGreaterThan(0)
+      }
     }
   })
 
@@ -61,14 +105,19 @@ describe('pokey-bake sfx-data (AC#1: authentic ALSOUN envelope data)', () => {
     expect(ef.rom).toBe('$cc45')
   })
 
-  it('matches the confirmed in-scope sound->ROM map exactly', () => {
+  it('keeps the 6-6 baseline sounds at their confirmed ROM addresses', () => {
+    // 6-11 expands the catalogue past the original six, so the data set is no
+    // longer exactly BASELINE_6_6 — but every baseline sound must stay present at
+    // its confirmed address (regression floor against an accidental drop/edit).
     const map = Object.fromEntries(SFX.map((s) => [s.name, s.rom]))
-    expect(map).toEqual(IN_SCOPE)
+    for (const [name, rom] of Object.entries(BASELINE_6_6)) {
+      expect(map[name], `${name} baseline preserved`).toBe(rom)
+    }
   })
 })
 
 describe('pokey-bake render pipeline (AC#2: non-silent WAV bake)', () => {
-  it('bakes every in-scope SFX to a non-silent 16-bit WAV with no SILENT warnings', () => {
+  it('bakes every SFX to a non-silent 16-bit WAV with no SILENT warnings', () => {
     const out = mkdtempSync(join(tmpdir(), 'pokey-bake-'))
     try {
       // Drive the real bake end to end through the vendored web-pokey core.
@@ -83,7 +132,9 @@ describe('pokey-bake render pipeline (AC#2: non-silent WAV bake)', () => {
       // warning here means that invariant (or the register data) is broken.
       expect(stdout).not.toMatch(/SILENT/i)
 
-      for (const [name] of Object.entries(IN_SCOPE)) {
+      // Every delivered SFX (6-6 baseline + 6-11 additions) must bake audible.
+      for (const spec of SFX) {
+        const name = spec.name
         const wav = join(out, `${name}.wav`)
         expect(existsSync(wav), `${name}.wav was baked`).toBe(true)
         const buf = readFileSync(wav)
@@ -116,5 +167,206 @@ describe('web-pokey attribution (AC#5: MIT attribution retained)', () => {
     const readme = readFileSync(here('./README.md'), 'utf8')
     expect(readme).toMatch(/web-pokey/i)
     expect(readme).toMatch(/MIT/)
+  })
+})
+
+// ── Story 6-11: the remaining 7 catalogued SFX ───────────────────────────────
+// 6-6 baked 6 of the 13 catalogued POKEY SFX; 6-10 wired segment_tick. This story
+// handles the remaining 7. Of them, only `player_explosion` has an existing game
+// trigger (the core's 'player-death' event — see tests/shell/audio.test.ts), so
+// it MUST be delivered as a playable bake. The other six may lack a confirmable
+// ROM address and/or a game trigger; AC#1 ("any without a confirmable address
+// explicitly noted") and AC#3 ("any without a trigger explicitly scoped or
+// deferred with a documented reason") require each be EITHER delivered OR noted.
+//
+// We make that disposition testable (not buried in prose, as 6-10 did for its
+// single deferral) by requiring sfx-data.mjs to export, alongside SFX:
+//
+//   export const DEFERRED = [{ name: 'pulsar_hum', reason: '...' }, ...]
+//
+// listing every remaining catalogued sound investigated but NOT delivered, each
+// with a substantive reason. Names are matched case-insensitively with '-'/'_'
+// treated alike, so 'spike-shot' and 'spike_shot' are equivalent.
+const CATALOGUED_7 = [
+  'spike_shot',
+  'player_explosion',
+  'pulsar_hum',
+  'pulsar_active',
+  'zoom_start',
+  'extra_life',
+  'slam',
+]
+const norm = (s) => String(s).toLowerCase().replace(/-/g, '_')
+
+describe('pokey-bake remaining-7 catalogue (story 6-11)', () => {
+  it('delivers the authentic player_explosion bake — it has a game trigger (AC#1/#3)', () => {
+    const pe = SFX.find((s) => norm(s.name) === 'player_explosion')
+    expect(
+      pe,
+      'player_explosion must be a delivered SFX entry (wired to player-death), not deferred',
+    ).toBeDefined()
+    // Pin the exact confirmed CPU address. The old /^\$[0-9a-f]{4}$/ regex was
+    // vacuous — any 4 hex digits passed, so a corrupted/edited address would slip
+    // through. $cbf5 is the `pieces_death` -> sound_Lccb0 record (see sfx-data.mjs).
+    expect(pe.rom).toBe('$cbf5')
+  })
+
+  it('accounts for all 7 remaining catalogued SFX — delivered or explicitly deferred (AC#1/#3)', () => {
+    const delivered = new Set(SFX.map((s) => norm(s.name)))
+    const deferred = new Map((sfxData.DEFERRED ?? []).map((d) => [norm(d.name), d.reason]))
+    for (const name of CATALOGUED_7) {
+      const isDelivered = delivered.has(name)
+      const isDeferred = deferred.has(name)
+      expect(
+        isDelivered || isDeferred,
+        `${name} must be delivered in SFX or explicitly deferred in DEFERRED with a reason`,
+      ).toBe(true)
+      if (!isDelivered) {
+        const reason = deferred.get(name)
+        expect(typeof reason, `${name} deferral needs a documented reason string`).toBe('string')
+        expect(
+          reason.trim().length,
+          `${name} deferral reason must be substantive`,
+        ).toBeGreaterThan(10)
+      }
+    }
+  })
+})
+
+// ── Story 6-11: streaming engine parity (Reviewer test-hardening) ─────────────
+// The streaming engine (expandStream / streamVoice in bake-sfx.mjs, ~60 lines of
+// `update_sounds` NMI emulation) had NO direct unit test — only the coarse
+// `peak>200` bake check above. The Dev's claim that it is "validated bit-for-bit
+// against the 6-6 sounds" was UNAUTOMATED: a wrong-but-audible regression (a
+// broken odd-nibble mask, or an off-by-one in the restart/advance index logic)
+// would still bake audible and slip through. These tests pin the claim.
+//
+// `enemy_fire` is the lever: it is a clean 6-byte ALSOUN record AND it sits
+// VERBATIM inside ALSOUN_STREAM (audf @ indices 116..121, audc @ 122..127). So
+// the same sound can be driven through BOTH engines and the two register-event
+// lists compared:
+//   clean path:     expandAlsoun({ audf, audc })           (6-byte record walker)
+//   streaming path: expandStream({ audfStart, audcStart }) (NMI stream engine)
+//
+// START VALUES: the engine advances its index by 2 BEFORE reading the first note,
+// so a note whose value byte sits at array index `off` is reached from start
+// value S where 2*S - 2 === off. enemy_fire audf value byte @116 → S=0x3b;
+// audc value byte @122 → S=0x3e.
+//
+// THE ONE DIFFERENCE (discovered empirically by running both, NOT assumed):
+// streamVoice appends exactly ONE trailing terminator event [reg, 0x00, t] per
+// voice — it reads the clean record's [restart,stop]=[0x00,0x00] tail as a
+// beats==0 note, which ENDS the stream after pushing a final value-0 write.
+// expandSeq emits exactly `count` events with no terminator. So:
+//     stream events === clean events + one trailing [reg, 0x00, t].
+// The tests strip that terminator and assert the rest is identical. enemy_fire's
+// AUDC high nibble is 0, so the odd-nibble mask is a NO-OP here — which is *why*
+// the two engines stay equivalent for it; the mask path gets its own test below.
+const ENEMY_FIRE_EMBED = {
+  audf: { off: 116, rec: [0x00, 0x03, 0x02, 0x09, 0x00, 0x00], start: 0x3b },
+  audc: { off: 122, rec: [0x08, 0x03, 0xff, 0x09, 0x00, 0x00], start: 0x3e },
+}
+
+// Split a POKEY feed ([reg,val,t, reg,val,t, ...], here prefixed by an [8,0,0]
+// AUDCTL header) into the per-register [reg,val,t] event list for `reg`.
+const feedEvents = (p1, reg) => {
+  const ev = []
+  for (let i = 0; i + 2 < p1.length; i += 3) if (p1[i] === reg) ev.push([p1[i], p1[i + 1], p1[i + 2]])
+  return ev
+}
+
+// Assert+strip the single trailing terminator [reg, 0x00, t] streamVoice appends.
+const stripTerminator = (ev, reg) => {
+  const last = ev[ev.length - 1]
+  expect(last, 'streamVoice should append a trailing terminator event').toBeDefined()
+  expect(last[0], 'terminator is on the voice register').toBe(reg)
+  expect(last[1], 'terminator value is 0x00').toBe(0x00)
+  return ev.slice(0, -1)
+}
+
+describe('pokey-bake streaming engine parity (story 6-11, Reviewer hardening)', () => {
+  it('exports the engine functions so they can be unit-tested directly', () => {
+    // RED until Dev's green phase exports them (and adds the isMain guard so the
+    // import above stops running a full bake). Today bake.* === undefined.
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported').toBe('function')
+    expect(typeof bake.streamVoice, 'streamVoice must be exported').toBe('function')
+    expect(typeof bake.expandStream, 'expandStream must be exported').toBe('function')
+  })
+
+  it('embeds enemy_fire verbatim in ALSOUN_STREAM, consistent with its start indices', () => {
+    const s = sfxData.ALSOUN_STREAM
+    expect(s.slice(ENEMY_FIRE_EMBED.audf.off, ENEMY_FIRE_EMBED.audf.off + 6)).toEqual(ENEMY_FIRE_EMBED.audf.rec)
+    expect(s.slice(ENEMY_FIRE_EMBED.audc.off, ENEMY_FIRE_EMBED.audc.off + 6)).toEqual(ENEMY_FIRE_EMBED.audc.rec)
+    // start value S satisfies 2*S - 2 === value-byte offset (engine pre-advances by 2)
+    expect(2 * ENEMY_FIRE_EMBED.audf.start - 2).toBe(ENEMY_FIRE_EMBED.audf.off)
+    expect(2 * ENEMY_FIRE_EMBED.audc.start - 2).toBe(ENEMY_FIRE_EMBED.audc.off)
+  })
+
+  it('streamVoice reproduces the clean expandSeq events per voice (modulo one terminator)', () => {
+    expect(typeof bake.streamVoice, 'streamVoice must be exported (RED until Dev exports it)').toBe('function')
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported (RED until Dev exports it)').toBe('function')
+
+    const ef = SFX.find((s) => s.name === 'enemy_fire')
+    const clean = bake.expandAlsoun(ef.alsoun)
+    const cleanAudf = feedEvents(clean.pokey1, 0)
+    const cleanAudc = feedEvents(clean.pokey1, 1)
+    expect(cleanAudf, 'clean AUDF event count == audf record count').toHaveLength(9)
+    expect(cleanAudc, 'clean AUDC event count == audc record count').toHaveLength(9)
+
+    const streamAudf = bake.streamVoice(ENEMY_FIRE_EMBED.audf.start, 0, false).ev
+    const streamAudc = bake.streamVoice(ENEMY_FIRE_EMBED.audc.start, 1, true).ev
+    // exactly ONE extra event (the terminator) over the clean path...
+    expect(streamAudf).toHaveLength(cleanAudf.length + 1)
+    expect(streamAudc).toHaveLength(cleanAudc.length + 1)
+    // ...and after stripping that terminator the two engines agree bit-for-bit.
+    expect(stripTerminator(streamAudf, 0)).toEqual(cleanAudf)
+    expect(stripTerminator(streamAudc, 1)).toEqual(cleanAudc)
+  })
+
+  it('expandStream matches expandAlsoun end-to-end for the embedded enemy_fire record', () => {
+    expect(typeof bake.expandStream, 'expandStream must be exported (RED until Dev exports it)').toBe('function')
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported (RED until Dev exports it)').toBe('function')
+
+    const ef = SFX.find((s) => s.name === 'enemy_fire')
+    const clean = bake.expandAlsoun(ef.alsoun)
+    const stream = bake.expandStream({
+      audfStart: ENEMY_FIRE_EMBED.audf.start,
+      audcStart: ENEMY_FIRE_EMBED.audc.start,
+    })
+    // The merged streaming feed is the clean feed plus the two trailing terminators
+    // (one per voice, both at the final timestamp, sorted to the end). Everything
+    // before them must be identical, and the baked durations must match.
+    expect(stream.pokey1.slice(0, clean.pokey1.length)).toEqual(clean.pokey1)
+    const tail = stream.pokey1.slice(clean.pokey1.length)
+    expect(tail, 'exactly two trailing terminator triples (AUDF + AUDC)').toHaveLength(6)
+    expect([tail[0], tail[1]]).toEqual([0, 0x00]) // AUDF terminator: reg, value
+    expect([tail[3], tail[4]]).toEqual([1, 0x00]) // AUDC terminator: reg, value
+    expect(tail[2], 'both terminators share the final timestamp').toBe(tail[5])
+    expect(stream.durationMs).toBe(clean.durationMs)
+  })
+
+  it('odd-nibble mask holds AUDC distortion (high nibble) fixed while ramping volume (low nibble)', () => {
+    expect(typeof bake.streamVoice, 'streamVoice must be exported (RED until Dev exports it)').toBe('function')
+    // enemy_fire cannot prove the mask (its AUDC value high nibble is 0). Point an
+    // odd (AUDC-masked) voice at a stream note whose VALUE has a non-zero high
+    // nibble AND a non-zero delta, so the mask path actually runs. The 4-byte note
+    // [0x40,0x01,0xff,0x40] sits at indices 68..71 → start = (68+2)/2 = 0x23.
+    const start = 0x23
+    expect(sfxData.ALSOUN_STREAM.slice(68, 72)).toEqual([0x40, 0x01, 0xff, 0x40])
+    const masked = bake.streamVoice(start, 1, true).ev // odd → mask ON
+    const plain = bake.streamVoice(start, 0, false).ev // even → no mask
+    const HI = 0x40 & 0xf0 // the note value's distortion (high) nibble
+    // The note ramps count(0x40)=64 times at beats=1 before advancing; sample a
+    // window safely inside that first note.
+    const RUN = 0x20
+    const maskedRun = masked.slice(0, RUN)
+    expect(maskedRun).toHaveLength(RUN)
+    // distortion (high nibble) pinned across the whole ramp...
+    for (const [, v] of maskedRun) expect(v & 0xf0).toBe(HI)
+    // ...while volume (low nibble) genuinely varies.
+    expect(new Set(maskedRun.map(([, v]) => v & 0x0f)).size, 'volume nibble actually ramps').toBeGreaterThan(1)
+    // The SAME bytes WITHOUT the mask must NOT pin the high nibble — proving the
+    // mask is doing real work, not coincidentally agreeing.
+    expect(plain.slice(0, RUN).some(([, v]) => (v & 0xf0) !== HI), 'unmasked voice changes the high nibble').toBe(true)
   })
 })
