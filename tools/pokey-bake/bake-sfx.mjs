@@ -86,7 +86,7 @@ function expandSeq(reg, [value, beats, delta, count, restart]) {
 }
 
 // Returns { pokey1, durationMs } for a `spec.alsoun = { audf, audc }`.
-function expandAlsoun({ audf, audc }) {
+export function expandAlsoun({ audf, audc }) {
   const a = expandSeq(0, audf); // AUDF1 (pitch)
   const b = expandSeq(1, audc); // AUDC1 (distortion + volume)
   // web-pokey walks the feed monotonically, so AUDF and AUDC events MUST be
@@ -116,7 +116,7 @@ function streamByte(i) {
 }
 
 // Walk one voice (reg 0 = AUDF1, reg 1 = AUDC1; odd = AUDC high-nibble mask).
-function streamVoice(startV, reg, odd) {
+export function streamVoice(startV, reg, odd) {
   const ev = [];
   let Lc0 = startV & 0xff;
   let Le0 = 1, Lf0 = 1, Ld0 = 0;
@@ -131,7 +131,18 @@ function streamVoice(startV, reg, odd) {
     if (Lf0 === 0) {
       // both counters spent → advance to the next note (may loop on restart)
       let ended = false;
-      for (;;) {
+      // Defensive iteration guard (Reviewer LOW): this advance loop only ever
+      // re-iterates on a restart/jump (Ld0 → Lc0). Current ROM data has no jump
+      // cycles, so it always terminates in a single pass — but a future ROM edit
+      // pointing a jump back into the table could spin here forever and hang the
+      // build. The table holds at most ALSOUN_STREAM.length note records, so any
+      // non-cyclic walk terminates well within that many advance-steps; cap there
+      // and, if exceeded, stop the voice cleanly (Ld0=0, ended) rather than throw
+      // — matching the existing OOB→silence degradation. This cap is never hit by
+      // current data, so the bake stays byte-identical.
+      const ADVANCE_CAP = ALSOUN_STREAM.length;
+      for (let advanced = 0; ; advanced++) {
+        if (advanced >= ADVANCE_CAP) { Ld0 = 0; ended = true; break; }
         Lc0 = (Lc0 + 2) & 0xff;
         const Y = Lc0 * 2;
         Ld0 = streamByte(Y - 6); // value
@@ -164,7 +175,7 @@ function streamVoice(startV, reg, odd) {
 }
 
 // Returns { pokey1, durationMs } for a `spec.stream = { audfStart, audcStart }`.
-function expandStream({ audfStart, audcStart }) {
+export function expandStream({ audfStart, audcStart }) {
   const a = streamVoice(audfStart, 0, false); // AUDF1 (pitch)
   const b = streamVoice(audcStart, 1, true); // AUDC1 (distortion + volume)
   const merged = [...a.ev, ...b.ev].sort((x, y) => x[2] - y[2]);
@@ -236,29 +247,34 @@ function writeWav(path, samples, sampleRate) {
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
-mkdirSync(outDir, { recursive: true });
-console.log(`Baking ${SFX.length} SFX @ ${SAMPLE_RATE} Hz → ${outDir}\n`);
-let made = 0;
-let silent = 0;
-for (const spec of SFX) {
-  // Authentic entries carry an ALSOUN envelope; expand it to register events.
-  // A `spec.alsoun` is a single 6-byte record (6-6 set); a `spec.stream` is a
-  // multi-note envelope walked by the streaming engine (6-11).
-  if (spec.alsoun) {
-    const e = expandAlsoun(spec.alsoun);
-    spec.pokey1 = e.pokey1;
-    spec.durationMs = e.durationMs;
-  } else if (spec.stream) {
-    const e = expandStream(spec.stream);
-    spec.pokey1 = e.pokey1;
-    spec.durationMs = e.durationMs;
+// Only bake when run directly (`node bake-sfx.mjs ...`); importing the module
+// (e.g. from bake-sfx.test.mjs to unit-test the engine) is inert — no bake-on-
+// import side effect, no ~3.5s cost. Behavior when run directly is unchanged.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  mkdirSync(outDir, { recursive: true });
+  console.log(`Baking ${SFX.length} SFX @ ${SAMPLE_RATE} Hz → ${outDir}\n`);
+  let made = 0;
+  let silent = 0;
+  for (const spec of SFX) {
+    // Authentic entries carry an ALSOUN envelope; expand it to register events.
+    // A `spec.alsoun` is a single 6-byte record (6-6 set); a `spec.stream` is a
+    // multi-note envelope walked by the streaming engine (6-11).
+    if (spec.alsoun) {
+      const e = expandAlsoun(spec.alsoun);
+      spec.pokey1 = e.pokey1;
+      spec.durationMs = e.durationMs;
+    } else if (spec.stream) {
+      const e = expandStream(spec.stream);
+      spec.pokey1 = e.pokey1;
+      spec.durationMs = e.durationMs;
+    }
+    const { out, peak } = renderSfx(spec);
+    const path = join(outDir, `${spec.name}.wav`);
+    writeWav(path, out, SAMPLE_RATE);
+    made++;
+    const warn = peak < 1e-4 ? '  ⚠ SILENT — check register data' : '';
+    if (warn) silent++;
+    console.log(`  ✓ ${spec.name}.wav  ${(out.length / SAMPLE_RATE).toFixed(3)}s  peak=${peak.toFixed(3)}${warn}`);
   }
-  const { out, peak } = renderSfx(spec);
-  const path = join(outDir, `${spec.name}.wav`);
-  writeWav(path, out, SAMPLE_RATE);
-  made++;
-  const warn = peak < 1e-4 ? '  ⚠ SILENT — check register data' : '';
-  if (warn) silent++;
-  console.log(`  ✓ ${spec.name}.wav  ${(out.length / SAMPLE_RATE).toFixed(3)}s  peak=${peak.toFixed(3)}${warn}`);
+  console.log(`\nBaked ${made} file(s), 16-bit mono WAV.${silent ? `  (${silent} silent — likely placeholder/empty data)` : ''}`);
 }
-console.log(`\nBaked ${made} file(s), 16-bit mono WAV.${silent ? `  (${silent} silent — likely placeholder/empty data)` : ''}`);
