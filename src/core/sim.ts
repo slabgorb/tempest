@@ -101,7 +101,7 @@ export function makeEnemy(
   kind: EnemyKind, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
 ): Enemy {
   switch (kind) {
-    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipInterval }
+    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipPattern.moveFrames / 60 }
     case 'tanker':   return { kind, lane, depth, contains: cargo }
     case 'spiker':   return { kind, lane, depth, direction: 1 }
     case 'fuseball': return { kind, lane, depth, jitterTimer: 0, vulnerable: false }
@@ -363,8 +363,12 @@ function killPlayer(s: GameState): void {
 function resolvePlayerHits(s: GameState): void {
   if (!s.player.alive) return
   const pl = currentLane(s.tube, s.player.lane)
+  // A flipper caught MID-FLIP (between lanes) cannot grab — the ROM's p_chk
+  // skips the rim check while the $80 mid-flip bit is set (story 6-14). This is
+  // the fairness pay-off of the multi-tick flip: you can rotate "through" it.
   const grabber = s.enemies.find(
-    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl,
+    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl
+      && !(e.kind === 'flipper' && e.flipping),
   )
   // A grab takes precedence over a pulse; a pulse is still reported on the
   // player-grab channel (Story 5-1), attributed to the pulsing pulsar.

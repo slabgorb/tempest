@@ -217,8 +217,18 @@ function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void 
 
   switch (e.kind) {
     case 'flipper': {
-      // RED bowtie/butterfly; flip + rotation are runtime (spin from renderTime).
-      strokeGlyph(ctx, flipperGlyph(), p.x, p.y, r / 4, renderTime * 4 + e.lane, 14)
+      // RED bowtie/butterfly. Mid-flip (6-14) it SLIDES from its source lane to
+      // the adjacent target, tumbling a half-turn across the flip; settled, it
+      // sits on its lane with the idle runtime spin.
+      let fp = p
+      let spin = renderTime * 4 + e.lane
+      if (e.flipping) {
+        const to = project(tube, e.lane + (e.flipDir ?? 1), e.depth)
+        const t = e.flipProgress ?? 0
+        fp = { x: p.x + (to.x - p.x) * t, y: p.y + (to.y - p.y) * t }
+        spin += t * Math.PI
+      }
+      strokeGlyph(ctx, flipperGlyph(), fp.x, fp.y, r / 4, spin, 14)
       break
     }
     case 'tanker': {

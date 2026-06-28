@@ -43,7 +43,14 @@ interface EnemyBase {
 
 export interface Flipper extends EnemyBase {
   kind: 'flipper'
-  flipTimer: number     // seconds until next flip
+  flipTimer: number     // seconds until next flip starts
+  // Multi-tick flip animation (story 6-14, ROM $80 mid-flip bit). While
+  // `flipping`, the flipper is caught between lanes: `lane` holds at the source
+  // until `flipProgress` reaches 1, then it settles on `lane + flipDir`. Absent
+  // (undefined) means the flipper is settled on its lane and not mid-flip.
+  flipping?: boolean
+  flipDir?: -1 | 1      // direction of the in-progress flip
+  flipProgress?: number // 0 → 1 across the current flip
 }
 
 export interface Tanker extends EnemyBase {
