@@ -20,24 +20,19 @@
 // were moved to the arcade-assets custom domain to keep them edge-served.
 const DEFAULT_BASE_URL = 'https://arcade-assets.slabgorb.com/tempest/sfx/'
 
-// Logical sound name -> source. Keyed to the gameplay moments the 5-1
+// Logical sound name -> R2 filename. Keyed to the gameplay moments the 5-1
 // `GameEvent` channel reports, so the event->sound wiring is a thin lookup.
-//
-// Two sources are in play (story 6-6): the ★ entries are AUTHENTIC POKEY bakes
-// from the arcade ROM, served locally from `public/sfx/`; the rest are the
-// original community-rip samples still hosted on R2. A value that is rooted
-// (`/…`) or absolute (`https://…`) is fetched as-is; a bare filename resolves
-// against the R2 base. (When the authentic bakes move to R2, swap their values
-// back to bare filenames.)
-const LOCAL = '/tempest/sfx/' // public/sfx under the pinned /tempest/ base
+// Filenames are exact (R2 keys are case-sensitive). The ★ entries are AUTHENTIC
+// POKEY bakes from the arcade ROM (story 6-6 — baked by tools/pokey-bake/ and
+// hosted on R2); the rest are the original community-rip samples.
 const SOUNDS = {
-  fire: LOCAL + 'player_fire.wav', // ★ authentic bake (ROM $cc5d) — player bullet fired
-  enemyFire: LOCAL + 'enemy_fire.wav', // ★ authentic ($cc45) — an enemy fired an energy bolt
-  enemyDeath: LOCAL + 'enemy_explosion.wav', // ★ authentic ($cc81) — an enemy was destroyed
+  fire: 'player_fire.wav', // ★ authentic bake (ROM $cc5d) — player bullet fired
+  enemyFire: 'enemy_fire.wav', // ★ authentic ($cc45) — an enemy fired an energy bolt
+  enemyDeath: 'enemy_explosion.wav', // ★ authentic ($cc81) — an enemy was destroyed
   playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim (community rip)
   playerDeath: 'shipexplosion.wav', // the Claw was destroyed (community rip)
   warpSpikeCrash: 'kaboom.wav', // crashed onto a spike during the warp (community rip)
-  levelClear: LOCAL + 'warp.wav', // ★ authentic ($cc75) — level cleared, warp begins
+  levelClear: 'warp.wav', // ★ authentic ($cc75) — level cleared, warp begins
   superzapper: 'kzap.wav', // superzapper fired (community rip)
   playerSpawn: 'warpin.wav', // the Claw (re)spawned (community rip)
 } as const
@@ -80,11 +75,7 @@ export function createAudioEngine(baseUrl: string = DEFAULT_BASE_URL): AudioEngi
     loadStarted = true
     const context = ctx
     for (const name of Object.keys(SOUNDS) as SoundName[]) {
-      const src = SOUNDS[name]
-      // rooted ("/…") or absolute ("https://…") sources are used as-is; a bare
-      // filename resolves against the R2 base.
-      const url = /^(?:https?:)?\//.test(src) ? src : baseUrl + src
-      fetch(url)
+      fetch(baseUrl + SOUNDS[name])
         .then((res) => res.arrayBuffer())
         .then((data) => context.decodeAudioData(data))
         .then((buffer) => {
