@@ -136,3 +136,33 @@ describe('segment-tick cue wiring (story 6-10)', () => {
     expect(mainSrc).toMatch(/case 'segment-cross':\s*audio\.play\('segmentTick'\)/)
   })
 })
+
+// Story 6-11: the player-death cue now plays the AUTHENTIC POKEY bake
+// (player_explosion.wav — extracted from the rev-3 ROM by tools/pokey-bake/ and
+// hosted on R2), replacing the community-rip placeholder shipexplosion.wav. The
+// core already emits 'player-death' and main.ts already maps it to the playerDeath
+// manifest key (that wiring predates this story) — 6-11 only swaps the asset
+// behind that key. player-explosion is the one of the remaining 7 catalogued SFX
+// with an existing game trigger, so it is the headline deliverable.
+describe('player-explosion cue (story 6-11: authentic player-death bake)', () => {
+  it('loads the authentic player_explosion bake from the R2 base (AC#3)', () => {
+    createAudioEngine().resume()
+    expect(fetched).toContain(R2 + 'player_explosion.wav')
+  })
+
+  it('no longer loads the community-rip shipexplosion.wav placeholder (AC#3)', () => {
+    createAudioEngine().resume()
+    expect(fetched).not.toContain(R2 + 'shipexplosion.wav')
+  })
+
+  it('resolves the player_explosion bake against a custom base URL too', () => {
+    createAudioEngine('https://cdn.test/x/').resume()
+    expect(fetched).toContain('https://cdn.test/x/player_explosion.wav')
+  })
+
+  it("plays the playerDeath sample on the core 'player-death' event (wiring preserved)", () => {
+    // The event hook predates 6-11 (main.ts already maps player-death ->
+    // playerDeath); this guards that 6-11's asset swap leaves the wiring intact.
+    expect(mainSrc).toMatch(/case 'player-death':\s*audio\.play\('playerDeath'\)/)
+  })
+})
