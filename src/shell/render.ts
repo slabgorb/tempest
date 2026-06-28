@@ -3,6 +3,7 @@ import { GameState, Enemy } from '../core/state'
 import { HighScoreTable } from '../core/highscore'
 import { Tube, Point, currentLane, project } from '../core/geometry'
 import { Fx } from './fx'
+import { createPhosphor, phosphorAlpha } from './phosphor'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
@@ -15,6 +16,10 @@ const LEVEL_COLORS = [
   '#b14cff', '#00d6ff', '#ff7a18', '#46ff5a',
 ]
 const CLAW_COLOR = '#ffe600'
+
+// Phosphor afterglow retention per 1/60 s frame (0 = instant clear, 1 = never
+// fades). 0.55 ≈ the authentic Color-XY short glow; tune by eye while running.
+const PHOSPHOR_DECAY = 0.55
 
 // Neon hues for the authentic-glyph palette colours (Story 6-8). The glyph
 // library names colours semantically; this is the one place they become pixels.
@@ -64,6 +69,10 @@ function strokeGlyph(
 
 // Animation accumulators (render-only; never feeds back into the sim).
 let renderTime = 0
+
+// Persistence buffer for the vector scene (shell-only afterglow). Lazily builds
+// its offscreen canvases on first beginScene/composite/clear.
+const phosphor = createPhosphor()
 let clawPrevLane: number | null = null
 let walkPhase = 0
 
@@ -730,6 +739,7 @@ export function render(
   H: number,
   fx: Fx,
   dpr: number,
+  dt: number,
 ): void {
   renderTime += 1 / 60
   // Background (work in CSS pixels; the DPR scale makes it crisp).
@@ -752,35 +762,35 @@ export function render(
     drawFrame(ctx, s, W, H, color)
     drawScanlines(ctx, W, H)
     ctx.shadowBlur = 0
+    phosphor.clear()
     return
   }
 
-  const scale = Math.min(W, H) / 720
-  const sx = (Math.random() - 0.5) * fx.shake
-  const sy = (Math.random() - 0.5) * fx.shake
-
-  ctx.save()
-  ctx.translate(W / 2 + sx, H / 2 + sy)
-  ctx.scale(scale, scale)
-  ctx.globalCompositeOperation = 'lighter' // additive vector bloom
-  ctx.lineJoin = 'round'
-  ctx.lineCap = 'round'
-
-  drawTube(ctx, s, color, currentLane(s.tube, s.player.lane))
-  drawSpikes(ctx, s)
+  // Draw the vector scene into the phosphor scratch (full brightness), fold it
+  // into the persistence accumulator as an EMA, and blit that onto the main
+  // canvas. Static geometry stays sharp; fast movers trail. The screen shake is
+  // applied by composite() to the whole accumulated image.
+  const pctx = phosphor.beginScene(W, H, dpr)
+  drawTube(pctx, s, color, currentLane(s.tube, s.player.lane))
+  drawSpikes(pctx, s)
   if (s.mode === 'warp') {
     // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
-    drawWarp(ctx, s, color)
+    drawWarp(pctx, s, color)
   } else {
     // Far enemies first so near ones overdraw them.
     const ordered = s.enemies.slice().sort((a, b) => a.depth - b.depth)
-    for (const e of ordered) drawEnemy(ctx, s, e)
-    drawBullets(ctx, s)
-    drawEnemyBullets(ctx, s)
-    drawPlayer(ctx, s)
+    for (const e of ordered) drawEnemy(pctx, s, e)
+    drawBullets(pctx, s)
+    drawEnemyBullets(pctx, s)
+    drawPlayer(pctx, s)
   }
-  drawParticles(ctx, fx)
-  ctx.restore()
+  drawParticles(pctx, fx)
+  phosphor.composite(ctx, dpr, phosphorAlpha(PHOSPHOR_DECAY, dt), fx.shake)
+
+  // Overlays (scanlines/flash/HUD) draw in CSS-pixel space with normal blending.
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.globalCompositeOperation = 'source-over'
+  ctx.globalAlpha = 1
 
   // Subtle CRT scanlines.
   drawScanlines(ctx, W, H)

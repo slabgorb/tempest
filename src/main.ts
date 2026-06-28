@@ -101,7 +101,7 @@ const loop = createLoop(
           break
       }
     }
-    render(ctx, s, W, H, fx, dpr)
+    render(ctx, s, W, H, fx, dpr, rdt)
   },
   () => performance.now(),
   // The 4-3 state machine inserts the committed entry and transitions
