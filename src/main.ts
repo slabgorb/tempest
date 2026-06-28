@@ -96,6 +96,9 @@ const loop = createLoop(
         case 'player-spawn':
           audio.play('playerSpawn')
           break
+        case 'segment-cross':
+          audio.play('segmentTick') // ★ authentic POKEY tick as the Claw crosses a lane (6-10)
+          break
       }
     }
     render(ctx, s, W, H, fx, dpr)

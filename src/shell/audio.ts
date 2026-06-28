@@ -35,6 +35,7 @@ const SOUNDS = {
   levelClear: 'warp.wav', // ★ authentic ($cc75) — level cleared, warp begins
   superzapper: 'kzap.wav', // superzapper fired (community rip)
   playerSpawn: 'warpin.wav', // the Claw (re)spawned (community rip)
+  segmentTick: 'segment_tick.wav', // ★ authentic ($cc39) — cursor crossed into a new tube segment
 } as const
 
 export type SoundName = keyof typeof SOUNDS

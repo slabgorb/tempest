@@ -73,7 +73,13 @@ function stepHighScore(s: GameState, input: Input): void {
 
 function stepPlayer(s: GameState, input: Input): void {
   if (!s.player.alive) return
+  const before = currentLane(s.tube, s.player.lane)
   s.player.lane = wrapLane(s.tube, s.player.lane + input.spin * SPIN_SENSITIVITY)
+  const after = currentLane(s.tube, s.player.lane)
+  // Authentic POKEY segment tick (6-10): the cursor crossed a tube-segment
+  // boundary into a new lane this frame. One event per crossing; the shell plays
+  // segment_tick.wav on it.
+  if (after !== before) s.events.push({ type: 'segment-cross', lane: after })
 }
 
 function stepFiring(s: GameState, input: Input): void {

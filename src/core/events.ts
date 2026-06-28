@@ -73,6 +73,14 @@ export interface PlayerSpawnEvent {
   lane: number
 }
 
+// The spinner carried the Claw across a tube-segment boundary into a new lane
+// (Story 6-10). `lane` is the new discrete lane entered. Fires once per crossing;
+// the shell plays the authentic POKEY segment_tick cue on it.
+export interface SegmentCrossEvent {
+  type: 'segment-cross'
+  lane: number
+}
+
 // The Claw died; `cause` distinguishes the death channel for cue selection.
 export interface PlayerDeathEvent {
   type: 'player-death'
@@ -89,3 +97,4 @@ export type GameEvent =
   | SuperzapperActivateEvent
   | PlayerSpawnEvent
   | PlayerDeathEvent
+  | SegmentCrossEvent
