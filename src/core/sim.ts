@@ -146,10 +146,17 @@ function stepEnemies(s: GameState, dt: number): void {
         const wasDescending = e.direction === -1
         const res = stepSpiker(e, dt, params)
         const sp = res.enemy
-        // Far-end hop (story 6-9): when a descending spiker bottoms out (now
-        // climbing from depth 0), it relocates to a new lane — preferring the one
-        // with the tallest standing spike, or a random lane when none stand yet.
+        // Far-end bottom-out: a descending spiker that reaches depth 0.
         if (wasDescending && sp.direction === 1 && sp.depth === 0) {
+          if (s.spawn.remaining === 0) {
+            // spiker_hop "none pending" branch (story 6-15, rev-3 §C l.211): with
+            // no spike-enemies left to release, it CONVERTS into a flipper-holding
+            // tanker instead of hopping forever.
+            moved.push(makeEnemy('tanker', sp.lane, 0, params, 'flipper'))
+            break
+          }
+          // Otherwise hop (story 6-9): relocate to the tallest-standing-spike lane,
+          // or a random lane when none stand yet.
           let target = -1
           let tallest = 0
           for (let i = 0; i < s.spikes.length; i++) {
@@ -173,7 +180,7 @@ function stepEnemies(s: GameState, dt: number): void {
         break
       }
       case 'fuseball': {
-        const res = stepFuseball(e, dt, params, s.tube, s.rng)
+        const res = stepFuseball(e, dt, params, s.tube, s.rng, s.player.lane)
         s.rng = res.rng
         moved.push(res.enemy)
         break
@@ -278,6 +285,10 @@ function cullEnemyBullets(s: GameState): void {
 const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
 
 const HIT_DEPTH = 0.06
+// A fuseball's wider kill tolerance (story 6-15): ROM hit_tol[4]=6 is wider than
+// the default enemy tolerance (rev-3 §D l.265), so a bullet registers across a
+// larger depth gap — 1.5× the default.
+const FUSEBALL_HIT_DEPTH = 0.09
 
 function awardScore(s: GameState, points: number): void {
   const before = s.score
@@ -299,7 +310,8 @@ function resolveBulletHits(s: GameState): void {
       // A fuseball is bullet-proof while rolling the rim — killable by a bullet
       // only in its on-lane vulnerable phase (story 6-9). Other kinds always hit.
       if (e.kind === 'fuseball' && !e.vulnerable) continue
-      if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= HIT_DEPTH) {
+      const tol = e.kind === 'fuseball' ? FUSEBALL_HIT_DEPTH : HIT_DEPTH
+      if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= tol) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
         awardScore(s, scoreFor(e))

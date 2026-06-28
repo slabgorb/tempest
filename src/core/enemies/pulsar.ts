@@ -2,7 +2,7 @@
 import { Pulsar } from '../state'
 import { Rng, rngNext } from '../rng'
 import { Tube, wrapLane } from '../geometry'
-import { LevelParams, PULSE_DURATION } from '../rules'
+import { LevelParams, PULSE_DURATION, PULSAR_CLIMB_SPEED, PULSAR_NEAR_FAR_DEPTH } from '../rules'
 
 // A pulsar climbs and flips like a flipper, and periodically pulses — toggling
 // `pulsing` on for PULSE_DURATION (lethal to a player on its lane), then off
@@ -13,8 +13,11 @@ export function stepPulsar(
   const e: Pulsar = { ...enemy }
   let r = rng
 
-  // Climb at flipper speed.
-  e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)
+  // Dual far/near climb (story 6-15): flipper speed while farther than L0157
+  // ($a0 ≈ depth 0.357), then the hardcoded spd_pulsar (-82.5/s) once nearer —
+  // so a deep-level pulsar charges up the well then slows near the rim.
+  const climbSpeed = e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed
+  e.depth = Math.min(1, e.depth + climbSpeed * dt)
 
   // Pulse cycle.
   e.pulseTimer -= dt

@@ -2,15 +2,27 @@
 import { Fuseball } from '../state'
 import { Rng, rngNext } from '../rng'
 import { Tube, wrapLane } from '../geometry'
-import { LevelParams, FUSEBALL_JITTER_INTERVAL } from '../rules'
+import { LevelParams, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB } from '../rules'
 
-// Climb a lane center and roll erratically between adjacent lanes on a timer.
-// Each roll flips the authentic vulnerable bit (story 6-9): the fuseball is
-// killable by a bullet only while settled on a lane (`vulnerable`), invulnerable
-// while rolling the rim — so it cycles in and out of a killable window as it
-// rolls. (Lethal on rim CONTACT regardless — that is a grab, resolved in sim.ts.)
+// The shorter rotational step (-1, 0, +1) from `from` toward `to` on the closed
+// tube: forward when that arc is the short way around, backward otherwise, 0 when
+// already on the lane. Ties (exact opposite lane) resolve forward.
+function laneStepToward(tube: Tube, from: number, to: number): -1 | 0 | 1 {
+  const n = tube.laneCount
+  const forward = (((to - from) % n) + n) % n // 0..n-1
+  if (forward === 0) return 0
+  return forward <= n - forward ? 1 : -1
+}
+
+// Climb a lane center and slide between lanes TOWARD the player, gated by the
+// fuzz_move probability (story 6-15: rev-3 §D l.240-250) — biased pursuit, not a
+// 50/50 random walk. Each actual slide flips the authentic vulnerable bit (story
+// 6-9): the fuseball is killable by a bullet only while settled on a lane
+// (`vulnerable`), invulnerable while rolling the rim — so it cycles in and out of
+// a killable window as it rolls. (Lethal on rim CONTACT regardless — that is a
+// grab, resolved in sim.ts.)
 export function stepFuseball(
-  enemy: Fuseball, dt: number, params: LevelParams, tube: Tube, rng: Rng,
+  enemy: Fuseball, dt: number, params: LevelParams, tube: Tube, rng: Rng, playerLane: number,
 ): { enemy: Fuseball; rng: Rng } {
   const e: Fuseball = { ...enemy }
   let r = rng
@@ -19,12 +31,18 @@ export function stepFuseball(
 
   e.jitterTimer -= dt
   if (e.jitterTimer <= 0) {
+    e.jitterTimer = FUSEBALL_JITTER_INTERVAL
     const roll = rngNext(r)
     r = roll.rng
-    const dir = roll.value < 0.5 ? -1 : 1
-    e.lane = wrapLane(tube, e.lane + dir)
-    e.jitterTimer = FUSEBALL_JITTER_INTERVAL
-    e.vulnerable = !e.vulnerable // roll to a new lane ⇒ toggle the killable window
+    // fuzz_move gate: only slide on a passing roll; when it slides, it steps
+    // toward the player's lane (never away).
+    if (roll.value < FUSEBALL_MOVE_PROB) {
+      const dir = laneStepToward(tube, e.lane, playerLane)
+      if (dir !== 0) {
+        e.lane = wrapLane(tube, e.lane + dir)
+        e.vulnerable = !e.vulnerable // rolled to a new lane ⇒ toggle the killable window
+      }
+    }
   }
 
   return { enemy: e, rng: r }
