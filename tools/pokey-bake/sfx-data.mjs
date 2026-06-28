@@ -1,58 +1,91 @@
-// SFX register data for the POKEY → WAV bake utility.
+// Authentic Tempest (1981, rev-3) POKEY sound-effect data for the WAV bake tool.
 //
-// Each entry describes one sound effect as a timed sequence of POKEY register
-// writes, exactly the format the web-pokey core consumes via `feed()`:
+// Tempest has NO PCM samples — every sound is live POKEY synthesis driven by the
+// `ALSOUN.MAC` envelope engine. Each effect is two envelope sequences: one steers
+// the AUDF1 register (pitch), one steers AUDC1 (distortion + volume). A sequence
+// is a 6-byte record walked by the sound IRQ:
 //
-//     [ regIndex, value, timeSeconds, regIndex, value, timeSeconds, ... ]
+//     [ value, beats, delta, count, restart, stop ]
+//       value   - first byte written to the register
+//       beats   - sound-IRQ ticks to hold before the next change
+//       delta   - signed amount added each step (0xFF = -1)
+//       count   - number of writes; count=1 means "write once, no change"
+//       restart - replay offset for looping sounds (0 = no loop)
+//       stop    - terminator (0)
 //
-// Register index map (from vendor/pokey.js `processEvents`):
-//     0 = AUDF1   1 = AUDC1
-//     2 = AUDF2   3 = AUDC2
-//     4 = AUDF3   5 = AUDC3
-//     6 = AUDF4   7 = AUDC4
-//     8 = AUDCTL  9 = console (4-bit, for the GTIA-style "click")
+// The engine ticks at the ~246-250 Hz sound interrupt (NOT the 60 Hz game frame),
+// so one beat ≈ 4 ms. `bake-sfx.mjs` expands these envelopes at that rate.
 //
-// AUDCn byte: bits 7-5 = distortion/poly select, bit 4 = "volume-only",
-//             bits 3-0 = volume (0-15). AUDFn = frequency divider (lower = higher pitch).
+// AUDC byte: bits 7-5 distortion (A=pure tone, 8=white noise, C=poly4, 2/0=gravelly),
+//            bit 4 volume-only, bits 3-0 volume (0-15). AUDF: lower divider = higher pitch.
 //
-// `pokey1` is the primary chip; `pokey2` is optional (Tempest has two POKEYs —
-// populate it when a sound uses the second chip). Output is mixed to mono.
-//
-// ─────────────────────────────────────────────────────────────────────────────
-// The two DEMO entries below are PLACEHOLDERS that prove the pipeline end-to-end.
-// Replace this array with the authentic Tempest register sequences extracted by
-// the `sound-recon` ROM pass (player fire, enemy fire/charge, explosion, zoom,
-// superzapper, pulsar, etc.). Keep the same shape.
-// ─────────────────────────────────────────────────────────────────────────────
+// SOURCE: extracted verbatim from the arcade ROM `136002-136.lm1` (loads at CPU
+// $c000); the ALSOUN sound table sits at file offset 0x0c2d ($cc2d). Each entry's
+// `rom` field is the CPU address of its 12-byte (AUDF+AUDC) record. Sound→address
+// mapping confirmed by ear against the real game. Format documented in
+// "Tempest vs Tempest" (R. Hogan), ch. "story of a beep".
 
 export const SFX = [
   {
-    name: 'demo_beep',
-    durationMs: 250,
-    gain: 0.8,
-    // steady tone on channel 1, silenced at 0.20s
-    pokey1: [
-      8, 0x00, 0.00, // AUDCTL = 0
-      1, 0xa8, 0.00, // AUDC1 = pure-ish tone, volume 8
-      0, 0x28, 0.00, // AUDF1 = 40
-      1, 0x00, 0.20, // AUDC1 = 0 -> silence the tail
-    ],
+    // Player bullet fired.
+    name: 'player_fire',
+    rom: '$cc5d',
+    alsoun: {
+      audf: [0x01, 0x08, 0x02, 0x10, 0x00, 0x00],
+      audc: [0x86, 0x20, 0x00, 0x04, 0x00, 0x00],
+    },
+    gain: 0.85,
   },
   {
-    name: 'demo_zap',
-    durationMs: 220,
+    // ★ Enemy energy bolt ("ENEMY SHOT" / ESLSON). Shared by all firing enemy
+    // types. Pairs with story 6-5 (the enemy-fire event it wires to).
+    name: 'enemy_fire',
+    rom: '$cc45',
+    alsoun: {
+      audf: [0x00, 0x03, 0x02, 0x09, 0x00, 0x00],
+      audc: [0x08, 0x03, 0xff, 0x09, 0x00, 0x00],
+    },
     gain: 0.85,
-    // descending "pew": step AUDF1 upward (rising divider = falling pitch)
-    pokey1: [
-      8, 0x00, 0.00,
-      1, 0xa8, 0.00, // AUDC1 = tone, volume 8
-      0, 0x0a, 0.00, // AUDF1 = 10
-      0, 0x14, 0.03, // AUDF1 = 20
-      0, 0x28, 0.06, // AUDF1 = 40
-      0, 0x46, 0.09, // AUDF1 = 70
-      0, 0x6e, 0.12, // AUDF1 = 110
-      1, 0x00, 0.16, // AUDC1 = 0
-    ],
+  },
+  {
+    // Enemy destroyed (enemy-death).
+    name: 'enemy_explosion',
+    rom: '$cc81',
+    alsoun: {
+      audf: [0x10, 0x0b, 0x01, 0x40, 0x00, 0x00],
+      audc: [0x86, 0x40, 0x00, 0x0b, 0x00, 0x00],
+    },
+    gain: 0.85,
+  },
+  {
+    // Warp / zoom through the tube on level clear.
+    name: 'warp',
+    rom: '$cc75',
+    alsoun: {
+      audf: [0xc0, 0x02, 0xff, 0xff, 0x00, 0x00],
+      audc: [0x28, 0x02, 0x00, 0xf0, 0x00, 0x00],
+    },
+    gain: 0.85,
+  },
+  {
+    // Loud warning beep when the level-select timer runs low.
+    name: 'countdown_beep',
+    rom: '$cc69',
+    alsoun: {
+      audf: [0x18, 0x04, 0x00, 0xff, 0x00, 0x00],
+      audc: [0xaf, 0x04, 0x00, 0xff, 0x00, 0x00],
+    },
+    gain: 0.85,
+  },
+  {
+    // Cursor / line-crossing tick.
+    name: 'segment_tick',
+    rom: '$cc39',
+    alsoun: {
+      audf: [0x0f, 0x04, 0x00, 0x01, 0x00, 0x00],
+      audc: [0xa2, 0x04, 0x40, 0x01, 0x00, 0x00],
+    },
+    gain: 0.7,
   },
 ];
 

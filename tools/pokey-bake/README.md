@@ -27,31 +27,37 @@ Requires Node ≥ 16 (uses ES modules + `node:vm`). No npm install needed.
 
 ## Defining sounds — `sfx-data.mjs`
 
-Each SFX is a timed list of POKEY register writes in web-pokey's `feed()` format:
+Sounds are defined in Tempest's own **ALSOUN** envelope format, extracted verbatim
+from the arcade ROM (`136002-136.lm1`, sound table at `$cc2d`). Each SFX is two
+6-byte envelope records — one for AUDF1 (pitch), one for AUDC1 (distortion +
+volume):
 
 ```js
-[ regIndex, value, timeSeconds,  regIndex, value, timeSeconds, ... ]
+{
+  name: 'enemy_fire',
+  rom: '$cc45',                                 // CPU address in the ROM (provenance)
+  alsoun: {                                     // [value, beats, delta, count, restart, stop]
+    audf: [0x00, 0x03, 0x02, 0x09, 0x00, 0x00],
+    audc: [0x08, 0x03, 0xff, 0x09, 0x00, 0x00],
+  },
+  gain: 0.85,
+}
 ```
 
-Register index map (from `vendor/pokey.js`):
+`bake-sfx.mjs` walks each record at the **~250 Hz sound IRQ** (one beat ≈ 4 ms):
+write `value`, hold `beats` ticks, add `delta`, repeat `count` times (`count=1` =
+write once); `restart`≠0 loops; `stop`=0 terminates. `AUDCn` =
+`[distortion:3][volume-only:1][volume:4]` (A0=pure, 80=noise, C0=poly4); `AUDFn` is
+a frequency divider (lower → higher pitch). The runner warns `⚠ SILENT` for any
+entry that produces no output.
 
-| idx | reg   | idx | reg   |
-|-----|-------|-----|-------|
-| 0   | AUDF1 | 1   | AUDC1 |
-| 2   | AUDF2 | 3   | AUDC2 |
-| 4   | AUDF3 | 5   | AUDC3 |
-| 6   | AUDF4 | 7   | AUDC4 |
-| 8   | AUDCTL | 9  | console |
+> **Raw escape hatch:** a spec may instead provide a `pokey1` (and optional
+> `pokey2`) array of `[regIndex, value, timeSeconds, …]` writes fed straight to
+> `feed()`, bypassing the ALSOUN expander. Register map: `0/1`=AUDF1/AUDC1,
+> `2/3`=AUDF2/AUDC2, `4/5`, `6/7`, `8`=AUDCTL, `9`=console.
 
-`AUDCn` = `[distortion:3][volume-only:1][volume:4]`; `AUDFn` = frequency divider
-(lower → higher pitch). A spec may include `pokey2` (the second chip — Tempest has
-two); output is mixed to mono.
-
-The file currently ships **two demo entries** (`demo_beep`, `demo_zap`) that prove
-the pipeline. **Replace the `SFX` array with the authentic Tempest register
-sequences** from the `sound-recon` ROM pass (player fire, enemy fire/charge,
-explosion, zoom/warp, superzapper, pulsar, fuseball, bonus, …). The runner warns
-`⚠ SILENT` for any entry whose data produces no output.
+Provenance, format, and the sound→address mapping are documented in
+"Tempest vs Tempest" (R. Hogan), ch. *story of a beep*.
 
 ## Attribution / license
 
