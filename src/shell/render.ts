@@ -3,6 +3,11 @@ import { GameState, Enemy } from '../core/state'
 import { HighScoreTable } from '../core/highscore'
 import { Tube, Point, currentLane, project } from '../core/geometry'
 import { Fx } from './fx'
+import {
+  flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
+  pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
+  type Glyph, type GlyphColor,
+} from './glyphs'
 
 // Per-level color cycling — index by (level-1) mod palette length.
 const LEVEL_COLORS = [
@@ -10,12 +15,51 @@ const LEVEL_COLORS = [
   '#b14cff', '#00d6ff', '#ff7a18', '#46ff5a',
 ]
 const CLAW_COLOR = '#ffe600'
-const ENEMY_COLOR: Record<Enemy['kind'], string> = {
-  flipper: '#ff2bd6',
-  tanker: '#39ff14',
-  spiker: '#ffa500',
-  fuseball: '#ff4b3e',
-  pulsar: '#00e5ff',
+
+// Neon hues for the authentic-glyph palette colours (Story 6-8). The glyph
+// library names colours semantically; this is the one place they become pixels.
+const GLYPH_HEX: Record<GlyphColor, string> = {
+  red: '#ff2f4f',
+  green: '#39ff14',
+  yellow: '#ffe600',
+  cyan: '#00e5ff',
+  white: '#ffffff',
+  orange: '#ffa500',
+  purple: '#9b30ff',
+}
+
+// Stroke an authentic glyph (Story 6-8) at (cx,cy), scaled and rotated into
+// place. A single-point sub-stroke renders as a dot (e.g. the spike tip / bolt
+// cross). `override` recolours every sub-stroke (the pulsar's cyan<->white
+// strobe). lineWidth is divided by scale so the stroke stays ~2px on screen.
+function strokeGlyph(
+  ctx: CanvasRenderingContext2D, glyph: Glyph, cx: number, cy: number,
+  scale: number, rotation: number, blur: number, override?: GlyphColor,
+): void {
+  ctx.save()
+  ctx.translate(cx, cy)
+  if (rotation) ctx.rotate(rotation)
+  ctx.scale(scale, scale)
+  const lw = 2 / scale
+  const dot = 1.8 / scale
+  for (const stroke of glyph) {
+    const hex = GLYPH_HEX[override ?? stroke.color]
+    ctx.strokeStyle = hex
+    ctx.fillStyle = hex
+    ctx.shadowColor = hex
+    ctx.shadowBlur = blur
+    ctx.lineWidth = lw
+    if (stroke.points.length === 1) {
+      const p = stroke.points[0]
+      ctx.beginPath(); ctx.arc(p.x, p.y, dot, 0, Math.PI * 2); ctx.fill()
+    } else {
+      ctx.beginPath()
+      stroke.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+      if (stroke.closed) ctx.closePath()
+      ctx.stroke()
+    }
+  }
+  ctx.restore()
 }
 
 // Animation accumulators (render-only; never feeds back into the sim).
@@ -127,13 +171,17 @@ function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.lineWidth = 2
     ctx.shadowBlur = 10
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
-    // Barbed tip.
-    ctx.fillStyle = '#c98bff'
+    // Single white tip dot (Story 6-8): authentic ROM cap (JADOT: VCTR 0,0) —
+    // one white point, no flicker. Supersedes the earlier purple barb.
+    ctx.fillStyle = '#ffffff'
+    ctx.shadowColor = '#ffffff'
     ctx.shadowBlur = 8
-    ctx.beginPath(); ctx.arc(b.x, b.y, 2.4, 0, Math.PI * 2); ctx.fill()
+    ctx.beginPath(); ctx.arc(b.x, b.y, 2.0, 0, Math.PI * 2); ctx.fill()
   }
 }
 
+// Player bullets render as the authentic two concentric dotted octagon rings
+// (Story 6-8), with a short motion streak behind for the sense of travel.
 function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   for (const b of s.bullets) {
     const p = project(s.tube, b.lane, b.depth)
@@ -143,124 +191,59 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.shadowBlur = 14
     ctx.lineWidth = 2.5
     ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(p.x, p.y); ctx.stroke()
-    ctx.fillStyle = '#ffffff'
-    ctx.shadowBlur = 16
-    ctx.beginPath(); ctx.arc(p.x, p.y, 2.6, 0, Math.PI * 2); ctx.fill()
+    strokeGlyph(ctx, playerBulletGlyph(), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14)
   }
 }
 
-// Enemy energy bolts (Story 6-5): a white 4-hook pinwheel around a red 4-dot
-// cross, spinning as it rides down its lane toward the rim. Rotation is derived
-// from depth so it stays deterministic with the sim. (Deeper shape fidelity to
-// the ROM glyph is 6-8's remit.)
+// Enemy energy bolts (Story 6-5, glyph fidelity 6-8): the authentic white
+// 4-hook pinwheel + red 4-dot cross, spinning through its 4 ROM frames as it
+// rides down its lane toward the rim. Frame + rotation derive from depth so the
+// spin stays deterministic with the sim.
 function drawEnemyBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   for (const b of s.enemyBullets) {
     const p = project(s.tube, b.lane, b.depth)
-    const size = 4 + b.depth * 6      // grows as it nears the player
-    const spin = b.depth * Math.PI * 4 // four spin frames over the descent
-    ctx.save()
-    ctx.translate(p.x, p.y)
-    ctx.rotate(spin)
-    // White pinwheel: a hook off each of four corners.
-    ctx.strokeStyle = '#ffffff'
-    ctx.shadowColor = '#ffffff'
-    ctx.shadowBlur = 12
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2
-      const cx = Math.cos(a) * size
-      const cy = Math.sin(a) * size
-      ctx.moveTo(cx, cy)
-      ctx.lineTo(cx + Math.cos(a + Math.PI / 2) * size * 0.6,
-                 cy + Math.sin(a + Math.PI / 2) * size * 0.6)
-    }
-    ctx.stroke()
-    // Red central 4-dot cross.
-    ctx.fillStyle = '#ff3030'
-    ctx.shadowColor = '#ff3030'
-    ctx.shadowBlur = 10
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2
-      ctx.beginPath()
-      ctx.arc(Math.cos(a) * size * 0.45, Math.sin(a) * size * 0.45, 1.6, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.restore()
+    const scale = 0.4 + b.depth * 0.5 // grows as it nears the player
+    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)
   }
 }
 
+// Enemies render as authentic rev-3 ROM vector glyphs (Story 6-8): the flipper
+// bowtie, tanker X-diamond + cargo emblem, spiker pinwheel, fuseball ball-of-
+// legs, and pulsar zig-zag bar — each animated through its glyph's frame arg.
 function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void {
   const tube = s.tube
   const p = project(tube, e.lane, e.depth)
   const r = 5 + e.depth * 10
-  const color = ENEMY_COLOR[e.kind]
-  ctx.strokeStyle = color
-  ctx.fillStyle = color
-  ctx.shadowColor = color
-  ctx.lineWidth = 2
 
   switch (e.kind) {
     case 'flipper': {
-      // Spinning bow-tie / pinwheel.
-      const rot = renderTime * 4 + e.lane
-      ctx.shadowBlur = 14
-      ctx.save()
-      ctx.translate(p.x, p.y)
-      ctx.rotate(rot)
-      ctx.beginPath()
-      ctx.moveTo(-r, -r * 0.7)
-      ctx.lineTo(r, -r * 0.7)
-      ctx.lineTo(-r, r * 0.7)
-      ctx.lineTo(r, r * 0.7)
-      ctx.closePath()
-      ctx.stroke()
-      ctx.restore()
+      // RED bowtie/butterfly; flip + rotation are runtime (spin from renderTime).
+      strokeGlyph(ctx, flipperGlyph(), p.x, p.y, r / 4, renderTime * 4 + e.lane, 14)
       break
     }
     case 'tanker': {
-      ctx.shadowBlur = 14
-      ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2)
-      ctx.lineWidth = 1
-      ctx.globalAlpha = 0.7
-      ctx.strokeRect(p.x - r * 0.5, p.y - r * 0.5, r, r)
-      ctx.globalAlpha = 1
+      // X-diamond body + the emblem of whatever it splits into.
+      strokeGlyph(ctx, tankerGlyph(e.contains), p.x, p.y, r / 9, 0, 14)
       break
     }
     case 'spiker': {
-      const rot = renderTime * 5
-      ctx.shadowBlur = 12
-      ctx.save()
-      ctx.translate(p.x, p.y)
-      ctx.rotate(rot)
-      ctx.beginPath()
-      ctx.moveTo(-r, 0); ctx.lineTo(r, 0)
-      ctx.moveTo(0, -r); ctx.lineTo(0, r)
-      ctx.stroke()
-      ctx.restore()
+      // 4 spin frames cycled like the ROM's `timectr & 3`.
+      strokeGlyph(ctx, spikerGlyph(Math.floor(renderTime * 8)), p.x, p.y, r / 6, 0, 12)
       break
     }
     case 'fuseball': {
-      ctx.shadowBlur = 18
-      ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.62, 0, Math.PI * 2); ctx.fill()
-      // Crackling sparks.
-      ctx.strokeStyle = '#ffd0c8'
-      ctx.lineWidth = 1.4
-      ctx.shadowBlur = 10
-      for (let k = 0; k < 5; k++) {
-        const a = renderTime * 7 + k * ((Math.PI * 2) / 5)
-        ctx.beginPath()
-        ctx.moveTo(p.x, p.y)
-        ctx.lineTo(p.x + Math.cos(a) * r * 1.15, p.y + Math.sin(a) * r * 1.15)
-        ctx.stroke()
-      }
+      // 4 writhe frames — legs fully redrawn each frame.
+      strokeGlyph(ctx, fuseballGlyph(Math.floor(renderTime * 12)), p.x, p.y, r / 9, 0, 16)
       break
     }
     case 'pulsar': {
+      // Zig-zag bar whose jaggedness + colour strobe together while pulsing.
       const beat = e.pulsing ? 0.5 + 0.5 * Math.sin(renderTime * 18) : 0
-      ctx.shadowBlur = e.pulsing ? 22 + beat * 18 : 12
-      ctx.lineWidth = e.pulsing ? 3 + beat * 2 : 2
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke()
+      const variant = e.pulsing
+        ? pulsarVariant(Math.floor((0.5 + 0.5 * Math.sin(renderTime * 12)) * 0xff))
+        : 4 // flat bar when dormant
+      const color = pulsarColor(e.pulsing && beat > 0.5)
+      strokeGlyph(ctx, pulsarBar(variant), p.x, p.y, r / 4, 0, e.pulsing ? 22 + beat * 18 : 12, color)
       if (e.pulsing) {
         // Electrify the whole lane as a warning (boundary-safe quad).
         const i0 = bIndex(tube, e.lane)
@@ -270,7 +253,8 @@ function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void 
         const n0 = tube.near[i0]
         const n1 = tube.near[i1]
         ctx.globalAlpha = 0.12 + beat * 0.16
-        ctx.fillStyle = color
+        ctx.fillStyle = GLYPH_HEX[color]
+        ctx.shadowColor = GLYPH_HEX[color]
         ctx.shadowBlur = 16
         ctx.beginPath()
         ctx.moveTo(f0.x, f0.y); ctx.lineTo(f1.x, f1.y)
