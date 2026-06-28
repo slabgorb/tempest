@@ -30,7 +30,7 @@ const SOUNDS = {
   enemyFire: 'enemy_fire.wav', // ★ authentic ($cc45) — an enemy fired an energy bolt
   enemyDeath: 'enemy_explosion.wav', // ★ authentic ($cc81) — an enemy was destroyed
   playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim (community rip)
-  playerDeath: 'shipexplosion.wav', // the Claw was destroyed (community rip)
+  playerDeath: 'player_explosion.wav', // ★ authentic ($cbf5) — the Claw was destroyed (6-11)
   warpSpikeCrash: 'kaboom.wav', // crashed onto a spike during the warp (community rip)
   levelClear: 'warp.wav', // ★ authentic ($cc75) — level cleared, warp begins
   superzapper: 'kzap.wav', // superzapper fired (community rip)

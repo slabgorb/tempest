@@ -16,7 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
-import { SFX } from './sfx-data.mjs';
+import { SFX, ALSOUN_STREAM } from './sfx-data.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -99,6 +99,81 @@ function expandAlsoun({ audf, audc }) {
   };
 }
 
+// ── ALSOUN streaming engine (story 6-11) ──────────────────────────────────────
+// Faithful re-implementation of the arcade's `update_sounds` NMI handler (from
+// tempest.a65), for the multi-note sounds that aren't single 6-byte records.
+// The engine streams from the `Lcbd1` table (ALSOUN_STREAM here): `Lc0` is a
+// per-voice index that advances by 2 per note; each note `[value,beats,delta,
+// count]` lives at `Lcbd1[Lc0*2 - 6 ..]`. A note holds `value`, then ramps by
+// `delta` every `beats` ticks for `count` iterations, then advances; AUDC (odd)
+// ramps mask the high nibble so only the volume changes. `beats==0` ends the
+// stream (or jumps to `Lc0=value` to loop). Verified bit-for-bit against the
+// six 6-6 sounds. See docs/ux/2026-06-28-pokey-sfx-rom-map.md.
+const SOUND_IRQ_HZ = 1 / BEAT; // ~250 Hz, same clock as expandSeq
+
+function streamByte(i) {
+  return i >= 0 && i < ALSOUN_STREAM.length ? ALSOUN_STREAM[i] : 0x00;
+}
+
+// Walk one voice (reg 0 = AUDF1, reg 1 = AUDC1; odd = AUDC high-nibble mask).
+function streamVoice(startV, reg, odd) {
+  const ev = [];
+  let Lc0 = startV & 0xff;
+  let Le0 = 1, Lf0 = 1, Ld0 = 0;
+  let t = 0;
+  const maxTicks = Math.floor(MAX_SFX_S * SOUND_IRQ_HZ);
+  for (let tick = 0; tick < maxTicks; tick++) {
+    if (Lc0 === 0) break;
+    t = tick / SOUND_IRQ_HZ;
+    Le0 = (Le0 - 1) & 0xff;
+    if (Le0 !== 0) continue; // still holding the current value — no write
+    Lf0 = (Lf0 - 1) & 0xff;
+    if (Lf0 === 0) {
+      // both counters spent → advance to the next note (may loop on restart)
+      let ended = false;
+      for (;;) {
+        Lc0 = (Lc0 + 2) & 0xff;
+        const Y = Lc0 * 2;
+        Ld0 = streamByte(Y - 6); // value
+        Lf0 = streamByte(Y - 3); // count
+        Le0 = streamByte(Y - 5); // beats
+        if (Le0 === 0) {
+          Lc0 = 0;
+          if (Ld0 !== 0) {
+            Lc0 = Ld0; // restart/jump
+            continue;
+          }
+          ended = true;
+        }
+        break;
+      }
+      ev.push([reg, Ld0 & 0xff, Number(t.toFixed(5))]);
+      if (ended) break;
+    } else {
+      // mid-note ramp: Ld0 += delta, reset the beats counter
+      const Y = Lc0 * 2;
+      Le0 = streamByte(Y - 5);
+      const delta = streamByte(Y - 4);
+      const old = Ld0;
+      Ld0 = (Ld0 + delta) & 0xff;
+      if (odd) Ld0 = (Ld0 & 0x0f) | (old & 0xf0); // keep distortion, ramp volume
+      ev.push([reg, Ld0 & 0xff, Number(t.toFixed(5))]);
+    }
+  }
+  return { ev, dur: t };
+}
+
+// Returns { pokey1, durationMs } for a `spec.stream = { audfStart, audcStart }`.
+function expandStream({ audfStart, audcStart }) {
+  const a = streamVoice(audfStart, 0, false); // AUDF1 (pitch)
+  const b = streamVoice(audcStart, 1, true); // AUDC1 (distortion + volume)
+  const merged = [...a.ev, ...b.ev].sort((x, y) => x[2] - y[2]);
+  return {
+    pokey1: [8, 0x00, 0.0, ...merged.flat()],
+    durationMs: Math.max(20, Math.round((Math.min(MAX_SFX_S, Math.max(a.dur, b.dur)) + 0.02) * 1000)),
+  };
+}
+
 // ── render one SFX to a Float32 sample buffer ─────────────────────────────────
 function renderSfx(spec) {
   const nSamples = Math.max(1, Math.ceil((spec.durationMs / 1000) * SAMPLE_RATE));
@@ -167,8 +242,14 @@ let made = 0;
 let silent = 0;
 for (const spec of SFX) {
   // Authentic entries carry an ALSOUN envelope; expand it to register events.
+  // A `spec.alsoun` is a single 6-byte record (6-6 set); a `spec.stream` is a
+  // multi-note envelope walked by the streaming engine (6-11).
   if (spec.alsoun) {
     const e = expandAlsoun(spec.alsoun);
+    spec.pokey1 = e.pokey1;
+    spec.durationMs = e.durationMs;
+  } else if (spec.stream) {
+    const e = expandStream(spec.stream);
     spec.pokey1 = e.pokey1;
     spec.durationMs = e.durationMs;
   }

@@ -37,25 +37,44 @@ const here = (rel) => fileURLToPath(new URL(rel, import.meta.url))
 const bakeScript = here('./bake-sfx.mjs')
 
 describe('pokey-bake sfx-data (AC#1: authentic ALSOUN envelope data)', () => {
-  it('encodes every SFX as a pair of 6-byte ALSOUN records (audf + audc)', () => {
+  it('encodes every SFX as a clean ALSOUN record OR a streaming envelope', () => {
+    // 6-6's sounds are single 6-byte records (`spec.alsoun`); 6-11 added
+    // multi-note sounds the engine streams from ALSOUN_STREAM (`spec.stream`).
+    // Every entry must have exactly one of those shapes, plus a name/rom/gain.
+    const stream = sfxData.ALSOUN_STREAM ?? []
     expect(SFX.length).toBeGreaterThan(0)
     for (const spec of SFX) {
       expect(typeof spec.name).toBe('string')
       expect(spec.rom).toMatch(/^\$[0-9a-f]{4}$/i) // CPU address of the ROM record
-      for (const seq of [spec.alsoun.audf, spec.alsoun.audc]) {
-        expect(Array.isArray(seq)).toBe(true)
-        expect(seq).toHaveLength(6) // [value, beats, delta, count, restart, stop]
-        for (const b of seq) {
-          expect(Number.isInteger(b)).toBe(true)
-          expect(b).toBeGreaterThanOrEqual(0)
-          expect(b).toBeLessThanOrEqual(0xff)
-        }
-      }
-      expect(spec.alsoun.audf[5]).toBe(0x00) // stop terminator
-      expect(spec.alsoun.audc[5]).toBe(0x00)
       expect(typeof spec.gain).toBe('number')
       expect(spec.gain).toBeGreaterThan(0)
       expect(spec.gain).toBeLessThanOrEqual(1)
+
+      const isClean = !!spec.alsoun
+      const isStream = !!spec.stream
+      expect(isClean !== isStream, `${spec.name} must be exactly one of alsoun/stream`).toBe(true)
+
+      if (isClean) {
+        for (const seq of [spec.alsoun.audf, spec.alsoun.audc]) {
+          expect(Array.isArray(seq)).toBe(true)
+          expect(seq).toHaveLength(6) // [value, beats, delta, count, restart, stop]
+          for (const b of seq) {
+            expect(Number.isInteger(b)).toBe(true)
+            expect(b).toBeGreaterThanOrEqual(0)
+            expect(b).toBeLessThanOrEqual(0xff)
+          }
+        }
+        expect(spec.alsoun.audf[5]).toBe(0x00) // stop terminator
+        expect(spec.alsoun.audc[5]).toBe(0x00)
+      } else {
+        // streaming: audf/audc start indices into the embedded ALSOUN_STREAM
+        for (const v of [spec.stream.audfStart, spec.stream.audcStart]) {
+          expect(Number.isInteger(v)).toBe(true)
+          expect(v).toBeGreaterThan(0)
+          expect(v).toBeLessThanOrEqual(0xff)
+        }
+        expect(stream.length, 'ALSOUN_STREAM data present for streaming SFX').toBeGreaterThan(0)
+      }
     }
   })
 
