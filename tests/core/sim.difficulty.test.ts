@@ -98,24 +98,34 @@ describe('rollSpawnKind roster & introduction schedule (AC#3, AC#4)', () => {
     }
   })
 
-  it('preserves the early-level introduction schedule', () => {
-    // AC#4: cycle scaling must NOT leak hard enemies in before their gate.
-    // Levels 1-2: flippers only. Level 4: tankers/spikers but no pulsar/fuseball.
-    expect(rollDistribution(1, 11, 500)).toEqual(new Map<EnemyKind, number>([['flipper', 500]]))
-    expect(rollDistribution(2, 11, 500)).toEqual(new Map<EnemyKind, number>([['flipper', 500]]))
+  it('preserves the authentic ROM early-level introduction schedule', () => {
+    // AC#4 (reconciled by story 6-13): cycle scaling must NOT leak hard enemies
+    // in before their *authentic* gate. Levels 1-4: flippers only. Level 5
+    // introduces tankers/spikers, but pulsars (L17+) and fuseballs (L11+) stay
+    // out. Source: docs/ux/2026-06-27-enemy-roster-rom-extract.md §H.
+    for (const level of [1, 2, 3, 4]) {
+      expect(rollDistribution(level, 11, 500)).toEqual(
+        new Map<EnemyKind, number>([['flipper', 500]]),
+      )
+    }
 
-    const d4 = rollDistribution(4, 11, 2000)
-    expect(d4.get('tanker') ?? 0).toBeGreaterThan(0)
-    expect(d4.get('spiker') ?? 0).toBeGreaterThan(0)
-    expect(d4.get('pulsar') ?? 0).toBe(0)
-    expect(d4.get('fuseball') ?? 0).toBe(0)
+    const d5 = rollDistribution(5, 11, 2000)
+    expect(d5.get('tanker') ?? 0).toBeGreaterThan(0)
+    expect(d5.get('spiker') ?? 0).toBeGreaterThan(0)
+    expect(d5.get('pulsar') ?? 0).toBe(0)
+    expect(d5.get('fuseball') ?? 0).toBe(0)
   })
 })
 
 describe('rollSpawnKind escalates the enemy mix on later cycles (AC core: new behavior)', () => {
-  // Levels 5, 21, 37 share the same in-cycle position ((level-1) mod 16 === 4),
-  // so they differ ONLY by cycle = floor((level-1)/16) = 0, 1, 2. Any change in
-  // the hard-enemy proportion between them is attributable purely to the cycle.
+  // Levels 5, 21, 37 share the same in-cycle position ((level-1) mod 16 === 4)
+  // and ascending cycles (0, 1, 2). NOTE (story 6-13): under the authentic ROM
+  // introduction schedule they no longer differ by cycle ALONE — L5 only has
+  // tankers/spikers, while L21/L37 (≥17) also have pulsars+fuseballs. So the
+  // rising hard-enemy proportion reflects both the opening roster and the
+  // retained cycle scaling; the assertion that later levels are harder still
+  // holds. (Whether to keep cycle scaling vs the ROM's fixed L33+ steady-state
+  // weights is a flagged follow-up decision — see story 6-13 delivery findings.)
   const SEED = 4242
   const N = 6000
 
