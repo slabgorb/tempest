@@ -21,18 +21,20 @@
 const DEFAULT_BASE_URL = 'https://arcade-assets.slabgorb.com/tempest/sfx/'
 
 // Logical sound name -> R2 filename. Keyed to the gameplay moments the 5-1
-// `GameEvent` channel reports, so 5-5's event->sound wiring is a thin lookup.
-// Filenames are exact (R2 keys are case-sensitive).
+// `GameEvent` channel reports, so the event->sound wiring is a thin lookup.
+// Filenames are exact (R2 keys are case-sensitive). The ★ entries are AUTHENTIC
+// POKEY bakes from the arcade ROM (story 6-6 — baked by tools/pokey-bake/ and
+// hosted on R2); the rest are the original community-rip samples.
 const SOUNDS = {
-  fire: 'shot.wav', // player bullet fired
-  enemyFire: 'enemyfire.wav', // an enemy fired an energy bolt (6-5 hook; asset baked by 6-6)
-  enemyDeath: 'explo.wav', // an enemy was destroyed
-  playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim
-  playerDeath: 'shipexplosion.wav', // the Claw was destroyed
-  warpSpikeCrash: 'kaboom.wav', // crashed onto a spike during the warp
-  levelClear: 'getwarp.wav', // level cleared, warp begins
-  superzapper: 'kzap.wav', // superzapper fired
-  playerSpawn: 'warpin.wav', // the Claw (re)spawned
+  fire: 'player_fire.wav', // ★ authentic bake (ROM $cc5d) — player bullet fired
+  enemyFire: 'enemy_fire.wav', // ★ authentic ($cc45) — an enemy fired an energy bolt
+  enemyDeath: 'enemy_explosion.wav', // ★ authentic ($cc81) — an enemy was destroyed
+  playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim (community rip)
+  playerDeath: 'shipexplosion.wav', // the Claw was destroyed (community rip)
+  warpSpikeCrash: 'kaboom.wav', // crashed onto a spike during the warp (community rip)
+  levelClear: 'warp.wav', // ★ authentic ($cc75) — level cleared, warp begins
+  superzapper: 'kzap.wav', // superzapper fired (community rip)
+  playerSpawn: 'warpin.wav', // the Claw (re)spawned (community rip)
 } as const
 
 export type SoundName = keyof typeof SOUNDS

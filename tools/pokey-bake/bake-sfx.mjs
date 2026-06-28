@@ -58,6 +58,47 @@ function loadPokeyClass(sampleRate) {
 
 const POKEY = loadPokeyClass(SAMPLE_RATE);
 
+// ── ALSOUN envelope expander ──────────────────────────────────────────────────
+// Tempest stores each SFX as two 6-byte envelope records (AUDF1 + AUDC1) walked
+// by the sound IRQ at ~250 Hz. Expand a `{ audf, audc }` pair (see sfx-data.mjs)
+// into the timed [reg, value, time, ...] event stream the renderer feeds POKEY.
+const BEAT = 1 / 250;     // sound-IRQ period (~246-250 Hz, one beat ≈ 4 ms)
+const MAX_SFX_S = 1.6;    // cap sustained/looping envelopes for a one-shot WAV
+
+// Walk one register sequence. reg: 0 = AUDF1, 1 = AUDC1.
+function expandSeq(reg, [value, beats, delta, count, restart]) {
+  const ev = [];
+  const stepDur = Math.max(1, beats) * BEAT;
+  let val = value, t = 0, steps = 0, n = count === 0 ? 1 : count, looped = false;
+  while (steps < n && t < MAX_SFX_S) {
+    ev.push([reg, val & 0xff, Number(t.toFixed(5))]);
+    val = (val + delta) & 0xff;
+    t += stepDur;
+    steps++;
+    if (steps >= n && restart !== 0 && t < MAX_SFX_S && !looped) {
+      // looping sound — replay the segment to fill a usable one-shot sample
+      n = Math.min(Math.floor(MAX_SFX_S / stepDur), n * Math.ceil(MAX_SFX_S / Math.max(t, 1e-3)));
+      val = value;
+      looped = true;
+    }
+  }
+  return { ev, dur: t };
+}
+
+// Returns { pokey1, durationMs } for a `spec.alsoun = { audf, audc }`.
+function expandAlsoun({ audf, audc }) {
+  const a = expandSeq(0, audf); // AUDF1 (pitch)
+  const b = expandSeq(1, audc); // AUDC1 (distortion + volume)
+  // web-pokey walks the feed monotonically, so AUDF and AUDC events MUST be
+  // merged into chronological order or later-but-earlier-timed writes are
+  // applied in a lump at the end (→ a silent or wrong sound).
+  const merged = [...a.ev, ...b.ev].sort((x, y) => x[2] - y[2]);
+  return {
+    pokey1: [8, 0x00, 0.0, ...merged.flat()],
+    durationMs: Math.max(20, Math.round((Math.min(MAX_SFX_S, Math.max(a.dur, b.dur)) + 0.02) * 1000)),
+  };
+}
+
 // ── render one SFX to a Float32 sample buffer ─────────────────────────────────
 function renderSfx(spec) {
   const nSamples = Math.max(1, Math.ceil((spec.durationMs / 1000) * SAMPLE_RATE));
@@ -125,6 +166,12 @@ console.log(`Baking ${SFX.length} SFX @ ${SAMPLE_RATE} Hz → ${outDir}\n`);
 let made = 0;
 let silent = 0;
 for (const spec of SFX) {
+  // Authentic entries carry an ALSOUN envelope; expand it to register events.
+  if (spec.alsoun) {
+    const e = expandAlsoun(spec.alsoun);
+    spec.pokey1 = e.pokey1;
+    spec.durationMs = e.durationMs;
+  }
   const { out, peak } = renderSfx(spec);
   const path = join(outDir, `${spec.name}.wav`);
   writeWav(path, out, SAMPLE_RATE);
