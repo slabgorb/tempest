@@ -179,16 +179,27 @@ function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): 
 // roster hardens — difficulty does not reset when the geometry table wraps.
 export const SPAWN_CYCLE_HARD_SCALE = 0.5
 
+// Authentic Atari rev-3 enemy *introduction* schedule (story 6-13 — stakeholder
+// decision: follow the ROM, do not re-tune the canonical game). Which enemy types
+// unlock at which level. Source of truth, citing rev-3 ROM line numbers:
+// docs/ux/2026-06-27-enemy-roster-rom-extract.md §H "Mix per level" (line 426),
+// corroborated by docs/ux/2026-06-27-tempest-arcade-feel-reference.md line 242:
+//   flippers L1+ · tankers L5+ · spikers L5+ · fuseballs L11+ · pulsars L17+.
+// (The ROM thins the spiker weight above L16 then restores 1 at the L33+ steady
+// state; we gate spikers monotonically at L5+ — the L5-16 window sits on a
+// doc-flagged suspected `$35` table bug. See story 6-13 delivery findings.)
+// The per-cycle `hard` ramp below is a separate difficulty axis (story 3-4), not
+// part of the ROM schedule; it is intentionally retained.
 export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: Rng } {
   // cycle 0 for levels 1–16, 1 for 17–32, … (tubeForLevel wraps with period 16).
   const cycle = Math.floor((level - 1) / 16)
   const hard = 1 + cycle * SPAWN_CYCLE_HARD_SCALE
   const table: ReadonlyArray<readonly [EnemyKind, number]> = [
     ['flipper', 10],
-    ['tanker', level >= 3 ? 4 * hard : 0],
-    ['spiker', level >= 3 ? 3 * hard : 0],
-    ['pulsar', level >= 5 ? 3 * hard : 0],
-    ['fuseball', level >= 5 ? 3 * hard : 0],
+    ['tanker', level >= 5 ? 4 * hard : 0],
+    ['spiker', level >= 5 ? 3 * hard : 0],
+    ['pulsar', level >= 17 ? 3 * hard : 0],
+    ['fuseball', level >= 11 ? 3 * hard : 0],
   ]
   const res = weightedPick(table, rng)
   return { kind: res.value, rng: res.rng }
