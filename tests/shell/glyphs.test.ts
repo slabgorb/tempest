@@ -40,7 +40,10 @@
 //   export function playerClawGlyph(rotation: number): Glyph     // 8 graphics
 //   export function playerBulletGlyph(): Glyph
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+// Read the glyph source as text via Vite's `?raw` (no Node `fs` types — the
+// project keeps a deliberately browser-pure type posture). Same idiom the core
+// boundary scans use (tests/core/events.test.ts, tests/shell/storage.test.ts).
+import glyphSrc from '../../src/shell/glyphs.ts?raw'
 import {
   flipperGlyph,
   tankerGlyph,
@@ -465,28 +468,22 @@ describe('playerBulletGlyph (Story 6-8: two concentric dotted octagons)', () => 
 // TypeScript lang-review #1 (no type-safety escapes).
 // ===========================================================================
 describe('glyph module rules (boundary + purity + type safety)', () => {
-  const SRC = new URL('../../src/shell/glyphs.ts', import.meta.url)
-  const read = () => readFileSync(SRC, 'utf8')
-
   it('is render-only: never imports from the sim/state/rules/rng/enemies core', () => {
     // The Hard Architectural Boundary (tempest CLAUDE.md): glyphs are SHELL. They
     // may borrow the pure `Point` type from core/geometry, but must not couple to
     // mutable sim state. Story 6-8 AC: "Shell/render-only: src/core/ untouched."
-    const src = read()
-    expect(src).not.toMatch(/from\s+['"]\.\.\/core\/(sim|state|rules|rng|enemies)/)
+    expect(glyphSrc).not.toMatch(/from\s+['"]\.\.\/core\/(sim|state|rules|rng|enemies)/)
   })
 
   it('is pure: no Math.random, Date, or performance time in glyph geometry', () => {
     // Determinism is what makes "no flicker" and frame-exact fidelity testable;
     // animation must arrive as explicit args, never ambient time/randomness.
-    const src = read()
-    expect(src).not.toMatch(/Math\.random|Date\.now|new Date\(|performance\.now/)
+    expect(glyphSrc).not.toMatch(/Math\.random|Date\.now|new Date\(|performance\.now/)
   })
 
   it('uses no `as any` / @ts-ignore type-safety escapes (TS lang-review #1)', () => {
-    const src = read()
-    expect(src).not.toMatch(/\bas any\b/)
-    expect(src).not.toMatch(/@ts-ignore/)
+    expect(glyphSrc).not.toMatch(/\bas any\b/)
+    expect(glyphSrc).not.toMatch(/@ts-ignore/)
   })
 
   it('every animated glyph is deterministic across repeated calls', () => {
