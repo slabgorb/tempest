@@ -13,18 +13,21 @@ const params = levelParams(1)
 
 describe('stepFuseball', () => {
   it('climbs toward the rim', () => {
-    const out = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.2, jitterTimer: 999, vulnerable: false }, 1 / 60, params, tube, makeRng(1))
+    const out = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.2, jitterTimer: 999, vulnerable: false }, 1 / 60, params, tube, makeRng(1), 8)
     expect(out.enemy.depth).toBeCloseTo(0.2 + params.fuseballSpeed / 60)
   })
 
-  it('hops to an adjacent lane when the jitter timer elapses', () => {
-    const out = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 0.001, vulnerable: false }, 1 / 60, params, tube, makeRng(1))
-    expect([7, 9]).toContain(out.enemy.lane)
+  it('on a jitter it slides toward the player, never away (story 6-15)', () => {
+    // The fuzz_move gate may skip the step, but it never reverses direction:
+    // with the player one lane up (9), the fuseball ends on 8 (stayed) or 9
+    // (slid toward) — never 7. Full steering coverage: sim.enemy-motion-fidelity.
+    const out = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 0.001, vulnerable: false }, 1 / 60, params, tube, makeRng(1), 9)
+    expect([8, 9]).toContain(out.enemy.lane)
   })
 
   it('is deterministic for a given seed', () => {
-    const a = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 0.001, vulnerable: false }, 1 / 60, params, tube, makeRng(7))
-    const b = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 0.001, vulnerable: false }, 1 / 60, params, tube, makeRng(7))
+    const a = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 0.001, vulnerable: false }, 1 / 60, params, tube, makeRng(7), 12)
+    const b = stepFuseball({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 0.001, vulnerable: false }, 1 / 60, params, tube, makeRng(7), 12)
     expect(a.enemy.lane).toBe(b.enemy.lane)
   })
 })

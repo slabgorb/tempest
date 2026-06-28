@@ -96,6 +96,26 @@ export function enemyFireHoldoffFrames(level: number): number {
 
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
+// fuzz_move probability gate (rev-3 §D l.240-250): a fuseball only slides a lane
+// on a passing roll, so its approach is biased-but-not-relentless. The exact
+// fuzz_move_prb byte is not in the extracted notes; 0.6 keeps it lively.
+export const FUSEBALL_MOVE_PROB = 0.6
+// Spiker near-turnaround (story 6-15). ROM clamps `along` to $20 and reverses
+// (move away) once it climbs below it (rev-3 §C l.202-208). $20 → depth
+// (0xf0-$20)/224 ≈ 0.929 — far closer to the rim than the spike-height cap. Kept
+// SEPARATE from SPIKE_MAX_DEPTH (0.75) so raising the turnaround does not also
+// grow spikes (which feed warp-crash balance) — see story 6-15 deviations.
+export const SPIKER_TURNAROUND_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
+// Pulsar climb speed when near (story 6-15). spd_pulsar = $fea0 = const -82.5/s
+// (rev-3 §E l.293), hardcoded and level-independent — the same byte as the L1
+// flipper, so it only diverges from the far (flipper) speed at the higher levels
+// where pulsars appear (L17+).
+export const PULSAR_CLIMB_SPEED = 82.5 / WARP_ALONG_SPAN  // ≈ 0.368 depth/s
+// Pulsar far/near boundary: L0157 = $a0 for L1-64 (rev-3 §E l.311) → depth ≈0.357.
+// along > $a0 (depth < this) is "farther than L0157" → flipper speed; nearer →
+// pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
+// is intentionally not modelled.
+export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.357
 export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth
 // Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab.
 export const SPLIT_CHILD_DEPTH = 0.85
