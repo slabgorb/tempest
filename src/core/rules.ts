@@ -103,7 +103,8 @@ export const SPLIT_CHILD_DEPTH = 0.85
 export interface LevelParams {
   enemyCount: number
   flipperSpeed: number   // depth units per second
-  flipInterval: number   // seconds between flips
+  flipInterval: number   // seconds between flips (pulsars; legacy flipper fallback)
+  flipPattern: FlipPattern // authentic per-level flipper cadence + flip duration (6-14)
   spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
   pulseInterval: number  // seconds between pulsar pulses
@@ -126,6 +127,28 @@ export function flipperSpeedForLevel(level: number): number {
   return (alongPerFrame * 60) / WARP_ALONG_SPAN
 }
 
+// Authentic per-level flipper flip pattern (story 6-14). The arcade ROM drives
+// each level's flipper with a `flipper_move` program (enemy-roster ROM extract
+// §A l.9204-9348): L1 is the gentle "move 8 ticks then flip"; deep levels are
+// "flip constantly, 1 move between". We model the CADENCE envelope — climb frames
+// between flips, ramping 8 (L1) → 1 (L33+) — plus the multi-tick flip duration.
+// `flip_top_accel` (l.7184-7187) steps 2→3 at L33, so deep flips animate FASTER
+// (fewer frames). We do not gold-plate the exact deep-level frame counts nobody
+// reaches — only the documented envelope and the direction of the L33 change.
+export interface FlipPattern {
+  moveFrames: number   // climb frames between flips at 60 Hz (ROM flipper_move cadence)
+  flipFrames: number   // frames one flip animates over (multi-tick; >= 2)
+}
+
+export function flipPatternForLevel(level: number): FlipPattern {
+  // Cadence ramps linearly from the gentle L1 "move 8 ticks then flip" down to
+  // the "flip constantly, 1 move between" floor of 1 by L33, then holds.
+  const moveFrames = Math.max(1, Math.min(8, Math.round(8 - (7 * (level - 1)) / 32)))
+  // flip_top_accel 2 (L1-32) → 3 (L33+): deep flips cross the gap faster.
+  const flipFrames = level >= 33 ? 3 : 4
+  return { moveFrames, flipFrames }
+}
+
 export function levelParams(level: number): LevelParams {
   const ramp = 1 + (level - 1) * 0.15
   const flipperSpeed = flipperSpeedForLevel(level)
@@ -133,6 +156,7 @@ export function levelParams(level: number): LevelParams {
     enemyCount: 6 + (level - 1) * 2,
     flipperSpeed,
     flipInterval: Math.max(0.4, 1.5 / ramp),
+    flipPattern: flipPatternForLevel(level),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
     pulseInterval: Math.max(1.2, 3.0 / ramp),
