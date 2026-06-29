@@ -500,10 +500,15 @@ function stepZap(s: GameState, input: Input): void {
   if (s.player.superzapper === 'spent') return
 
   if (s.player.superzapper === 'full') {
-    // First press: consume the charge, clear in-flight bolts now (10-1), and open
-    // the longer kill window, across which the non-tankers die one per frame.
+    // First press: consume the charge and clear in-flight bolts now (10-1 — the
+    // panic-button fires even with nothing to kill).
     s.enemyBullets = []
     s.player.superzapper = 'used-once'
+    // An empty board has no kill payload, so per Story 5-1/4-1 a target-less zap
+    // emits NO activation event and opens NO flash window (Story 10-14 restores
+    // the early-return the 10-2 rewrite dropped — the charge is still spent, but
+    // the weapon makes no sound or light with nothing to vaporise).
+    if (s.enemies.length === 0) return
     s.events.push({
       type: 'superzapper-activate',
       killCount: s.enemies.filter((e) => e.kind !== 'tanker').length,
@@ -513,12 +518,16 @@ function stepZap(s: GameState, input: Input): void {
     return
   }
 
-  // 'used-once' → second press: exactly one kill (nearest the rim, any kind), then
-  // the shorter window flashes out with no further kills.
-  s.player.superzapper = 'spent'
+  // 'used-once' → second press. With NO target the weak shot is wasted-but-not-
+  // spent (Story 4-1/10-14): preserve the charge and emit nothing, so a mis-timed
+  // press on a momentarily empty tube does not burn the last shot.
   const idx = nearestRimIndex(s, () => true)
-  if (idx >= 0) zapKillAt(s, idx)
-  s.events.push({ type: 'superzapper-activate', killCount: idx >= 0 ? 1 : 0 })
+  if (idx < 0) return
+  // A target exists: spend the charge on exactly one kill (nearest the rim, any
+  // kind), then the shorter window flashes out with no further kills.
+  s.player.superzapper = 'spent'
+  zapKillAt(s, idx)
+  s.events.push({ type: 'superzapper-activate', killCount: 1 })
   s.player.zapTimer = ZAP_WINDOW_SECOND
   runZapFrame(s) // frame 1: flash + tick (no further kill — second window)
 }
