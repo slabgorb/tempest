@@ -213,10 +213,10 @@ describe('flipperGlyph (Story 6-8: authentic bowtie/butterfly)', () => {
 // B. Tanker — elongated X-diamond body (color idx 2) + cargo emblem variants
 // ===========================================================================
 describe('tankerGlyph (Story 6-8: X-diamond + cargo emblem by split type)', () => {
-  it('has an elongated (non-square) GREEN diamond body', () => {
+  it('has an elongated (non-square) PURPLE diamond body', () => {
     const g = tankerGlyph('flipper')
-    const body = g.find((s) => s.color === 'green')
-    expect(body, 'tanker body stroke (color idx 2 / green)').toBeDefined()
+    const body = g.find((s) => s.color === 'purple')
+    expect(body, 'tanker body stroke (GENTNK purple — Story 10-7)').toBeDefined()
     expect(body!.closed).toBe(true)
     const { w, h } = bbox(body!.points)
     // "elongated" — the body is deliberately not a square diamond.

@@ -87,14 +87,14 @@ export function flipperGlyph(): Glyph {
 }
 
 // ==========================================================================
-// B. Tanker — elongated GREEN X-diamond body + cargo emblem (draw_tanker).
+// B. Tanker — elongated PURPLE X-diamond body + cargo emblem (draw_tanker).
 // ==========================================================================
 export function tankerGlyph(cargo: TankerCargo): Glyph {
-  // Body: color idx 2 (green), elongated (taller than wide) X-diamond.
+  // Body: GENTNK purple (ROM authentic), elongated (taller than wide) X-diamond.
   const body: GlyphStroke = {
     points: [{ x: 0, y: -9 }, { x: 6, y: 0 }, { x: 0, y: 9 }, { x: -6, y: 0 }],
     closed: true,
-    color: 'green',
+    color: 'purple',
   }
   // Flipper-cargo tanker carries no emblem (ROM l.4798); pulsar (l.4628) and
   // fuzzball (l.4711) cargo each prepend a distinct emblem showing the split.
@@ -121,7 +121,7 @@ export function spikerGlyph(frame: number): Glyph {
 }
 
 // ==========================================================================
-// C'. The spike — dynamic line ∝ height, capped by ONE white tip dot.
+// C'. The spike — dynamic GREEN line ∝ height, capped by ONE white tip dot.
 // ==========================================================================
 const SPIKE_UNIT = 24
 
@@ -129,7 +129,7 @@ export function spikeGlyph(spikeHeight: number): Glyph {
   if (spikeHeight <= 0) return []
   const len = spikeHeight * SPIKE_UNIT
   return [
-    { points: [{ x: 0, y: 0 }, { x: 0, y: -len }], closed: false, color: 'purple' },
+    { points: [{ x: 0, y: 0 }, { x: 0, y: -len }], closed: false, color: 'green' },
     // Single zero-length white point (ROM JADOT: VCTR 0,0) — no flicker, no sparkle.
     { points: [{ x: 0, y: -len }], closed: false, color: 'white' },
   ]
