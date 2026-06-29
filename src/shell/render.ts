@@ -241,8 +241,10 @@ export function drawTube(
 }
 
 export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
-  ctx.strokeStyle = '#9b30ff'
-  ctx.shadowColor = '#9b30ff'
+  // Spike line is GREEN in the authentic ROM (Story 10-7); the white tip dot below
+  // is the ROM JADOT cap and stays white.
+  ctx.strokeStyle = '#39ff14'
+  ctx.shadowColor = '#39ff14'
   for (let lane = 0; lane < s.spikes.length; lane++) {
     const h = s.spikes[lane]
     if (h <= 0) continue
@@ -602,7 +604,9 @@ function drawHighScoreTable(
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Vector Battle', 'Orbitron', monospace", color, 14)
+  // Authentic ROM: the HIGH SCORES header is red (Story 10-7), independent of the
+  // level-cycling `color` still used for the top-rank row highlight below.
+  drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 14)
   if (table.length === 0) {
     drawGlowText(
       ctx, '- NO SCORES YET -', cx, top + 40,
@@ -659,7 +663,7 @@ function drawAttract(
   drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.42, color, 10)
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
-  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, "700 26px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 18)
+  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, "700 26px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 18)
   ctx.globalAlpha = 1
   drawGlowText(
     ctx, 'CLICK OR ENTER TO START - SPINNER + SPACE TO PLAY', W / 2, H * 0.86 + 34,
@@ -791,7 +795,7 @@ function drawHud(
     // clearly instead of fighting the tube/enemies behind them.
     drawScrim(ctx, W, H)
     ctx.textBaseline = 'middle'
-    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Vector Battle', 'Orbitron', monospace", '#ff3b5c', 26)
+    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 26)
     drawGlowText(
       ctx, `FINAL SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.28 + 50,
       "700 22px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 12,
@@ -962,7 +966,7 @@ export function render(
   // flash the warning so the player knows to rotate off a spiked lane. Blinks via
   // renderTime; the dive (warning === 0) clears it automatically.
   if (s.mode === 'warp' && s.warp.warning > 0 && Math.floor(renderTime * 4) % 2 === 0) {
-    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Vector Battle', 'Orbitron', monospace", '#ff5a3c', 18)
+    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Vector Battle', 'Orbitron', monospace", '#ffffff', 18)
     ctx.shadowBlur = 0
   }
 
