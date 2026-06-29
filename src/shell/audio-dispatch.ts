@@ -12,9 +12,10 @@
 import type { GameEvent } from '../core/events'
 import type { AudioEngine } from './audio'
 
-// Just the slice of the audio engine this dispatcher needs. Narrowing to `play`
-// keeps the function decoupled from resume()/ready() and lets tests pass a fake.
-type SoundPlayer = Pick<AudioEngine, 'play'>
+// Just the slice of the audio engine this dispatcher needs: one-shot `play` plus
+// the sustained-loop pair (Story 10-11). Narrowing keeps the function decoupled
+// from resume()/ready() and lets tests pass a recording fake.
+type SoundPlayer = Pick<AudioEngine, 'play' | 'startLoop' | 'stopLoop'>
 
 // Play one sound per gameplay event the core emitted this frame. The caller's loop
 // accumulates events across all sub-steps, so nothing is dropped when two events
@@ -42,7 +43,13 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
         audio.play('warpSpikeCrash')
         break
       case 'level-clear':
-        audio.play('levelClear')
+        // Story 10-11: the warp/zoom cue is now SUSTAINED. It starts here (warp
+        // entry) and is stopped by 'warp-end' when the dive concludes, so it spans
+        // the actual dive instead of a one-shot clipped on entry.
+        audio.startLoop('levelClear')
+        break
+      case 'warp-end':
+        audio.stopLoop('levelClear') // dive done (completed or crashed) — stop the loop
         break
       case 'superzapper-activate':
         audio.play('superzapper')
@@ -56,6 +63,18 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
         break
       case 'segment-cross':
         audio.play('segmentTick') // ★ authentic POKEY tick as the Claw crosses a lane (6-10)
+        break
+      case 'spike-shot':
+        audio.play('spikeShot') // ★ authentic spike_shot bake (ROM cc51, 10-11)
+        break
+      case 'extra-life':
+        audio.play('extraLife') // ★ authentic extra_life bake (ROM cc11, 10-11)
+        break
+      case 'pulsar-hum-start':
+        audio.startLoop('pulsarHum') // ★ loop the authentic pulsar_hum (ROM cc99, 10-11)
+        break
+      case 'pulsar-hum-stop':
+        audio.stopLoop('pulsarHum') // last pulsar gone — stop the hum (10-11)
         break
       default: {
         // Exhaustiveness guard: every GameEvent discriminant is handled above, so

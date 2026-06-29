@@ -95,6 +95,41 @@ export interface PlayerDeathEvent {
   cause: 'grab' | 'pulse' | 'spike' | 'bolt'
 }
 
+// A player bullet shortened a standing spike (Story 10-11). `lane` is where it
+// hit; the shell plays the authentic spike_shot cue (ROM cc51).
+export interface SpikeShotEvent {
+  type: 'spike-shot'
+  lane: number
+}
+
+// A bonus life was awarded this frame (Story 10-11) — the score crossed one (or
+// more) EXTRA_LIFE_INTERVAL boundaries. `count` is how many lives were added; the
+// shell plays the authentic extra_life cue (ROM cc11) once per award.
+export interface ExtraLifeEvent {
+  type: 'extra-life'
+  count: number
+}
+
+// The pulsar population went 0 → >0 (Story 10-11): the first pulsar appeared, so
+// the shell begins looping the authentic pulsar_hum (ROM cc99). Fires once on the
+// rising edge, not every frame a pulsar is present.
+export interface PulsarHumStartEvent {
+  type: 'pulsar-hum-start'
+}
+
+// The pulsar population went >0 → 0 (Story 10-11): the last pulsar left, so the
+// shell stops the pulsar_hum loop. Fires once on the falling edge.
+export interface PulsarHumStopEvent {
+  type: 'pulsar-hum-stop'
+}
+
+// The warp/zoom dive concluded (Story 10-11) — either it completed (reached the
+// next level) or the Claw crashed onto a spike. The shell stops the sustained
+// warp sound here so it spans exactly the dive (no early silence, no bleed).
+export interface WarpEndEvent {
+  type: 'warp-end'
+}
+
 export type GameEvent =
   | EnemyDeathEvent
   | PlayerGrabEvent
@@ -107,3 +142,8 @@ export type GameEvent =
   | PlayerSpawnEvent
   | PlayerDeathEvent
   | SegmentCrossEvent
+  | SpikeShotEvent
+  | ExtraLifeEvent
+  | PulsarHumStartEvent
+  | PulsarHumStopEvent
+  | WarpEndEvent
