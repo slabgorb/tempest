@@ -1,40 +1,49 @@
 // tests/core/sim.superzapper.test.ts
 //
 // Suite for the once-per-level Superzapper. Originally Story 4-1; Story 10-1
-// corrects the FIRST press to the authentic 1981 behaviour:
-//   full blast (first use)  → vaporise every NON-TANKER enemy AND clear every
-//                             in-flight enemy bolt; TANKERS are SPARED, then 'used-once'
-//   weak shot (second use)  → vaporise exactly ONE enemy (nearest the rim,
-//                             ties broken by lowest index), then 'spent'
-//   spent (third use+)      → no effect, until the next level
-//   per-level reset         → startLevel refills the charge to 'full', so every
-//                             level (including the post-warp one) begins armed
+// corrected the FIRST press to spare tankers and clear in-flight bolts; Story
+// 10-2 makes the weapon MULTI-FRAME — modelling the ROM's TIMAX/KILENE timing:
+//
+//   full blast (first use)  → over a ~13-frame ACTIVE WINDOW, vaporise every
+//                             NON-TANKER enemy on a PER-FRAME cadence (KILENE,
+//                             one kill per active frame), TANKERS are SPARED, and
+//                             every in-flight enemy bolt is cleared on the press.
+//                             Net outcome equals 10-1's: non-tankers gone, tankers
+//                             and (their) score untouched. Charge → 'used-once'.
+//   weak shot (second use)  → over a ~5-frame window, vaporise exactly ONE enemy
+//                             (nearest the rim, ties → lowest index). Net = 1.
+//                             Charge → 'spent'.
+//   spent (third use+)      → no effect, until the next level.
+//   per-level reset         → startLevel refills the charge to 'full'.
+//   well-color flash        → each ACTIVE frame emits a `superzapper-flash` event
+//                             carrying a color index (QFRAME AND 7 → 0..7); the
+//                             flash reverts (stops) once the window goes inactive.
 //
 // Everything is observed through the public `stepGame` API.
 //
 // PARANOIA NOTES (why these tests are shaped the way they are):
-//   1. AUTO-WARP TRAP. The instant a full blast empties the board, if there are
-//      no enemies left to spawn (`spawn.remaining === 0`), `checkLevelClear`
-//      flips the mode to 'warp' IN THE SAME STEP. A naive "blast, then blast
-//      again" test would run the second zap in the 'warp' branch, where the
-//      Superzapper never fires. So each state transition is set up explicitly
-//      (mode reset to 'playing', enemies repopulated) and asserted in isolation.
-//      Sparing tankers is also what lets a mixed board survive the first press,
-//      so the bolt-clearing assertions run on a board that does NOT auto-warp.
-//   2. SPARED-TANKER REFIRE TRAP (Story 10-1). The PLAY order runs the zap
-//      BEFORE enemy-fire, so a tanker that survives the blast could loose a
-//      FRESH bolt in the very same step and muddy a "bolts cleared" assertion.
-//      Surviving tankers are therefore parked at `fireCooldown: 999` in the
-//      bolt tests so the only bolts observed are the ones the zap should clear.
-//   3. DECLAW (Story 10-1). The first press no longer kills tankers, so the
-//      "no tanker split" guard moved to the WEAK shot: a zap kill of a tanker
-//      must NOT release its cargo (one tanker scored, no child spawned).
-//   4. DETERMINISM. Targeting uses no RNG and no time: the nearest-the-rim pick
-//      is `max depth, ties → lowest index`. Identical inputs must produce
-//      identical output, and the step must not mutate its input argument.
+//   1. SELF-RUNNING WINDOW. Once triggered, the zap runs its window AUTONOMOUSLY
+//      — the player does NOT hold the button. So every window test presses ZAP on
+//      frame one, then steps on NEUTRAL input and proves the kills/flashes keep
+//      coming. A naive "hold zap" test would mask a window that secretly needs the
+//      button held.
+//   2. AUTO-WARP TRAP. The instant a window empties the board (no enemies, no
+//      spawn budget), `checkLevelClear` flips the mode to 'warp' and the window is
+//      cut short. So windowing tests keep a tanker on the board (spared, so it
+//      survives) or bump `spawn.remaining`, guaranteeing the board never empties
+//      mid-window and the cadence/flash can be observed in isolation.
+//   3. SPARED-TANKER REFIRE TRAP (10-1). The PLAY order runs the zap BEFORE
+//      enemy-fire, so a surviving tanker could loose a FRESH bolt mid-window and
+//      muddy a "bolts cleared" assertion. Survivors are parked at fireCooldown 999.
+//   4. CADENCE, NOT ORDER. KILENE's exact per-frame victim is unsourced in-repo,
+//      so the cadence tests assert "≤1 death per active frame" + "net deaths =
+//      non-tanker count" + determinism — never WHICH enemy dies on a given frame.
+//   5. DETERMINISM / dt-INDEPENDENCE. The window is counted in FRAMES (one tick
+//      per `stepGame` call), not wall-clock: doubling `dt` must not shorten it.
 import { describe, it, expect } from 'vitest'
 import { initialState } from '../../src/core/state'
 import type { GameState, Enemy, EnemyBullet } from '../../src/core/state'
+import type { GameEvent } from '../../src/core/events'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { SCORE_FLIPPER, SCORE_TANKER, SCORE_PULSAR } from '../../src/core/rules'
@@ -43,10 +52,16 @@ const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const ZAP: Input = { spin: 0, fire: false, zap: true, start: false }
 
+// The AC pins the windows at "13 ± 1" / "5 ± 1" frames; assert within tolerance
+// rather than over-constraining Dev to an exact off-by-one.
+const FIRST_WINDOW_MIN = 12
+const FIRST_WINDOW_MAX = 14
+const SECOND_WINDOW_MIN = 4
+const SECOND_WINDOW_MAX = 6
+
 // A fresh, in-progress level holding exactly `enemies` and nothing pending:
 // `spawn.remaining = 0` (board is the whole level) and a parked spawn timer so
-// no stray enemy materialises mid-step and skews a count. The Superzapper takes
-// its starting value from `initialState` ('full' once the field exists).
+// no stray enemy materialises mid-step and skews a count.
 function playing(enemies: Enemy[]): GameState {
   const s = initialState(1)
   s.mode = 'playing'
@@ -55,17 +70,57 @@ function playing(enemies: Enemy[]): GameState {
   return s
 }
 
-// flipTimer is parked at 999 so no enemy flips lanes during a step — lane is a
-// stable identity we can assert against after the Superzapper picks a target.
+// ----- 10-2 observables (fields/events Dev must add; cast so this file still
+// compiles against the pre-10-2 types and FAILS on assertions, not on syntax) -----
+
+// Remaining active-window frames carried on player state (AC-1). 0 = inactive.
+const zapTimer = (s: GameState): number =>
+  (s.player as unknown as { zapTimer?: number }).zapTimer ?? 0
+
+// Per-frame well-color flash signal (AC-3): a `superzapper-flash` event whose
+// `color` is QFRAME AND 7 (0..7). One is expected on every ACTIVE frame.
+interface FlashEvent {
+  type: 'superzapper-flash'
+  color: number
+}
+const flashesOf = (s: GameState): FlashEvent[] =>
+  s.events.filter((e: GameEvent) => (e.type as string) === 'superzapper-flash') as unknown as FlashEvent[]
+const deathsOf = (s: GameState): GameEvent[] =>
+  s.events.filter((e) => e.type === 'enemy-death')
+const nonTankers = (s: GameState): Enemy[] => s.enemies.filter((e) => e.kind !== 'tanker')
+
+// Press ZAP once, then step on NEUTRAL until the window goes inactive (a frame
+// with no flash event) or `cap` frames elapse. Proves the window SELF-RUNS.
+// Returns the final state plus a per-frame trace of flash/death counts.
+function runZap(
+  s0: GameState,
+  input: Input = ZAP,
+  cap = 40,
+): { final: GameState; trace: { flashes: number; deaths: number; enemies: number }[] } {
+  const trace: { flashes: number; deaths: number; enemies: number }[] = []
+  let s = stepGame(s0, input, DT) // frame 1 — the press
+  trace.push({ flashes: flashesOf(s).length, deaths: deathsOf(s).length, enemies: s.enemies.length })
+  for (let i = 0; i < cap && flashesOf(s).length > 0 && s.mode === 'playing'; i++) {
+    s = stepGame(s, NEUTRAL, DT) // window self-runs on NEUTRAL input
+    trace.push({ flashes: flashesOf(s).length, deaths: deathsOf(s).length, enemies: s.enemies.length })
+  }
+  return { final: s, trace }
+}
+
+// Number of frames in `trace` that emitted at least one flash event.
+const activeFrames = (trace: { flashes: number }[]): number =>
+  trace.filter((f) => f.flashes > 0).length
+
+// flipTimer parked at 999 so no enemy flips lanes mid-window — lane is a stable
+// identity we can assert against.
 const threeFlippers = (): Enemy[] => [
   { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 },
   { kind: 'flipper', lane: 5, depth: 0.6, flipTimer: 999 },
   { kind: 'flipper', lane: 9, depth: 0.9, flipTimer: 999 },
 ]
 
-// A board of "must-die" enemies (2 flippers + 1 pulsar) plus a tanker that must
-// SURVIVE the first press (Story 10-1). The tanker is parked at fireCooldown 999
-// so it cannot loose a fresh bolt in the same step and skew a bolt-clear assert.
+// 2 flippers + 1 pulsar (must die) + a tanker that SURVIVES the first press
+// (so the board never empties → no auto-warp; window runs to completion).
 const mixedBoard = (): Enemy[] => [
   { kind: 'flipper', lane: 1, depth: 0.3, flipTimer: 999 },
   { kind: 'tanker', lane: 3, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
@@ -73,12 +128,20 @@ const mixedBoard = (): Enemy[] => [
   { kind: 'flipper', lane: 8, depth: 0.2, flipTimer: 999 },
 ]
 
-// Two enemy bolts in flight on lanes clear of the player (lane 0), so only the
-// Superzapper — not a player-collision — can remove them.
+// One non-tanker + one spared tanker: the single kill finishes on the first
+// active frame, so the window's FLASH plainly outlasts the kills — a clean place
+// to measure window length independently of kill count.
+const oneFlipperOneTanker = (): Enemy[] => [
+  { kind: 'flipper', lane: 1, depth: 0.4, flipTimer: 999 },
+  { kind: 'tanker', lane: 6, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+]
+
 const twoBolts = (): EnemyBullet[] => [
   { lane: 2, depth: 0.4 },
   { lane: 7, depth: 0.6 },
 ]
+
+// ───────────────────────── unchanged contract (4-1) ─────────────────────────
 
 describe('superzapper — arming and per-level reset', () => {
   it('a fresh level starts with a full superzapper', () => {
@@ -92,68 +155,262 @@ describe('superzapper — arming and per-level reset', () => {
     expect(out.enemies).toHaveLength(3)
   })
 
+  it('a fresh, un-fired level has no active zap window', () => {
+    expect(zapTimer(playing(threeFlippers()))).toBe(0)
+  })
+
   it('refills to full when the next level starts (after the warp)', () => {
-    // Stand in the shoes of a level whose Superzapper was already used once.
     const s = playing([])
     s.player.superzapper = 'used-once'
-    expect(s.player.superzapper).toBe('used-once') // precondition, not the driver
-
-    // Empty board + empty budget → the level clears, enters the warp, and the
-    // warp runs to completion on neutral input (no spikes to crash on).
     let out = stepGame(s, NEUTRAL, DT)
     for (let i = 0; i < 500 && out.mode !== 'playing'; i++) out = stepGame(out, NEUTRAL, DT)
-
     expect(out.mode).toBe('playing')
     expect(out.level).toBe(2)
     expect(out.player.superzapper).toBe('full') // startLevel must rearm it
-  })
-})
-
-describe('superzapper — full blast (first activation)', () => {
-  it('vaporises EVERY enemy on screen and becomes used-once', () => {
-    const out = stepGame(playing(threeFlippers()), ZAP, DT)
-    expect(out.enemies).toHaveLength(0)
-    expect(out.player.superzapper).toBe('used-once')
+    expect(zapTimer(out)).toBe(0) // ...and no leftover active window
   })
 
-  it('awards score for every enemy vaporised', () => {
-    const out = stepGame(playing(threeFlippers()), ZAP, DT)
-    expect(out.score).toBe(SCORE_FLIPPER * 3)
-  })
-
-  it('spares a tanker (carrier) — the first press leaves it alive and unscored', () => {
-    // Authentic 1981 behaviour (Story 10-1): the first press is a screen-clear
-    // that SPARES tankers. A board of one tanker therefore survives the blast
-    // intact — no kill, no child split, no score — while the charge still drops
-    // to used-once. (A board of just the tanker does not auto-warp: it isn't empty.)
-    const out = stepGame(playing([{ kind: 'tanker', lane: 3, depth: 0.5, contains: 'flipper' }]), ZAP, DT)
-    expect(out.enemies).toHaveLength(1)
-    expect(out.enemies[0].kind).toBe('tanker')
-    expect(out.enemies[0].lane).toBe(3)
-    expect(out.score).toBe(0)                  // spared, so nothing is scored
-    expect(out.player.superzapper).toBe('used-once')
-  })
-
-  it('does not fire when the player is dead (charge preserved)', () => {
+  it('does not fire when the player is dead (charge preserved, no window)', () => {
     const s = playing(threeFlippers())
     s.player.alive = false
     const out = stepGame(s, ZAP, DT)
     expect(out.enemies).toHaveLength(3)
     expect(out.player.superzapper).toBe('full')
+    expect(zapTimer(out)).toBe(0)
+    expect(flashesOf(out)).toHaveLength(0)
   })
 })
 
-describe('superzapper — weak shot (second activation)', () => {
+// ─────────────────── 10-2: the active-window timer (AC-1) ───────────────────
+
+describe('superzapper 10-2 — active-window timer on player state', () => {
+  it('the first press opens an active window (timer > 0) and consumes the charge', () => {
+    const out = stepGame(playing(mixedBoard()), ZAP, DT)
+    expect(zapTimer(out)).toBeGreaterThan(0)
+    expect(out.player.superzapper).toBe('used-once')
+  })
+
+  it('the window counts DOWN by one per frame and closes on its own', () => {
+    const after1 = stepGame(playing(mixedBoard()), ZAP, DT)
+    const t1 = zapTimer(after1)
+    const after2 = stepGame(after1, NEUTRAL, DT)
+    expect(zapTimer(after2)).toBe(t1 - 1) // one frame, one tick
+    // ...and run it out: the timer reaches 0 and stays there.
+    const { final } = runZap(playing(mixedBoard()))
+    expect(zapTimer(final)).toBe(0)
+  })
+
+  it('the first window is LONGER than the second (13-ish vs 5-ish frames)', () => {
+    const first = runZap(playing(mixedBoard()))
+    const firstFrames = activeFrames(first.trace)
+
+    // Drive to the second press on a board that survives the first window.
+    const s2 = first.final
+    s2.mode = 'playing'
+    s2.enemies = [
+      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
+      { kind: 'tanker', lane: 7, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+    ]
+    const second = runZap(s2)
+    const secondFrames = activeFrames(second.trace)
+
+    expect(firstFrames).toBeGreaterThan(secondFrames)
+    expect(firstFrames).toBeGreaterThanOrEqual(FIRST_WINDOW_MIN)
+    expect(firstFrames).toBeLessThanOrEqual(FIRST_WINDOW_MAX)
+    expect(secondFrames).toBeGreaterThanOrEqual(SECOND_WINDOW_MIN)
+    expect(secondFrames).toBeLessThanOrEqual(SECOND_WINDOW_MAX)
+  })
+
+  it('is dt-INDEPENDENT — doubling dt does not shorten the window (frame-counted)', () => {
+    const atDt = runZap(playing(oneFlipperOneTanker()))
+    // Same board, same press, but stepped at 2× dt throughout.
+    const trace: { flashes: number }[] = []
+    let s = stepGame(playing(oneFlipperOneTanker()), ZAP, 2 * DT)
+    trace.push({ flashes: flashesOf(s).length })
+    for (let i = 0; i < 40 && flashesOf(s).length > 0 && s.mode === 'playing'; i++) {
+      s = stepGame(s, NEUTRAL, 2 * DT)
+      trace.push({ flashes: flashesOf(s).length })
+    }
+    // anchor: the window must be real (not a vacuous 0 === 0) AND dt-invariant.
+    expect(activeFrames(atDt.trace)).toBeGreaterThanOrEqual(FIRST_WINDOW_MIN)
+    expect(activeFrames(trace)).toBe(activeFrames(atDt.trace))
+  })
+})
+
+// ──────────── 10-2: per-frame kill cadence on the FIRST press (AC-2/5) ───────
+
+describe('superzapper 10-2 — first press kills on a per-frame cadence', () => {
+  it('does NOT clear the board in a single step — at most one kill on the press frame', () => {
+    const board = mixedBoard() // 3 non-tankers + 1 tanker
+    const out = stepGame(playing(board), ZAP, DT)
+    // The instant-clear contract is gone: 2 of the 3 non-tankers must still stand.
+    expect(deathsOf(out).length).toBeLessThanOrEqual(1)
+    expect(nonTankers(out).length).toBeGreaterThanOrEqual(2)
+    expect(out.player.superzapper).toBe('used-once') // charge still consumed on the press
+  })
+
+  it('removes exactly one enemy per active frame (≤1 death/frame across the window)', () => {
+    const { trace } = runZap(playing(mixedBoard()))
+    for (const f of trace) expect(f.deaths).toBeLessThanOrEqual(1)
+    // Across the window, the non-tankers are removed one at a time.
+    const totalDeaths = trace.reduce((n, f) => n + f.deaths, 0)
+    expect(totalDeaths).toBe(3) // the 2 flippers + the pulsar
+  })
+
+  it('NET outcome equals 10-1: every non-tanker gone, the tanker spared (windowed)', () => {
+    const { final } = runZap(playing(mixedBoard()))
+    expect(final.enemies).toHaveLength(1)
+    expect(final.enemies[0].kind).toBe('tanker')
+    expect(final.enemies[0].lane).toBe(3)
+    expect(final.player.superzapper).toBe('used-once')
+  })
+
+  it('NET score equals 10-1: scores the killed non-tankers, never the spared tanker', () => {
+    const { final } = runZap(playing(mixedBoard()))
+    expect(final.score).toBe(SCORE_FLIPPER * 2 + SCORE_PULSAR) // tanker (100) survives, unscored
+  })
+
+  it('emits one death event per kill across the window and none for the spared tanker', () => {
+    const board = mixedBoard()
+    const s0 = playing(board)
+    const allDeaths: GameEvent[] = []
+    let s = stepGame(s0, ZAP, DT)
+    allDeaths.push(...deathsOf(s))
+    for (let i = 0; i < 40 && flashesOf(s).length > 0 && s.mode === 'playing'; i++) {
+      s = stepGame(s, NEUTRAL, DT)
+      allDeaths.push(...deathsOf(s))
+    }
+    expect(allDeaths).toHaveLength(3)
+    expect(allDeaths.some((e) => e.type === 'enemy-death' && e.enemyType === 'tanker')).toBe(false)
+  })
+
+  it('the window self-runs on NEUTRAL input — kills keep landing without holding zap', () => {
+    // Press once, then NEVER press again: the board must still finish clearing.
+    const { final, trace } = runZap(playing(mixedBoard()), ZAP)
+    // More than one frame did killing work — proof the kill did not all happen on
+    // the single press frame, and proof neutral frames advanced it.
+    expect(trace.filter((f) => f.deaths > 0).length).toBeGreaterThan(1)
+    expect(nonTankers(final)).toHaveLength(0)
+  })
+
+  it('a board of only flippers fully clears across the window (no tanker needed)', () => {
+    // Keep spawn budget so the emptied board does not auto-warp mid-window.
+    const s = playing(threeFlippers())
+    s.spawn = { remaining: 3, timer: 999 }
+    const { final, trace } = runZap(s)
+    expect(final.enemies).toHaveLength(0)
+    expect(trace.reduce((n, f) => n + f.deaths, 0)).toBe(3)
+    for (const f of trace) expect(f.deaths).toBeLessThanOrEqual(1)
+  })
+
+  it('clears every in-flight enemy bolt on the press frame (10-1 preserved)', () => {
+    const s = playing(mixedBoard())
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT) // the press frame
+    expect(out.enemyBullets).toHaveLength(0)
+  })
+
+  it('clears bolts on a first press even with NO enemies on the board', () => {
+    const s = playing([])
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemyBullets).toHaveLength(0)
+    expect(out.player.superzapper).toBe('used-once') // charge still consumed
+  })
+})
+
+// ──────────── 10-2: the well-color flash signal (AC-3) ───────────────────────
+
+describe('superzapper 10-2 — per-frame well-color flash', () => {
+  it('emits exactly one flash event on every active frame', () => {
+    const { trace } = runZap(playing(oneFlipperOneTanker()))
+    const active = trace.filter((f) => f.flashes > 0)
+    expect(active.length).toBeGreaterThanOrEqual(FIRST_WINDOW_MIN)
+    for (const f of active) expect(f.flashes).toBe(1) // one flash per active frame, never a burst
+  })
+
+  it('the flash color is a QFRAME-AND-7 index in 0..7', () => {
+    const s0 = playing(oneFlipperOneTanker())
+    let s = stepGame(s0, ZAP, DT)
+    const seen: number[] = []
+    for (let i = 0; i < 40 && flashesOf(s).length > 0 && s.mode === 'playing'; i++) {
+      for (const fl of flashesOf(s)) seen.push(fl.color)
+      s = stepGame(s, NEUTRAL, DT)
+    }
+    expect(seen.length).toBeGreaterThan(0)
+    for (const c of seen) {
+      expect(Number.isInteger(c)).toBe(true)
+      expect(c).toBeGreaterThanOrEqual(0)
+      expect(c).toBeLessThanOrEqual(7)
+    }
+  })
+
+  it('the flash color actually CHANGES frame-to-frame (it cycles, not a constant)', () => {
+    const s0 = playing(oneFlipperOneTanker())
+    let s = stepGame(s0, ZAP, DT)
+    const seen: number[] = []
+    for (let i = 0; i < 40 && flashesOf(s).length > 0 && s.mode === 'playing'; i++) {
+      for (const fl of flashesOf(s)) seen.push(fl.color)
+      s = stepGame(s, NEUTRAL, DT)
+    }
+    expect(new Set(seen).size).toBeGreaterThan(1)
+  })
+
+  it('the flash STOPS once the window closes (reverts after)', () => {
+    const { final } = runZap(playing(oneFlipperOneTanker()))
+    // One more neutral step past window-end emits no flash.
+    const after = stepGame(final, NEUTRAL, DT)
+    expect(flashesOf(after)).toHaveLength(0)
+    expect(zapTimer(after)).toBe(0)
+  })
+
+  it('a spent superzapper produces no flash at all', () => {
+    const s = playing([{ kind: 'flipper', lane: 3, depth: 0.5, flipTimer: 999 }])
+    s.player.superzapper = 'spent'
+    const out = stepGame(s, ZAP, DT)
+    expect(flashesOf(out)).toHaveLength(0)
+    expect(zapTimer(out)).toBe(0)
+  })
+})
+
+// ──────────── 10-2: second press — shorter window, exactly one kill ──────────
+
+describe('superzapper 10-2 — weak shot (second activation)', () => {
   it('destroys exactly ONE enemy — the one nearest the rim — and becomes spent', () => {
     const s = playing([
       { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
       { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // deepest → nearest the rim
     ])
     s.player.superzapper = 'used-once'
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemies).toHaveLength(1)
-    expect(out.enemies[0].lane).toBe(2)        // the deeper (0.8) one was vaporised
-    expect(out.player.superzapper).toBe('spent')
+    const { final } = runZap(s)
+    expect(final.enemies).toHaveLength(1)
+    expect(final.enemies[0].lane).toBe(2) // the deeper (0.8) one was vaporised
+    expect(final.player.superzapper).toBe('spent')
+  })
+
+  it('kills exactly one across the WHOLE window — never more, even on a packed board', () => {
+    const s = playing([
+      { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 },
+      { kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 },
+      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 },
+      { kind: 'flipper', lane: 9, depth: 0.9, flipTimer: 999 },
+    ])
+    s.player.superzapper = 'used-once'
+    const { final, trace } = runZap(s)
+    expect(trace.reduce((n, f) => n + f.deaths, 0)).toBe(1) // net one kill, not a cascade
+    expect(final.enemies).toHaveLength(3)
+  })
+
+  it('runs a shorter flash window than the first press (4–6 active frames)', () => {
+    const s = playing([
+      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
+      { kind: 'tanker', lane: 7, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+    ])
+    s.player.superzapper = 'used-once'
+    const { trace } = runZap(s)
+    const frames = activeFrames(trace)
+    expect(frames).toBeGreaterThanOrEqual(SECOND_WINDOW_MIN)
+    expect(frames).toBeLessThanOrEqual(SECOND_WINDOW_MAX)
   })
 
   it('awards the score of the single enemy it destroys', () => {
@@ -162,8 +419,8 @@ describe('superzapper — weak shot (second activation)', () => {
       { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 },
     ])
     s.player.superzapper = 'used-once'
-    const out = stepGame(s, ZAP, DT)
-    expect(out.score).toBe(SCORE_FLIPPER)      // one kill, not two
+    const { final } = runZap(s)
+    expect(final.score).toBe(SCORE_FLIPPER) // one kill, not two
   })
 
   it('breaks a nearest-the-rim tie by destroying the LOWEST index', () => {
@@ -172,165 +429,107 @@ describe('superzapper — weak shot (second activation)', () => {
       { kind: 'flipper', lane: 9, depth: 0.5, flipTimer: 999 }, // index 1 — equal depth
     ])
     s.player.superzapper = 'used-once'
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemies).toHaveLength(1)
-    expect(out.enemies[0].lane).toBe(9)        // index 0 (lane 4) lost the tie
-    expect(out.player.superzapper).toBe('spent')
-  })
-})
-
-describe('superzapper — state machine + purity', () => {
-  it('progresses full → used-once → spent across activations, then no-ops', () => {
-    let s = playing([{ kind: 'flipper', lane: 1, depth: 0.5, flipTimer: 999 }])
-
-    s = stepGame(s, ZAP, DT)               // full blast → used-once (board cleared)
-    expect(s.player.superzapper).toBe('used-once')
-
-    // Repopulate + force 'playing' — the cleared board would otherwise be in warp.
-    s.enemies = [{ kind: 'flipper', lane: 2, depth: 0.5, flipTimer: 999 }]
-    s.mode = 'playing'
-    s = stepGame(s, ZAP, DT)               // weak shot → spent (one killed)
-    expect(s.player.superzapper).toBe('spent')
-    expect(s.enemies).toHaveLength(0)
-
-    // A spent Superzapper must do nothing, no matter how many enemies appear.
-    s.enemies = [
-      { kind: 'flipper', lane: 3, depth: 0.4, flipTimer: 999 },
-      { kind: 'flipper', lane: 8, depth: 0.5, flipTimer: 999 },
-    ]
-    s.mode = 'playing'
-    const out = stepGame(s, ZAP, DT)       // spent → no effect
-    expect(out.player.superzapper).toBe('spent')
-    expect(out.enemies).toHaveLength(2)
-  })
-
-  it('does not mutate the input state when zapping (pure step)', () => {
-    const s = playing(threeFlippers())
-    const out = stepGame(s, ZAP, DT)
-    // the returned state reflects the blast...
-    expect(out.player.superzapper).toBe('used-once')
-    expect(out.enemies).toHaveLength(0)
-    // ...while the original argument is left exactly as it was
-    expect(s.player.superzapper).toBe('full')
-    expect(s.enemies).toHaveLength(3)
-  })
-
-  it('is deterministic — identical states + identical zap give identical output', () => {
-    const a = stepGame(playing(threeFlippers()), ZAP, DT)
-    const b = stepGame(playing(threeFlippers()), ZAP, DT)
-    expect(a.player.superzapper).toBe('used-once')
-    expect(b.player.superzapper).toBe(a.player.superzapper)
-    expect(a.score).toBe(b.score)
-    expect(a.enemies).toEqual(b.enemies)
-  })
-})
-
-describe('superzapper — Story 10-1: first press spares tankers, clears bolts', () => {
-  it('first press kills every non-tanker enemy but leaves tankers alive', () => {
-    const out = stepGame(playing(mixedBoard()), ZAP, DT)
-    expect(out.enemies).toHaveLength(1)        // only the tanker remains
-    expect(out.enemies[0].kind).toBe('tanker')
-    expect(out.enemies[0].lane).toBe(3)        // tankers climb straight — lane is stable
-    expect(out.player.superzapper).toBe('used-once')
-  })
-
-  it('first press scores only the enemies it kills — the spared tanker is not scored', () => {
-    const out = stepGame(playing(mixedBoard()), ZAP, DT)
-    // 2 flippers (150 ea) + 1 pulsar (200); the tanker (100) survives, so unscored.
-    expect(out.score).toBe(SCORE_FLIPPER * 2 + SCORE_PULSAR)
-  })
-
-  it('first press emits a death event per kill and none for the spared tanker', () => {
-    const out = stepGame(playing(mixedBoard()), ZAP, DT)
-    const deaths = out.events.filter((e) => e.type === 'enemy-death')
-    expect(deaths).toHaveLength(3) // the two flippers + the pulsar
-    expect(deaths.some((e) => e.type === 'enemy-death' && e.enemyType === 'tanker')).toBe(false)
-  })
-
-  it('first press clears every in-flight enemy bolt', () => {
-    const s = playing(mixedBoard())
-    s.enemyBullets = twoBolts()
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemyBullets).toHaveLength(0)
-  })
-
-  it('first press clears bolts even when the board is NOT emptied (only tankers remain)', () => {
-    // Proves bolt-clearing is intrinsic to the first press — not a side effect of
-    // an emptied board. The surviving tanker (fireCooldown 999) cannot refire.
-    const s = playing([{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'pulsar', fireCooldown: 999 }])
-    s.enemyBullets = twoBolts()
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemies).toHaveLength(1)
-    expect(out.enemies[0].kind).toBe('tanker')
-    expect(out.enemyBullets).toHaveLength(0)
-    expect(out.player.superzapper).toBe('used-once')
-  })
-
-  it('first press clears in-flight bolts even with NO enemies on the board', () => {
-    // An enemy can fire then die, leaving a lethal bolt with nothing left to kill.
-    // The first press is a screen-clear, so the bolt must still go (this exercises
-    // the no-enemies early-return path, distinct from the enemies-present branch).
-    const s = playing([])
-    s.enemyBullets = twoBolts()
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemyBullets).toHaveLength(0)
-    expect(out.player.superzapper).toBe('used-once') // the charge is still consumed
-  })
-
-  it('second press still kills exactly one enemy — the one nearest the rim (no regression)', () => {
-    // After a first press the board is tankers-only; the weak shot takes one — the
-    // deepest (nearest the rim). fireCooldown 999 keeps the survivor from refiring.
-    const s = playing([
-      { kind: 'tanker', lane: 2, depth: 0.3, contains: 'flipper', fireCooldown: 999 },
-      { kind: 'tanker', lane: 7, depth: 0.8, contains: 'flipper', fireCooldown: 999 }, // deepest
-    ])
-    s.player.superzapper = 'used-once'
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemies).toHaveLength(1)
-    expect(out.enemies[0].lane).toBe(2)        // the lane-7 tanker (0.8) was vaporised
-    expect(out.player.superzapper).toBe('spent')
+    const { final } = runZap(s)
+    expect(final.enemies).toHaveLength(1)
+    expect(final.enemies[0].lane).toBe(9) // index 0 (lane 4) lost the tie
+    expect(final.player.superzapper).toBe('spent')
   })
 
   it('a zap kill never releases tanker cargo (declaw preserved)', () => {
-    // The weak shot kills a tanker outright — no flipper child spawned, and the
-    // score is a single tanker (100), not the two children a bullet split makes.
     const s = playing([{ kind: 'tanker', lane: 5, depth: 0.8, contains: 'flipper' }])
     s.player.superzapper = 'used-once'
-    const out = stepGame(s, ZAP, DT)
-    expect(out.enemies).toHaveLength(0)        // killed, no child left behind
-    expect(out.score).toBe(SCORE_TANKER)       // one tanker, not two flippers
-    expect(out.player.superzapper).toBe('spent')
+    const { final } = runZap(s)
+    expect(final.enemies).toHaveLength(0) // killed, no child left behind
+    expect(final.score).toBe(SCORE_TANKER) // one tanker, not two flippers
+    expect(final.player.superzapper).toBe('spent')
   })
 
-  it('second press does NOT clear in-flight bolts — only the first press does', () => {
-    // Pins the minimal change: bolt-clearing belongs to the FIRST press alone.
+  it('a second press does NOT clear in-flight bolts — only the first press does', () => {
     const s = playing([
       { kind: 'tanker', lane: 2, depth: 0.3, contains: 'flipper', fireCooldown: 999 },
       { kind: 'tanker', lane: 7, depth: 0.8, contains: 'flipper', fireCooldown: 999 },
     ])
     s.player.superzapper = 'used-once'
     s.enemyBullets = [{ lane: 5, depth: 0.4 }]
+    const { final } = runZap(s)
+    expect(final.enemyBullets).toHaveLength(1) // weak shot leaves the bolt in flight
+  })
+})
+
+// ──────────── 10-2: state machine, holding the button, no-ops ────────────────
+
+describe('superzapper 10-2 — state machine across activations', () => {
+  it('progresses full → used-once → spent, then a spent zap no-ops with no window/flash', () => {
+    // First press → used-once (board clears over the window; keep spawn budget so
+    // the emptied board does not auto-warp).
+    let s = playing([{ kind: 'flipper', lane: 1, depth: 0.5, flipTimer: 999 }])
+    s.spawn = { remaining: 5, timer: 999 }
+    s = runZap(s).final
+    expect(s.player.superzapper).toBe('used-once')
+
+    // Second press → spent (one kill).
+    s.enemies = [{ kind: 'flipper', lane: 2, depth: 0.5, flipTimer: 999 }]
+    s.mode = 'playing'
+    s = runZap(s).final
+    expect(s.player.superzapper).toBe('spent')
+
+    // A spent superzapper must do nothing — no kills, no window, no flash.
+    s.enemies = [
+      { kind: 'flipper', lane: 3, depth: 0.4, flipTimer: 999 },
+      { kind: 'flipper', lane: 8, depth: 0.5, flipTimer: 999 },
+    ]
+    s.mode = 'playing'
     const out = stepGame(s, ZAP, DT)
-    expect(out.enemyBullets).toHaveLength(1)   // weak shot leaves the bolt in flight
+    expect(out.player.superzapper).toBe('spent')
+    expect(out.enemies).toHaveLength(2)
+    expect(flashesOf(out)).toHaveLength(0)
+    expect(zapTimer(out)).toBe(0)
   })
 
-  it('first press is deterministic — identical board + zap give identical output', () => {
-    const a = stepGame(playing(mixedBoard()), ZAP, DT)
-    const b = stepGame(playing(mixedBoard()), ZAP, DT)
-    expect(a.enemies).toEqual(b.enemies)
-    expect(a.score).toBe(b.score)
-    expect(a.enemyBullets).toEqual(b.enemyBullets)
+  it('HOLDING zap through the first window does not start the second early', () => {
+    // Press and HOLD (ZAP every frame). The held button must not burn the second
+    // charge mid-first-window: the charge is 'used-once' for the whole window, and
+    // the non-tankers still die one-at-a-time (no instant double-zap cascade).
+    const board = mixedBoard()
+    let s = stepGame(playing(board), ZAP, DT)
+    expect(s.player.superzapper).toBe('used-once')
+    expect(zapTimer(s)).toBeGreaterThan(0) // a window must actually open to hold through
+    for (let i = 0; i < FIRST_WINDOW_MAX && zapTimer(s) > 0 && s.mode === 'playing'; i++) {
+      s = stepGame(s, ZAP, DT) // STILL holding
+      // never jumps to 'spent' while the first window is live
+      expect(s.player.superzapper).toBe('used-once')
+      expect(deathsOf(s).length).toBeLessThanOrEqual(1)
+    }
+    // The first window cleared the non-tankers; the tanker survives.
+    expect(nonTankers(s)).toHaveLength(0)
+    expect(s.enemies.some((e) => e.kind === 'tanker')).toBe(true)
+  })
+})
+
+// ──────────── 10-2: determinism & purity ────────────────────────────────────
+
+describe('superzapper 10-2 — determinism & purity', () => {
+  it('identical board + identical input give an identical per-frame trace and final state', () => {
+    const a = runZap(playing(mixedBoard()))
+    const b = runZap(playing(mixedBoard()))
+    expect(a.trace).toEqual(b.trace)
+    expect(a.final.enemies).toEqual(b.final.enemies)
+    expect(a.final.score).toBe(b.final.score)
+    expect(a.final.enemyBullets).toEqual(b.final.enemyBullets)
   })
 
-  it('first press does not mutate the input state (pure step)', () => {
+  it('the press frame does not mutate its input state (pure step)', () => {
     const s = playing(mixedBoard())
     s.enemyBullets = twoBolts()
     const out = stepGame(s, ZAP, DT)
-    // the returned state reflects the blast (tanker spared, bolts cleared)...
-    expect(out.enemies).toHaveLength(1)
+    // returned state reflects the press (charge consumed, bolts cleared, window open)...
+    expect(out.player.superzapper).toBe('used-once')
     expect(out.enemyBullets).toHaveLength(0)
-    // ...while the original argument is left exactly as it was
+    expect(zapTimer(out)).toBeGreaterThan(0)
+    // ...while the original argument is left exactly as it was.
+    expect(s.player.superzapper).toBe('full')
     expect(s.enemies).toHaveLength(4)
     expect(s.enemyBullets).toHaveLength(2)
+    expect(zapTimer(s)).toBe(0)
   })
 })
