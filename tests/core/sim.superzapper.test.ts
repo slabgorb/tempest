@@ -532,3 +532,117 @@ describe('superzapper 10-2 — determinism & purity', () => {
     expect(zapTimer(s)).toBe(0)
   })
 })
+
+// ──────────── 10-14: empty-board behavior — restore 5-1/4-1 semantics ─────────
+//
+// Story 10-14 (regression). The 10-2 rewrite dropped stepZap's
+// `enemies.length === 0` early-return, which had encoded two deliberate 5-1/4-1
+// decisions (per the removed source comment, quoted in the 10-2 review): on a
+// TRULY EMPTY board (no enemies) a zap has NO TARGET, so —
+//   (a) it emits NO `superzapper-activate` event. There is no kill payload, so
+//       the shell must not play the "zap killed things" cue. (Story 5-1 Dev
+//       deviation #2: "No enemies destroyed = no audible/visual zap payload";
+//       reviewer-accepted.) And, since the windowed model flashes the well on
+//       every ACTIVE frame, a no-target zap opens NO flash window either.
+//   (b) a SECOND press (weak shot) is "wasted-but-not-spent" — the charge is
+//       PRESERVED ('used-once'), NOT consumed. A mis-timed press on a momentarily
+//       empty tube must not burn the weapon. (Story 4-1 documented model; the
+//       reviewer-verified `enemies.length === 0` early-return ran BEFORE the
+//       charge transition.)
+// The 10-2 regression reversed BOTH: an empty press emitted activate + opened a
+// flash window, and the second press consumed the charge → 'spent'. These tests
+// restore the authentic semantics WITHOUT regressing 10-1's bolt-clear, which
+// still fires on an empty FIRST press — that is the panic-button wiping in-flight
+// bolts, not a kill.
+
+// `superzapper-activate` events emitted this frame (drives the zap sound). On a
+// target-less zap there should be NONE.
+const activatesOf = (s: GameState): GameEvent[] =>
+  s.events.filter((e) => e.type === 'superzapper-activate')
+
+describe('superzapper 10-14 — empty-board FIRST press (full charge, no enemies)', () => {
+  it('emits NO superzapper-activate event (no kill payload → no zap sound)', () => {
+    const out = stepGame(playing([]), ZAP, DT)
+    expect(activatesOf(out)).toHaveLength(0)
+  })
+
+  it('opens NO flash window on an empty board (zapTimer stays 0, no flashes)', () => {
+    const out = stepGame(playing([]), ZAP, DT)
+    expect(zapTimer(out)).toBe(0)
+    expect(flashesOf(out)).toHaveLength(0)
+  })
+
+  it('still consumes the charge AND clears in-flight bolts (10-1 panic-button preserved)', () => {
+    const s = playing([])
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT)
+    expect(out.player.superzapper).toBe('used-once') // full charge still consumed (4-1)
+    expect(out.enemyBullets).toHaveLength(0) // in-flight bolts still wiped (10-1)
+  })
+
+  it('produces no enemy-death events on an empty board', () => {
+    const out = stepGame(playing([]), ZAP, DT)
+    expect(deathsOf(out)).toHaveLength(0)
+  })
+})
+
+describe('superzapper 10-14 — empty-board SECOND press (weak shot is wasted-but-not-spent)', () => {
+  it('does NOT spend the charge when there is no target — it stays used-once', () => {
+    const s = playing([])
+    s.player.superzapper = 'used-once'
+    const out = stepGame(s, ZAP, DT)
+    expect(out.player.superzapper).toBe('used-once') // preserved, NOT 'spent'
+  })
+
+  it('emits no activate event and opens no flash window on a target-less weak shot', () => {
+    const s = playing([])
+    s.player.superzapper = 'used-once'
+    const out = stepGame(s, ZAP, DT)
+    expect(activatesOf(out)).toHaveLength(0)
+    expect(zapTimer(out)).toBe(0)
+    expect(flashesOf(out)).toHaveLength(0)
+  })
+
+  it('the preserved charge is still usable — a later weak shot WITH a target kills one and spends', () => {
+    // Keep a spawn budget so the empty press does NOT auto-warp (checkLevelClear
+    // only warps an empty board with spawn.remaining === 0). The charge must
+    // survive the wasted press and remain a live 'used-once' weak shot.
+    const s = playing([])
+    s.spawn = { remaining: 1, timer: 999 }
+    s.player.superzapper = 'used-once'
+    const wasted = stepGame(s, ZAP, DT)
+    expect(wasted.player.superzapper).toBe('used-once') // wasted, not spent
+    expect(wasted.mode).toBe('playing') // no auto-warp — charge is still in hand
+
+    // A target now appears; the SAME charge fires the weak shot for real.
+    wasted.enemies = [
+      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
+      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // deepest → nearest the rim
+    ]
+    const { final } = runZap(wasted)
+    expect(final.enemies).toHaveLength(1)
+    expect(final.enemies[0].lane).toBe(2) // the deeper (0.8) one was vaporised
+    expect(final.player.superzapper).toBe('spent') // NOW the charge spends
+  })
+})
+
+describe('superzapper 10-14 — populated board is UNCHANGED (regression guard for the fix)', () => {
+  it('a first press WITH enemies still opens the window and emits activate (10-2 intact)', () => {
+    const out = stepGame(playing(mixedBoard()), ZAP, DT)
+    expect(activatesOf(out)).toHaveLength(1)
+    expect(zapTimer(out)).toBeGreaterThan(0)
+    expect(out.player.superzapper).toBe('used-once')
+  })
+
+  it('a second press WITH a target still kills one nearest the rim and spends (10-2 intact)', () => {
+    const s = playing([
+      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
+      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // deepest → nearest the rim
+    ])
+    s.player.superzapper = 'used-once'
+    const { final } = runZap(s)
+    expect(final.enemies).toHaveLength(1)
+    expect(final.enemies[0].lane).toBe(2)
+    expect(final.player.superzapper).toBe('spent')
+  })
+})
