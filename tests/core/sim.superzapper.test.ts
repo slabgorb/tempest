@@ -43,7 +43,7 @@
 import { describe, it, expect } from 'vitest'
 import { initialState } from '../../src/core/state'
 import type { GameState, Enemy, EnemyBullet } from '../../src/core/state'
-import type { GameEvent } from '../../src/core/events'
+import type { GameEvent, SuperzapperFlashEvent } from '../../src/core/events'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { SCORE_FLIPPER, SCORE_TANKER, SCORE_PULSAR } from '../../src/core/rules'
@@ -74,17 +74,12 @@ function playing(enemies: Enemy[]): GameState {
 // compiles against the pre-10-2 types and FAILS on assertions, not on syntax) -----
 
 // Remaining active-window frames carried on player state (AC-1). 0 = inactive.
-const zapTimer = (s: GameState): number =>
-  (s.player as unknown as { zapTimer?: number }).zapTimer ?? 0
+const zapTimer = (s: GameState): number => s.player.zapTimer
 
 // Per-frame well-color flash signal (AC-3): a `superzapper-flash` event whose
 // `color` is QFRAME AND 7 (0..7). One is expected on every ACTIVE frame.
-interface FlashEvent {
-  type: 'superzapper-flash'
-  color: number
-}
-const flashesOf = (s: GameState): FlashEvent[] =>
-  s.events.filter((e: GameEvent) => (e.type as string) === 'superzapper-flash') as unknown as FlashEvent[]
+const flashesOf = (s: GameState): SuperzapperFlashEvent[] =>
+  s.events.filter((e): e is SuperzapperFlashEvent => e.type === 'superzapper-flash')
 const deathsOf = (s: GameState): GameEvent[] =>
   s.events.filter((e) => e.type === 'enemy-death')
 const nonTankers = (s: GameState): Enemy[] => s.enemies.filter((e) => e.kind !== 'tanker')
@@ -120,12 +115,16 @@ const threeFlippers = (): Enemy[] => [
 ]
 
 // 2 flippers + 1 pulsar (must die) + a tanker that SURVIVES the first press
-// (so the board never empties → no auto-warp; window runs to completion).
+// (so the board never empties → no auto-warp; window runs to completion). Every
+// enemy is parked at fireCooldown 999: under the windowed cadence the non-tankers
+// now SURVIVE the press frame, and the play order runs enemy-fire AFTER the zap,
+// so an un-parked survivor could loose a fresh bolt in the same frame and muddy
+// the "press clears in-flight bolts" assertion (10-1 paranoia note #3).
 const mixedBoard = (): Enemy[] => [
-  { kind: 'flipper', lane: 1, depth: 0.3, flipTimer: 999 },
+  { kind: 'flipper', lane: 1, depth: 0.3, flipTimer: 999, fireCooldown: 999 },
   { kind: 'tanker', lane: 3, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
-  { kind: 'pulsar', lane: 5, depth: 0.6, flipTimer: 999, pulseTimer: 999, pulsing: false },
-  { kind: 'flipper', lane: 8, depth: 0.2, flipTimer: 999 },
+  { kind: 'pulsar', lane: 5, depth: 0.6, flipTimer: 999, pulseTimer: 999, pulsing: false, fireCooldown: 999 },
+  { kind: 'flipper', lane: 8, depth: 0.2, flipTimer: 999, fireCooldown: 999 },
 ]
 
 // One non-tanker + one spared tanker: the single kill finishes on the first

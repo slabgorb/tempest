@@ -47,6 +47,10 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
       case 'superzapper-activate':
         audio.play('superzapper')
         break
+      case 'superzapper-flash':
+        // Visual-only (10-2): the per-frame well-color flash is painted by the
+        // renderer; the zap's audio cue already fires on 'superzapper-activate'.
+        break
       case 'player-spawn':
         audio.play('playerSpawn')
         break

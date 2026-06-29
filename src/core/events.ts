@@ -73,6 +73,14 @@ export interface PlayerSpawnEvent {
   lane: number
 }
 
+// The Superzapper well-color flash (Story 10-2). One is emitted on every ACTIVE
+// zap frame; `color` is the ROM's QFRAME-AND-7 well-color index (0..7). The core
+// only signals WHICH color index to show — the renderer maps it to the palette.
+export interface SuperzapperFlashEvent {
+  type: 'superzapper-flash'
+  color: number
+}
+
 // The spinner carried the Claw across a tube-segment boundary into a new lane
 // (Story 6-10). `lane` is the new discrete lane entered. Fires once per crossing;
 // the shell plays the authentic POKEY segment_tick cue on it.
@@ -95,6 +103,7 @@ export type GameEvent =
   | WarpSpikeCrashEvent
   | LevelClearEvent
   | SuperzapperActivateEvent
+  | SuperzapperFlashEvent
   | PlayerSpawnEvent
   | PlayerDeathEvent
   | SegmentCrossEvent
