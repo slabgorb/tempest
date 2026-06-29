@@ -70,6 +70,16 @@ function strokeGlyph(
 // Animation accumulators (render-only; never feeds back into the sim).
 let renderTime = 0
 
+// Advance the shared render clock by `dt` seconds. The game's render() bumps
+// `renderTime` itself each frame; the model contact-sheet dev tool
+// (tools/contactSheet.ts) calls the per-element draws below DIRECTLY (bypassing
+// render()), so it needs this seam to drive the frame-derived animation —
+// flipper spin, fuseball writhe, spiker pinwheel, pulsar strobe, claw gait. Not
+// called by the game; purely additive, no behaviour change.
+export function advanceRenderClock(dt: number): void {
+  renderTime += dt
+}
+
 // Persistence buffer for the vector scene (shell-only afterglow). Lazily builds
 // its offscreen canvases on first beginScene/composite/clear.
 const phosphor = createPhosphor()
@@ -104,7 +114,7 @@ function strokePoly(
   ctx.stroke()
 }
 
-function drawTube(
+export function drawTube(
   ctx: CanvasRenderingContext2D, s: GameState, color: string, playerLane: number,
 ): void {
   const tube = s.tube
@@ -169,7 +179,7 @@ function drawTube(
   }
 }
 
-function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
+export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
   ctx.strokeStyle = '#9b30ff'
   ctx.shadowColor = '#9b30ff'
   for (let lane = 0; lane < s.spikes.length; lane++) {
@@ -219,7 +229,7 @@ function drawEnemyBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
 // Enemies render as authentic rev-3 ROM vector glyphs (Story 6-8): the flipper
 // bowtie, tanker X-diamond + cargo emblem, spiker pinwheel, fuseball ball-of-
 // legs, and pulsar zig-zag bar — each animated through its glyph's frame arg.
-function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void {
+export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void {
   const tube = s.tube
   const p = project(tube, e.lane, e.depth)
   const r = 5 + e.depth * 10
@@ -287,7 +297,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void 
   }
 }
 
-function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState): void {
+export function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState): void {
   if (!s.player.alive) return
   const tube = s.tube
   const cont = s.player.lane
