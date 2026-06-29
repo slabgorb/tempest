@@ -1,10 +1,12 @@
 // tests/shell/audio.test.ts
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createAudioEngine } from '../../src/shell/audio'
-// Read main.ts as text (Vite `?raw`) for the event->sound wiring check below —
-// the same browser-pure idiom as storage.test.ts / events.test.ts, so we never
-// pull Node's `fs` types into the deliberately browser-pure test posture.
-import mainSrc from '../../src/main.ts?raw'
+// NOTE (story 6-12, AC#2): the event->sound WIRING checks that used to live here
+// were brittle `?raw` regex text-matches against src/main.ts (the only way to
+// inspect main.ts, which boots a canvas and can't be imported in node). Story 6-12
+// extracted that dispatch loop into the importable src/shell/audio-dispatch.ts, so
+// the wiring is now asserted BEHAVIOURALLY in audio-dispatch.test.ts. This file
+// keeps only the sample-loading assertions, which remain main.ts-independent.
 
 // Story 6-6: the ★ authentic POKEY bakes from the arcade ROM are baked by
 // tools/pokey-bake/ and hosted on R2 alongside the original community-rip
@@ -98,14 +100,10 @@ describe('audio engine sample loading (story 6-6: authentic bakes on R2)', () =>
   })
 })
 
-describe('event -> sound wiring (AC#3: enemy-fire event)', () => {
-  // The core emits an 'enemy-fire' GameEvent (story 6-5); the shell's event pump
-  // in main.ts maps it to the enemyFire sample. Asserted at the source level —
-  // main.ts bootstraps a canvas, so it cannot be imported in the node test env.
-  it("plays the enemyFire sample on the core 'enemy-fire' event", () => {
-    expect(mainSrc).toMatch(/case 'enemy-fire':\s*audio\.play\('enemyFire'\)/)
-  })
-})
+// The enemy-fire event->sound wiring (story 6-5/6-6) is now asserted behaviourally
+// in audio-dispatch.test.ts ("plays 'enemyFire' on an 'enemy-fire' event"), against
+// the extracted dispatcher — replacing the brittle `?raw` regex that used to live
+// here (story 6-12, AC#2).
 
 // Story 6-10: the authentic segment_tick bake (ROM $cc39 — the cursor/claw
 // line-cross tick) was baked + hosted on R2 by 6-6 but had no game trigger. This
@@ -129,12 +127,9 @@ describe('segment-tick cue wiring (story 6-10)', () => {
     expect(fetched).toContain('https://cdn.test/x/segment_tick.wav')
   })
 
-  it("plays the segmentTick sample on the core 'segment-cross' event", () => {
-    // Mirrors the enemy-fire wiring above: main.ts maps the new core event to the
-    // segmentTick manifest key. Asserted at the source level (main.ts boots a
-    // canvas and cannot be imported in the node test env).
-    expect(mainSrc).toMatch(/case 'segment-cross':\s*audio\.play\('segmentTick'\)/)
-  })
+  // The segment-cross event->sound wiring is asserted behaviourally in
+  // audio-dispatch.test.ts ("plays 'segmentTick' on a 'segment-cross' event") —
+  // replacing the former `?raw` regex match (story 6-12, AC#2).
 })
 
 // Story 6-11: the player-death cue now plays the AUTHENTIC POKEY bake
@@ -160,9 +155,7 @@ describe('player-explosion cue (story 6-11: authentic player-death bake)', () =>
     expect(fetched).toContain('https://cdn.test/x/player_explosion.wav')
   })
 
-  it("plays the playerDeath sample on the core 'player-death' event (wiring preserved)", () => {
-    // The event hook predates 6-11 (main.ts already maps player-death ->
-    // playerDeath); this guards that 6-11's asset swap leaves the wiring intact.
-    expect(mainSrc).toMatch(/case 'player-death':\s*audio\.play\('playerDeath'\)/)
-  })
+  // The player-death event->sound wiring is asserted behaviourally in
+  // audio-dispatch.test.ts ("plays 'playerDeath' on a 'player-death' event") —
+  // replacing the former `?raw` regex match (story 6-12, AC#2).
 })

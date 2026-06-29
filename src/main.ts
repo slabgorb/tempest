@@ -4,6 +4,7 @@ import { createInputController } from './shell/input'
 import { createLoop } from './shell/loop'
 import { createFx } from './shell/fx'
 import { createAudioEngine } from './shell/audio'
+import { playEventSounds } from './shell/audio-dispatch'
 import { render } from './shell/render'
 import { loadVectorFont } from './shell/font'
 import { loadHighScores, saveHighScores } from './shell/storage'
@@ -63,44 +64,11 @@ const loop = createLoop(
     if (rdt > 0.05) rdt = 0.05
     fx.detect(s, rdt, frameEvents)
     fx.update(rdt)
-    // Play one sound per gameplay event the core emitted this frame. The loop
-    // accumulates events across all sub-steps, so nothing is dropped when two
-    // events land in the same render frame. play() is a no-op until the gesture
-    // above unlocks the engine, so pre-interaction events are silently skipped.
-    for (const event of frameEvents) {
-      switch (event.type) {
-        case 'fire':
-          audio.play('fire')
-          break
-        case 'enemy-fire':
-          audio.play('enemyFire') // 6-5 hook; silent no-op until 6-6 bakes the asset
-          break
-        case 'enemy-death':
-          audio.play('enemyDeath')
-          break
-        case 'player-grab':
-          audio.play('playerGrab')
-          break
-        case 'player-death':
-          audio.play('playerDeath')
-          break
-        case 'warp-spike-crash':
-          audio.play('warpSpikeCrash')
-          break
-        case 'level-clear':
-          audio.play('levelClear')
-          break
-        case 'superzapper-activate':
-          audio.play('superzapper')
-          break
-        case 'player-spawn':
-          audio.play('playerSpawn')
-          break
-        case 'segment-cross':
-          audio.play('segmentTick') // ★ authentic POKEY tick as the Claw crosses a lane (6-10)
-          break
-      }
-    }
+    // Play one sound per gameplay event the core emitted this frame. The dispatch
+    // table lives in the pure, unit-tested shell/audio-dispatch module (6-12, AC#2)
+    // — extracted from this loop so the wiring can be tested behaviourally instead
+    // of by a brittle source text-match.
+    playEventSounds(audio, frameEvents)
     render(ctx, s, W, H, fx, dpr, rdt)
   },
   () => performance.now(),
