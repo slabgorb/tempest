@@ -57,7 +57,9 @@ describe('render starfield wiring — shown DURING warp (Story 10-4 AC1)', () =>
   })
 
   it('draws the starfield exactly once — warp only, not every frame', () => {
-    const calls = renderSrc.match(/drawStarfield\s*\(/g) ?? []
+    // Anchor on the `pctx` argument so we count CALL SITES, not the local
+    // `function drawStarfield(ctx, ...)` definition (matches the suite convention).
+    const calls = renderSrc.match(/drawStarfield\s*\(\s*pctx/g) ?? []
     expect(calls).toHaveLength(1)
   })
 })

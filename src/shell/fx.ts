@@ -40,7 +40,6 @@ export function createFx(): Fx {
   let flash = 0
   let flashColor = '#fff'
   let prevBullets: { lane: number; depth: number }[] = []
-  let prevLevel = 1
   let prevAlive = true
 
   function burst(
@@ -102,15 +101,16 @@ export function createFx(): Fx {
         flash = 0.6
         flashColor = '#7df9ff' // electric blue, not the red death flash
       }
-    }
 
-    // Level cleared → white flash, gentle shake.
-    if (s.level > prevLevel) {
-      flash = 0.4
-      flashColor = '#ffffff'
-      shake = 6
+      // Level cleared → white flash, gentle shake. Driven off the explicit
+      // `level-clear` event (fired on warp ENTRY by sim.checkLevelClear) rather
+      // than the arrival `s.level` diff, so the cue punches as the dive BEGINS.
+      if (e.type === 'level-clear') {
+        flash = 0.4
+        flashColor = '#ffffff'
+        shake = 6
+      }
     }
-    prevLevel = s.level
   }
 
   function update(dt: number): void {
