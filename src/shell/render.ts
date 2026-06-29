@@ -1,7 +1,7 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
 import { HighScoreTable } from '../core/highscore'
-import { Tube, Point, currentLane, project, laneWidth } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth, flipPivot } from '../core/geometry'
 import { Fx } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import {
@@ -31,6 +31,26 @@ const GLYPH_HEX: Record<GlyphColor, string> = {
   white: '#ffffff',
   orange: '#ffa500',
   purple: '#9b30ff',
+}
+
+// Swing `from` to `to` along the circular arc about `pivot`, interpolating BOTH
+// angle and radius so the path rides over the pivot and lands EXACTLY on `to` at
+// t=1. Story 6-18 uses this to tumble a mid-flip flipper about its rim spoke —
+// render-space only. Returns the position plus the total swing angle so the glyph
+// can rotate in step (end-over-end).
+function arcAbout(
+  from: Point, to: Point, pivot: Point, t: number,
+): { pos: Point; swing: number } {
+  const a0 = Math.atan2(from.y - pivot.y, from.x - pivot.x)
+  const a1 = Math.atan2(to.y - pivot.y, to.x - pivot.x)
+  let dA = a1 - a0
+  if (dA > Math.PI) dA -= 2 * Math.PI
+  if (dA < -Math.PI) dA += 2 * Math.PI
+  const r0 = Math.hypot(from.x - pivot.x, from.y - pivot.y)
+  const r1 = Math.hypot(to.x - pivot.x, to.y - pivot.y)
+  const a = a0 + dA * t
+  const r = r0 + (r1 - r0) * t
+  return { pos: { x: pivot.x + Math.cos(a) * r, y: pivot.y + Math.sin(a) * r }, swing: dA }
 }
 
 // Stroke an authentic glyph (Story 6-8) at (cx,cy), scaled and rotated into
@@ -243,16 +263,26 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
 
   switch (e.kind) {
     case 'flipper': {
-      // RED bowtie/butterfly. Mid-flip (6-14) it SLIDES from its source lane to
-      // the adjacent target, tumbling a half-turn across the flip; settled, it
-      // sits on its lane with the idle runtime spin.
+      // RED bowtie/butterfly. Authentic flippers do NOT idle-spin — a settled
+      // one is a still bowtie spanning its lane rail-to-rail, so its wide (claw)
+      // axis sits TANGENT to the rim (perpendicular to the lane's far->near
+      // axis). Story 6-18: mid-flip it tumbles END-OVER-END, pivoting about the
+      // shared web spoke (the rim vertex) between its lane and the adjacent
+      // target — the arc carries it onto the next lane and rotates it over, so
+      // it hand-over-hands around the rim instead of sliding with a centre-spin.
+      const far = project(tube, e.lane, 0)
+      const near = project(tube, e.lane, 1)
+      const baseAngle = Math.atan2(near.y - far.y, near.x - far.x) + Math.PI / 2
       let fp = p
-      let spin = renderTime * 4 + e.lane
+      let spin = baseAngle
       if (e.flipping) {
-        const to = project(tube, e.lane + (e.flipDir ?? 1), e.depth)
+        const dir = e.flipDir ?? 1
+        const pivot = flipPivot(tube, e.lane, dir, e.depth)
+        const to = project(tube, e.lane + dir, e.depth)
         const t = e.flipProgress ?? 0
-        fp = { x: p.x + (to.x - p.x) * t, y: p.y + (to.y - p.y) * t }
-        spin += t * Math.PI
+        const arc = arcAbout(p, to, pivot, t)
+        fp = arc.pos
+        spin = baseAngle + arc.swing * t
       }
       strokeGlyph(ctx, flipperGlyph(), fp.x, fp.y, r / 4, spin, 14)
       break
