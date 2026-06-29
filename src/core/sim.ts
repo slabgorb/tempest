@@ -436,28 +436,38 @@ function startGameAtLevel(s: GameState, level: number): void {
   startLevel(s)
 }
 
-// Superzapper: once per level. The first activation vaporises every enemy on
-// screen (no tanker split — it is a kill, not a hit); the second vaporises one
-// enemy, the nearest the rim (max depth, ties → lowest index); after that it is
-// spent until the next level. Scoring flows through awardScore so a zap can
-// grant extra lives just like a bullet kill. Targeting is fully deterministic.
+// Superzapper: once per level. The first activation is a screen-clear that
+// vaporises every enemy EXCEPT tankers (which are spared) and wipes all in-flight
+// enemy bolts (10-1); the second vaporises one enemy, the nearest the rim
+// (max depth, ties → lowest index); after that it is spent until the next level.
+// Tanker cargo is never released by a zap (it is a kill, not a hit). Scoring
+// flows through awardScore so a zap can grant extra lives just like a bullet
+// kill. Targeting is fully deterministic.
 function stepZap(s: GameState, input: Input): void {
   if (!input.zap || !s.player.alive) return
   if (s.player.superzapper === 'spent' || s.enemies.length === 0) {
     // A full charge is still consumed even with nothing to hit; a weak shot with
     // no target is wasted-but-not-spent (nothing to destroy this frame). No
-    // enemies means no kill and (by design, Story 5-1) no activation event.
-    if (s.player.superzapper === 'full') s.player.superzapper = 'used-once'
+    // enemies means no kill and (by design, Story 5-1) no activation event — but
+    // a full press is still a screen-clear, so it wipes any in-flight bolts (10-1).
+    if (s.player.superzapper === 'full') {
+      s.enemyBullets = []
+      s.player.superzapper = 'used-once'
+    }
     return
   }
   if (s.player.superzapper === 'full') {
-    const killCount = s.enemies.length
-    for (const e of s.enemies) {
+    // First press spares tankers (carriers): every other enemy is vaporised, but
+    // tankers stay on the board. It also wipes every in-flight enemy bolt so a
+    // bolt already in the air cannot still claim the player (10-1).
+    const killed = s.enemies.filter((e) => e.kind !== 'tanker')
+    for (const e of killed) {
       awardScore(s, scoreFor(e))
       s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth })
     }
-    s.events.push({ type: 'superzapper-activate', killCount })
-    s.enemies = []
+    s.events.push({ type: 'superzapper-activate', killCount: killed.length })
+    s.enemies = s.enemies.filter((e) => e.kind === 'tanker')
+    s.enemyBullets = []
     s.player.superzapper = 'used-once'
     return
   }
