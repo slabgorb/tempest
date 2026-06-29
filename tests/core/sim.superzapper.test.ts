@@ -1,17 +1,16 @@
 // tests/core/sim.superzapper.test.ts
 //
-// RED-phase suite for Story 4-1 — the once-per-level Superzapper:
-//   full blast (first use)  → vaporise EVERY enemy on screen, then 'used-once'
+// Suite for the once-per-level Superzapper. Originally Story 4-1; Story 10-1
+// corrects the FIRST press to the authentic 1981 behaviour:
+//   full blast (first use)  → vaporise every NON-TANKER enemy AND clear every
+//                             in-flight enemy bolt; TANKERS are SPARED, then 'used-once'
 //   weak shot (second use)  → vaporise exactly ONE enemy (nearest the rim,
 //                             ties broken by lowest index), then 'spent'
 //   spent (third use+)      → no effect, until the next level
 //   per-level reset         → startLevel refills the charge to 'full', so every
 //                             level (including the post-warp one) begins armed
 //
-// Everything is observed through the public `stepGame` API — `stepZap` and the
-// `superzapper` field do not exist yet, so today these tests FAIL:
-//   - `s.player.superzapper` is `undefined` (≠ 'full' / 'used-once' / 'spent')
-//   - `Input.zap` is reserved but ignored, so the board is never cleared.
+// Everything is observed through the public `stepGame` API.
 //
 // PARANOIA NOTES (why these tests are shaped the way they are):
 //   1. AUTO-WARP TRAP. The instant a full blast empties the board, if there are
@@ -20,18 +19,25 @@
 //      again" test would run the second zap in the 'warp' branch, where the
 //      Superzapper never fires. So each state transition is set up explicitly
 //      (mode reset to 'playing', enemies repopulated) and asserted in isolation.
-//   2. NO TANKER SPLIT. A bullet kill splits a tanker into two children; the
-//      Superzapper must VAPORISE it instead. The reference plan never tested
-//      this — we do (board ends empty, score is one tanker, not two children).
-//   3. DETERMINISM. Targeting uses no RNG and no time: the nearest-the-rim pick
+//      Sparing tankers is also what lets a mixed board survive the first press,
+//      so the bolt-clearing assertions run on a board that does NOT auto-warp.
+//   2. SPARED-TANKER REFIRE TRAP (Story 10-1). The PLAY order runs the zap
+//      BEFORE enemy-fire, so a tanker that survives the blast could loose a
+//      FRESH bolt in the very same step and muddy a "bolts cleared" assertion.
+//      Surviving tankers are therefore parked at `fireCooldown: 999` in the
+//      bolt tests so the only bolts observed are the ones the zap should clear.
+//   3. DECLAW (Story 10-1). The first press no longer kills tankers, so the
+//      "no tanker split" guard moved to the WEAK shot: a zap kill of a tanker
+//      must NOT release its cargo (one tanker scored, no child spawned).
+//   4. DETERMINISM. Targeting uses no RNG and no time: the nearest-the-rim pick
 //      is `max depth, ties → lowest index`. Identical inputs must produce
 //      identical output, and the step must not mutate its input argument.
 import { describe, it, expect } from 'vitest'
 import { initialState } from '../../src/core/state'
-import type { GameState, Enemy } from '../../src/core/state'
+import type { GameState, Enemy, EnemyBullet } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { SCORE_FLIPPER, SCORE_TANKER } from '../../src/core/rules'
+import { SCORE_FLIPPER, SCORE_TANKER, SCORE_PULSAR } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -55,6 +61,23 @@ const threeFlippers = (): Enemy[] => [
   { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 },
   { kind: 'flipper', lane: 5, depth: 0.6, flipTimer: 999 },
   { kind: 'flipper', lane: 9, depth: 0.9, flipTimer: 999 },
+]
+
+// A board of "must-die" enemies (2 flippers + 1 pulsar) plus a tanker that must
+// SURVIVE the first press (Story 10-1). The tanker is parked at fireCooldown 999
+// so it cannot loose a fresh bolt in the same step and skew a bolt-clear assert.
+const mixedBoard = (): Enemy[] => [
+  { kind: 'flipper', lane: 1, depth: 0.3, flipTimer: 999 },
+  { kind: 'tanker', lane: 3, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+  { kind: 'pulsar', lane: 5, depth: 0.6, flipTimer: 999, pulseTimer: 999, pulsing: false },
+  { kind: 'flipper', lane: 8, depth: 0.2, flipTimer: 999 },
+]
+
+// Two enemy bolts in flight on lanes clear of the player (lane 0), so only the
+// Superzapper — not a player-collision — can remove them.
+const twoBolts = (): EnemyBullet[] => [
+  { lane: 2, depth: 0.4 },
+  { lane: 7, depth: 0.6 },
 ]
 
 describe('superzapper — arming and per-level reset', () => {
@@ -98,13 +121,16 @@ describe('superzapper — full blast (first activation)', () => {
     expect(out.score).toBe(SCORE_FLIPPER * 3)
   })
 
-  it('vaporises a tanker WITHOUT splitting it into children', () => {
-    // depth 0.5 is well below TANKER_SPLIT_DEPTH (0.9), so a missed blast would
-    // leave the tanker intact (length 1, score 0) rather than split it — and a
-    // blast that wrongly *split* it would leave children behind / over-score.
+  it('spares a tanker (carrier) — the first press leaves it alive and unscored', () => {
+    // Authentic 1981 behaviour (Story 10-1): the first press is a screen-clear
+    // that SPARES tankers. A board of one tanker therefore survives the blast
+    // intact — no kill, no child split, no score — while the charge still drops
+    // to used-once. (A board of just the tanker does not auto-warp: it isn't empty.)
     const out = stepGame(playing([{ kind: 'tanker', lane: 3, depth: 0.5, contains: 'flipper' }]), ZAP, DT)
-    expect(out.enemies).toHaveLength(0)        // no children left behind
-    expect(out.score).toBe(SCORE_TANKER)       // exactly one tanker, not two flippers
+    expect(out.enemies).toHaveLength(1)
+    expect(out.enemies[0].kind).toBe('tanker')
+    expect(out.enemies[0].lane).toBe(3)
+    expect(out.score).toBe(0)                  // spared, so nothing is scored
     expect(out.player.superzapper).toBe('used-once')
   })
 
@@ -196,5 +222,115 @@ describe('superzapper — state machine + purity', () => {
     expect(b.player.superzapper).toBe(a.player.superzapper)
     expect(a.score).toBe(b.score)
     expect(a.enemies).toEqual(b.enemies)
+  })
+})
+
+describe('superzapper — Story 10-1: first press spares tankers, clears bolts', () => {
+  it('first press kills every non-tanker enemy but leaves tankers alive', () => {
+    const out = stepGame(playing(mixedBoard()), ZAP, DT)
+    expect(out.enemies).toHaveLength(1)        // only the tanker remains
+    expect(out.enemies[0].kind).toBe('tanker')
+    expect(out.enemies[0].lane).toBe(3)        // tankers climb straight — lane is stable
+    expect(out.player.superzapper).toBe('used-once')
+  })
+
+  it('first press scores only the enemies it kills — the spared tanker is not scored', () => {
+    const out = stepGame(playing(mixedBoard()), ZAP, DT)
+    // 2 flippers (150 ea) + 1 pulsar (200); the tanker (100) survives, so unscored.
+    expect(out.score).toBe(SCORE_FLIPPER * 2 + SCORE_PULSAR)
+  })
+
+  it('first press emits a death event per kill and none for the spared tanker', () => {
+    const out = stepGame(playing(mixedBoard()), ZAP, DT)
+    const deaths = out.events.filter((e) => e.type === 'enemy-death')
+    expect(deaths).toHaveLength(3) // the two flippers + the pulsar
+    expect(deaths.some((e) => e.type === 'enemy-death' && e.enemyType === 'tanker')).toBe(false)
+  })
+
+  it('first press clears every in-flight enemy bolt', () => {
+    const s = playing(mixedBoard())
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemyBullets).toHaveLength(0)
+  })
+
+  it('first press clears bolts even when the board is NOT emptied (only tankers remain)', () => {
+    // Proves bolt-clearing is intrinsic to the first press — not a side effect of
+    // an emptied board. The surviving tanker (fireCooldown 999) cannot refire.
+    const s = playing([{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'pulsar', fireCooldown: 999 }])
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemies).toHaveLength(1)
+    expect(out.enemies[0].kind).toBe('tanker')
+    expect(out.enemyBullets).toHaveLength(0)
+    expect(out.player.superzapper).toBe('used-once')
+  })
+
+  it('first press clears in-flight bolts even with NO enemies on the board', () => {
+    // An enemy can fire then die, leaving a lethal bolt with nothing left to kill.
+    // The first press is a screen-clear, so the bolt must still go (this exercises
+    // the no-enemies early-return path, distinct from the enemies-present branch).
+    const s = playing([])
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemyBullets).toHaveLength(0)
+    expect(out.player.superzapper).toBe('used-once') // the charge is still consumed
+  })
+
+  it('second press still kills exactly one enemy — the one nearest the rim (no regression)', () => {
+    // After a first press the board is tankers-only; the weak shot takes one — the
+    // deepest (nearest the rim). fireCooldown 999 keeps the survivor from refiring.
+    const s = playing([
+      { kind: 'tanker', lane: 2, depth: 0.3, contains: 'flipper', fireCooldown: 999 },
+      { kind: 'tanker', lane: 7, depth: 0.8, contains: 'flipper', fireCooldown: 999 }, // deepest
+    ])
+    s.player.superzapper = 'used-once'
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemies).toHaveLength(1)
+    expect(out.enemies[0].lane).toBe(2)        // the lane-7 tanker (0.8) was vaporised
+    expect(out.player.superzapper).toBe('spent')
+  })
+
+  it('a zap kill never releases tanker cargo (declaw preserved)', () => {
+    // The weak shot kills a tanker outright — no flipper child spawned, and the
+    // score is a single tanker (100), not the two children a bullet split makes.
+    const s = playing([{ kind: 'tanker', lane: 5, depth: 0.8, contains: 'flipper' }])
+    s.player.superzapper = 'used-once'
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemies).toHaveLength(0)        // killed, no child left behind
+    expect(out.score).toBe(SCORE_TANKER)       // one tanker, not two flippers
+    expect(out.player.superzapper).toBe('spent')
+  })
+
+  it('second press does NOT clear in-flight bolts — only the first press does', () => {
+    // Pins the minimal change: bolt-clearing belongs to the FIRST press alone.
+    const s = playing([
+      { kind: 'tanker', lane: 2, depth: 0.3, contains: 'flipper', fireCooldown: 999 },
+      { kind: 'tanker', lane: 7, depth: 0.8, contains: 'flipper', fireCooldown: 999 },
+    ])
+    s.player.superzapper = 'used-once'
+    s.enemyBullets = [{ lane: 5, depth: 0.4 }]
+    const out = stepGame(s, ZAP, DT)
+    expect(out.enemyBullets).toHaveLength(1)   // weak shot leaves the bolt in flight
+  })
+
+  it('first press is deterministic — identical board + zap give identical output', () => {
+    const a = stepGame(playing(mixedBoard()), ZAP, DT)
+    const b = stepGame(playing(mixedBoard()), ZAP, DT)
+    expect(a.enemies).toEqual(b.enemies)
+    expect(a.score).toBe(b.score)
+    expect(a.enemyBullets).toEqual(b.enemyBullets)
+  })
+
+  it('first press does not mutate the input state (pure step)', () => {
+    const s = playing(mixedBoard())
+    s.enemyBullets = twoBolts()
+    const out = stepGame(s, ZAP, DT)
+    // the returned state reflects the blast (tanker spared, bolts cleared)...
+    expect(out.enemies).toHaveLength(1)
+    expect(out.enemyBullets).toHaveLength(0)
+    // ...while the original argument is left exactly as it was
+    expect(s.enemies).toHaveLength(4)
+    expect(s.enemyBullets).toHaveLength(2)
   })
 })
