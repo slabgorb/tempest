@@ -106,8 +106,17 @@ describe('flipPivot — perspective: lerps the rim vertex far->near (Story 6-18 
     eqP(flipPivot(circle, 3, 1, 1), circle.near[4])
   })
 
-  it('at depth 0.5 is the midpoint of the far and near vertex', () => {
-    eqP(flipPivot(circle, 3, 1, 0.5), mid(circle.far[4], circle.near[4]))
+  it('at depth 0.5 is compressed toward the far vertex (perspective, not midpoint) — Story 10-12', () => {
+    // Story 10-12 replaced the linear lerp with a true perspective divide, so the
+    // spoke rides 1/z far->near: at depth 0.5 it sits short of the geometric
+    // midpoint, closer to the far vertex. (Full characterisation in
+    // geometry.perspective.test.ts.)
+    const m = mid(circle.far[4], circle.near[4])
+    const p = flipPivot(circle, 3, 1, 0.5)
+    const r = (q: Point): number => Math.hypot(q.x, q.y)
+    expect(dist(p, m)).toBeGreaterThan(1)
+    expect(r(p)).toBeLessThan(r(m))
+    expect(dist(p, circle.far[4])).toBeLessThan(dist(p, circle.near[4]))
   })
 
   it('moves monotonically outward (|pivot| grows) from vanishing point to rim', () => {

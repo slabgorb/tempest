@@ -91,12 +91,20 @@ describe('laneWidth — grows monotonically from far to near (Story 6-17 AC1)', 
     }
   })
 
-  it('interpolates linearly between the far and near chords (circle ring)', () => {
-    // A circle ring's rails are colinear from the centre, so width is linear in
-    // depth: width(0.5) is exactly the average of the far and near widths.
+  it('scales by the perspective divide, not linearly (Story 10-12)', () => {
+    // Story 10-12 replaced the linear depth lerp with a true perspective divide.
+    // An enemy is a fixed-size object in perspective, so its width follows 1/z
+    // like its position: width(0.5) is COMPRESSED below the affine average and
+    // accelerates toward the rim. (Full characterisation in
+    // geometry.perspective.test.ts.)
     const w0 = laneWidth(circle, 0, 0)
     const w1 = laneWidth(circle, 0, 1)
-    expect(laneWidth(circle, 0, 0.5)).toBeCloseTo((w0 + w1) / 2, 6)
+    const wMid = laneWidth(circle, 0, 0.5)
+    // Perspective pulls mid-depth width to ~0.56x the affine average; the linear
+    // lerp lands exactly ON it. Require a clear gap (< 0.9x) so a float tie at the
+    // average can't mask RED.
+    expect(wMid).toBeLessThan(((w0 + w1) / 2) * 0.9)
+    expect(wMid).toBeGreaterThan(w0)
   })
 })
 

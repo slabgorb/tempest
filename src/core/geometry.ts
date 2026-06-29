@@ -9,6 +9,35 @@ export interface Tube {
   readonly near: readonly Point[]
 }
 
+// --- Story 10-12: true perspective depth projection --------------------------
+//
+// The well's documented projection parameter. The far ring is the near ring
+// scaled by FAR_RATIO toward the vanishing point (the tube centre), so the far
+// end sits at eye-distance 1/FAR_RATIO times the near end. (60/300 keeps level 1
+// at its original size — see makeRingTube.)
+export const FAR_RATIO = 60 / 300
+
+// Depth -> perspective fraction along the far->near segment. A Tempest well is
+// ONE ring scaled by a perspective DIVIDE toward the vanishing point, NOT an
+// affine lerp: screen distance from the centre is ∝ 1/(eye − z). Pinning both
+// endpoints (depth 0 = far ring, depth 1 = near ring, so neither the rim nor the
+// claw moves) while requiring "screen radius ∝ 1/z with z linear in depth"
+// yields a UNIQUE reparameterisation — one that makes 1/radius affine in depth:
+//
+//   perspectiveDepth(d) = R·d / (R·d + (1−d)),   R = FAR_RATIO
+//
+// d=0 -> exactly 0, d=1 -> exactly 1; the interior accelerates toward the near
+// rim like the cabinet. (Algebraically R·d/(1+(R−1)d), but written so the
+// denominator is exactly R·d at d=1 and exactly 1 at d=0, keeping the endpoints
+// bit-exact — the rim and claw must not move even by a rounding ULP.) The
+// denominator stays in [R, 1] over depth [0, 1], so the divide never blows up.
+// Pure: the only projection state is the FAR_RATIO constant (a single documented
+// vanishing-point/eye parameter). Per-level lev_y3d camera offset is a deferred
+// render nicety (see the geometry ROM survey).
+export function perspectiveDepth(depth: number): number {
+  return (FAR_RATIO * depth) / (FAR_RATIO * depth + (1 - depth))
+}
+
 export function makeCircleTube(
   laneCount: number, center: Point, farRadius: number, nearRadius: number,
 ): Tube {
@@ -55,16 +84,18 @@ export function laneCenterNear(tube: Tube, lane: number): Point {
 export function project(tube: Tube, lane: number, depth: number): Point {
   const f = laneCenterFar(tube, lane)
   const n = laneCenterNear(tube, lane)
-  return { x: f.x + (n.x - f.x) * depth, y: f.y + (n.y - f.y) * depth }
+  const t = perspectiveDepth(depth)
+  return { x: f.x + (n.x - f.x) * t, y: f.y + (n.y - f.y) * t }
 }
 
 // Project one rim boundary rail (the shared edge between two lanes) to `depth`,
-// the same far->near lerp `project` does for lane centers.
+// the same far->near perspective divide `project` does for lane centers.
 function boundaryRail(tube: Tube, i: number, depth: number): Point {
   const idx = boundaryIndex(tube, i)
   const f = tube.far[idx]
   const n = tube.near[idx]
-  return { x: f.x + (n.x - f.x) * depth, y: f.y + (n.y - f.y) * depth }
+  const t = perspectiveDepth(depth)
+  return { x: f.x + (n.x - f.x) * t, y: f.y + (n.y - f.y) * t }
 }
 
 // Story 6-17: the on-screen width of `lane` at `depth` — the distance between
@@ -155,10 +186,10 @@ const ROM_REMAP: readonly number[] = [
 const ROM_CENTER = 0x80
 // Map the ROM rim radius (±112) onto the original circle's near radius (300) so
 // level 1 keeps its size; the far end is the same ring scaled toward the centre
-// (the original 60/300 depth ratio). Per-level lev_y3d vanishing-point fidelity
-// is a render follow-up — see the survey's ADR.
+// by FAR_RATIO (the 60/300 depth ratio defined at the top as the projection
+// parameter). Per-level lev_y3d vanishing-point fidelity is a render follow-up —
+// see the survey's ADR.
 const RING_SCALE = 300 / 112
-const FAR_RATIO = 60 / 300
 
 // Build a Tube from one authentic 16-point ring. Closed wells wrap (16 lanes);
 // open sheets clamp (15 lanes) but still carry all 16 rim points (laneCount + 1).
