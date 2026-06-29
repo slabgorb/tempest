@@ -31,10 +31,10 @@
 // heuristic. The player splat replaces the twin death bursts but the red death
 // FLASH + shake are preserved (AC4 — existing cues keep working).
 //
-// These fail against today's fx.ts (no `explosions` property at all) and pass once
-// the structured explosions land.
+// The suite pins the explosions' geometry and timing against that structured
+// surface, fully typed via the exported `Explosion` union (no casts).
 import { describe, it, expect } from 'vitest'
-import { createFx } from '../../src/shell/fx'
+import { createFx, type Explosion } from '../../src/shell/fx'
 import { initialState } from '../../src/core/state'
 import { project, currentLane } from '../../src/core/geometry'
 import type { GameEvent } from '../../src/core/events'
@@ -75,20 +75,28 @@ const enemyDeath = (lane: number, depth: number): GameEvent => ({
   depth,
 })
 
+// Narrowing type-guard over the `kind` discriminant — keeps the suite fully typed
+// against the exported `Explosion` union (no casts, so a field rename is caught).
+type OfKind<K extends Explosion['kind']> = Extract<Explosion, { kind: K }>
+const isKind =
+  <K extends Explosion['kind']>(kind: K) =>
+  (e: Explosion): e is OfKind<K> =>
+    e.kind === kind
+
+const explosionsOf = <K extends Explosion['kind']>(
+  fx: ReturnType<typeof createFx>,
+  kind: K,
+): OfKind<K>[] => fx.explosions.filter(isKind(kind))
+
 // Step `update` frame-by-frame, snapshotting the single explosion of `kind` each
 // frame while it lives (frame 0 = post-detect, pre-update). Stops when it expires.
-function trackExplosion(
+function trackExplosion<K extends Explosion['kind']>(
   fx: ReturnType<typeof createFx>,
-  kind: 'enemy' | 'player',
+  kind: K,
   maxFrames = 240,
-): Array<Record<string, number | string>> {
-  // `explosions` is the new surface under test; typed loosely here so the suite
-  // runs (RED) before the interface exists.
-  const find = () =>
-    (fx as unknown as { explosions: ReadonlyArray<Record<string, number | string>> }).explosions?.find(
-      (e) => e.kind === kind,
-    )
-  const samples: Array<Record<string, number | string>> = []
+): OfKind<K>[] {
+  const find = () => fx.explosions.find(isKind(kind))
+  const samples: OfKind<K>[] = []
   const first = find()
   if (first) samples.push({ ...first })
   for (let i = 0; i < maxFrames; i++) {
@@ -100,11 +108,6 @@ function trackExplosion(
   return samples
 }
 
-const explosionsOf = (fx: ReturnType<typeof createFx>, kind: 'enemy' | 'player') =>
-  ((fx as unknown as { explosions?: ReadonlyArray<Record<string, unknown>> }).explosions ?? []).filter(
-    (e) => e.kind === kind,
-  )
-
 describe('fx enemy-death explosion — 16-spoke star (Story 10-5 AC1)', () => {
   it('spawns one 16-spoke enemy burst on the enemy-death event, at the event location', () => {
     const { s, fx } = seeded()
@@ -113,7 +116,7 @@ describe('fx enemy-death explosion — 16-spoke star (Story 10-5 AC1)', () => {
     const bursts = explosionsOf(fx, 'enemy')
     expect(bursts.length).toBe(1)
 
-    const burst = bursts[0] as Record<string, number>
+    const burst = bursts[0]
     expect(burst.spokes).toBe(ENEMY_SPOKES)
 
     const pos = project(s.tube, 2, 0.5)
@@ -126,7 +129,7 @@ describe('fx enemy-death explosion — 16-spoke star (Story 10-5 AC1)', () => {
     fx.detect(s, FRAME, [enemyDeath(2, 0.5)])
 
     const samples = trackExplosion(fx, 'enemy')
-    const scaleSequence = dedupeConsecutive(samples.map((e) => e.scale as number))
+    const scaleSequence = dedupeConsecutive(samples.map((e) => e.scale))
     expect(scaleSequence).toEqual(ENEMY_SCALE_STEPS)
   })
 
@@ -135,7 +138,7 @@ describe('fx enemy-death explosion — 16-spoke star (Story 10-5 AC1)', () => {
     fx.detect(s, FRAME, [enemyDeath(2, 0.5)])
 
     const samples = trackExplosion(fx, 'enemy')
-    const brightnessSequence = dedupeConsecutive(samples.map((e) => e.brightness as number))
+    const brightnessSequence = dedupeConsecutive(samples.map((e) => e.brightness))
     expect(brightnessSequence).toEqual(ENEMY_BRIGHTNESS_TIERS)
   })
 
@@ -148,6 +151,21 @@ describe('fx enemy-death explosion — 16-spoke star (Story 10-5 AC1)', () => {
     for (let i = 0; i < 240; i++) fx.update(FRAME)
     expect(explosionsOf(fx, 'enemy').length).toBe(0) // ...and was cleaned up.
   })
+
+  it('spawns an independent burst per simultaneous enemy-death (superzapper sweep)', () => {
+    const { s, fx } = seeded()
+    fx.detect(s, FRAME, [enemyDeath(1, 0.4), enemyDeath(3, 0.6)])
+
+    const bursts = explosionsOf(fx, 'enemy')
+    expect(bursts.length).toBe(2) // not collapsed/capped to one
+
+    // Each burst sits at its own event location, and the two are distinct points.
+    const want = [project(s.tube, 1, 0.4), project(s.tube, 3, 0.6)]
+    for (const w of want) {
+      expect(bursts.some((b) => Math.hypot(b.x - w.x, b.y - w.y) < 0.5)).toBe(true)
+    }
+    expect(Math.hypot(bursts[0].x - bursts[1].x, bursts[0].y - bursts[1].y)).toBeGreaterThan(0.5)
+  })
 })
 
 describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, AC3)', () => {
@@ -159,7 +177,7 @@ describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, A
     const splats = explosionsOf(fx, 'player')
     expect(splats.length).toBe(1)
 
-    const splat = splats[0] as Record<string, number>
+    const splat = splats[0]
     expect(splat.spokes).toBeGreaterThanOrEqual(MIN_JAGGED_POINTS)
 
     const pos = project(s.tube, currentLane(s.tube, s.player.lane), 1.0)
@@ -172,15 +190,15 @@ describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, A
     s.player.alive = false
     fx.detect(s, FRAME, [])
 
-    const radii = trackExplosion(fx, 'player').map((e) => e.radius as number)
+    const radii = trackExplosion(fx, 'player').map((e) => e.radius)
     expect(radii.length).toBeGreaterThan(3)
 
     const peak = Math.max(...radii)
     const peakIdx = radii.indexOf(peak)
     expect(peakIdx).toBeGreaterThan(0) // grew from the start
     expect(peakIdx).toBeLessThan(radii.length - 1) // shrank before the end
-    expect(radii[0]).toBeLessThan(peak)
-    expect(radii[radii.length - 1]).toBeLessThan(peak)
+    expect(radii[1]).toBeGreaterThan(radii[0]) // actually grew on the first tick
+    expect(radii[radii.length - 1]).toBeLessThan(peak) // and shrank from the peak
   })
 
   it('color-cycles through white/red/yellow, changing essentially every frame', () => {
@@ -188,16 +206,15 @@ describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, A
     s.player.alive = false
     fx.detect(s, FRAME, [])
 
-    const colors = trackExplosion(fx, 'player').map((e) => e.color as string)
+    const colors = trackExplosion(fx, 'player').map((e) => e.color)
     expect(colors.length).toBeGreaterThan(3)
 
     // Exactly the three documented colours — nothing else.
     expect(new Set(colors)).toEqual(new Set([SPLAT_WHITE, SPLAT_RED, SPLAT_YELLOW]))
 
-    // It actually CYCLES (changes ~every frame), not just shows three colours at
-    // fixed positions. Allow a little float jitter in frame timing.
-    const transitions = dedupeConsecutive(colors).length
-    expect(transitions).toBeGreaterThan(colors.length * 0.8)
+    // Cycles EVERY frame (AC3): no two consecutive frames share a colour. The cycle
+    // is driven by an integer counter (no float jitter), so this is exact.
+    expect(dedupeConsecutive(colors).length).toBe(colors.length)
   })
 })
 
