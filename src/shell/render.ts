@@ -5,6 +5,7 @@ import { Tube, Point, currentLane, project, laneWidth, flipPivot } from '../core
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
+import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
@@ -17,6 +18,13 @@ const LEVEL_COLORS = [
   '#b14cff', '#00d6ff', '#ff7a18', '#46ff5a',
 ]
 const CLAW_COLOR = '#ffe600'
+
+// Attract title "approaching rainbow" tuning (Story 10-6). TITLE_BASE_PX is the
+// near-plane TEMPEST size in px; each pass shrinks it by its perspective scale.
+// LOGO_RAINBOW_SPEED is how fast the stack marches forward, in phase-cycles/sec
+// (one cycle advances the stack by one depth slot, i.e. a fresh far pass enters).
+const TITLE_BASE_PX = 112
+const LOGO_RAINBOW_SPEED = 0.9
 
 // Phosphor afterglow retention per 1/60 s frame (0 = instant clear, 1 = never
 // fades). 0.55 ≈ the authentic Color-XY short glow; tune by eye while running.
@@ -651,7 +659,22 @@ function drawAttract(
   // Backdrop behind the title + high-score table for consistent contrast (and a
   // safety net should the playing scene ever leak through here again — see 4-2 F1).
   drawScrim(ctx, W, H)
-  drawGlowText(ctx, 'TEMPEST', W / 2, H * 0.18, "900 96px 'Vector Battle', 'Orbitron', monospace", color, 30)
+  // Title as the approaching rainbow (Story 10-6): TEMPEST stacked across ~19
+  // depth passes from the far horizon to the viewer, each a rainbow colour, the
+  // whole stack marching forward every frame (the book's SCARNG/LOGPRO
+  // "approaching logo process"). renderTime drives the advance so it animates;
+  // far passes draw first (behind) small and faint, near passes large and bright.
+  const titleY = H * 0.18
+  for (const pass of titleLogoPasses(renderTime * LOGO_RAINBOW_SPEED)) {
+    const size = Math.max(1, Math.round(TITLE_BASE_PX * pass.scale))
+    ctx.globalAlpha = 0.35 + 0.65 * pass.depth
+    drawGlowText(
+      ctx, 'TEMPEST', W / 2, titleY,
+      `900 ${size}px 'Vector Battle', 'Orbitron', monospace`,
+      pass.color, 8 + Math.round(20 * pass.depth),
+    )
+  }
+  ctx.globalAlpha = 1
   drawGlowText(
     ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74,
     "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 8,
