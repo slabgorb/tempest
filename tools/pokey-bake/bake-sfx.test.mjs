@@ -142,13 +142,39 @@ describe('pokey-bake render pipeline (AC#2: non-silent WAV bake)', () => {
         expect(buf.toString('ascii', 0, 4)).toBe('RIFF')
         expect(buf.toString('ascii', 8, 12)).toBe('WAVE')
 
-        // Peak across the 16-bit PCM payload must clear the noise floor.
-        let peak = 0
+        // Independently measure the peak |sample| in the 16-bit PCM payload.
+        let measured = 0
         for (let i = 44; i + 1 < buf.byteLength; i += 2) {
           const s = Math.abs(buf.readInt16LE(i))
-          if (s > peak) peak = s
+          if (s > measured) measured = s
         }
-        expect(peak, `${name}.wav is audible`).toBeGreaterThan(200) // full scale = 32767
+
+        // AC#3 (story 6-12): the old `measured > 200` floor (≈0.006 of full scale,
+        // ≈ -44 dBFS) was analytically weak — it sat ~12x BELOW the quietest real
+        // bake (segment_tick peaks at ~0.074). Replace it by asserting the bake
+        // script's OWN reported peak: parse the `peak=<float 0..1>` it prints per
+        // sound, (a) cross-check it against the PCM we measured so the audibility
+        // bar is tied to the renderer's own measurement rather than a magic number,
+        // then (b) require that reported peak to clear a justified audibility floor.
+        const m = stdout.match(
+          new RegExp(`${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.wav.*?peak=([0-9.]+)`),
+        )
+        expect(m, `${name}: bake printed a peak= value in stdout`).not.toBeNull()
+        const reported = Number(m[1])
+
+        // (a) Same signal: measured ≈ reported * 32767. stdout rounds the float to
+        // 3 decimals and writeWav truncates, so allow ≤ 0.001 of full scale of
+        // slack (twice the 0.0005 rounding bound) — clearly non-flaky.
+        expect(
+          Math.abs(measured - reported * 32767),
+          `${name}: measured PCM peak (${measured}) matches the bake's reported peak (${reported})`,
+        ).toBeLessThanOrEqual(0.001 * 32767)
+
+        // (b) Justified floor: 0.02 of full scale (≈ -34 dBFS) sits well above the
+        // renderer's 1e-4 SILENT cutoff and the -80 dBFS noise floor, yet safely
+        // below the quietest real bake (segment_tick ≈ 0.074 ≈ -22.6 dBFS) — a
+        // meaningful "audibly synthesised, not near-silent" bar, unlike the old 200.
+        expect(reported, `${name}.wav clears the audibility floor (reported peak)`).toBeGreaterThan(0.02)
       }
     } finally {
       rmSync(out, { recursive: true, force: true })
@@ -368,5 +394,69 @@ describe('pokey-bake streaming engine parity (story 6-11, Reviewer hardening)', 
     // The SAME bytes WITHOUT the mask must NOT pin the high nibble — proving the
     // mask is doing real work, not coincidentally agreeing.
     expect(plain.slice(0, RUN).some(([, v]) => (v & 0xf0) !== HI), 'unmasked voice changes the high nibble').toBe(true)
+  })
+})
+
+// ── Story 6-12 (AC#1): expandAlsoun merge-sort timestamp invariant ────────────
+// expandAlsoun merges the AUDF1 and AUDC1 event streams into ONE chronological
+// POKEY feed (`merged = [...a.ev, ...b.ev].sort(by time)`). web-pokey walks that
+// feed monotonically, so if the sort were dropped the second voice's earlier-timed
+// writes would land in a lump at the very end → a silent or wrong sound.
+//
+// Today that invariant is guarded only INDIRECTLY by the integration bake test
+// above (a missing sort surfaces as a SILENT warning). The 6-6 review flagged the
+// gap: that guard would still pass for a future single-event (count=1) record whose
+// two voices each emit one already-ordered event — the un-sorted concat would
+// happen to stay monotonic, so a removed sort would go unnoticed. These tests pin
+// the invariant on the merged feed DIRECTLY, and prove the guard is non-vacuous:
+// for real multi-event data the un-sorted concatenation is provably non-monotonic.
+const HEADER_TRIPLES = 1 // pokey1 begins with the [8, 0x00, 0.0] AUDCTL header
+
+// Drop the header and split a pokey1 feed ([reg,val,t, ...]) into [reg, time] pairs.
+const feedTimeline = (pokey1) => {
+  const out = []
+  for (let i = HEADER_TRIPLES * 3; i + 2 < pokey1.length; i += 3) out.push([pokey1[i], pokey1[i + 2]])
+  return out
+}
+const isNonDecreasing = (ts) => ts.every((t, i) => i === 0 || t >= ts[i - 1])
+
+describe('expandAlsoun merge-sort timestamp invariant (story 6-12, AC#1)', () => {
+  const alsounSfx = SFX.filter((s) => s.alsoun)
+
+  it('exports expandAlsoun so the invariant can be unit-tested directly', () => {
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported').toBe('function')
+  })
+
+  it('emits a non-decreasing timestamp stream for every authentic ALSOUN record', () => {
+    expect(alsounSfx.length, 'at least one spec.alsoun SFX to exercise').toBeGreaterThan(0)
+    for (const spec of alsounSfx) {
+      const times = feedTimeline(bake.expandAlsoun(spec.alsoun).pokey1).map(([, t]) => t)
+      expect(isNonDecreasing(times), `${spec.name}: merged pokey1 timestamps non-decreasing`).toBe(true)
+    }
+  })
+
+  it('is a NON-VACUOUS guard: the un-sorted concat is non-monotonic for multi-event data', () => {
+    // enemy_fire ramps BOTH voices 9 steps across the same ~[0, 0.096s] window, so
+    // the naive [...audf, ...audc] order drops from the last AUDF time back to the
+    // first AUDC time — exactly the lump-at-the-end the sort prevents. (This is the
+    // count>1 case the 6-6 review said the SILENT check alone would NOT catch.)
+    const ef = SFX.find((s) => s.name === 'enemy_fire')
+    expect(ef, 'enemy_fire present as the multi-event lever').toBeDefined()
+    const timeline = feedTimeline(bake.expandAlsoun(ef.alsoun).pokey1)
+    const audfTimes = timeline.filter(([reg]) => reg === 0).map(([, t]) => t)
+    const audcTimes = timeline.filter(([reg]) => reg === 1).map(([, t]) => t)
+
+    // Both voices are genuinely multi-event (NOT the count=1 degenerate).
+    expect(audfTimes.length, 'AUDF voice emits multiple events').toBeGreaterThan(1)
+    expect(audcTimes.length, 'AUDC voice emits multiple events').toBeGreaterThan(1)
+    // Each voice is internally ordered...
+    expect(isNonDecreasing(audfTimes), 'AUDF voice internally ordered').toBe(true)
+    expect(isNonDecreasing(audcTimes), 'AUDC voice internally ordered').toBe(true)
+    // ...but voice-A-then-voice-B (the pre-sort concat order) is NOT — so dropping
+    // the .sort() in expandAlsoun WOULD break the non-decreasing invariant above.
+    expect(isNonDecreasing([...audfTimes, ...audcTimes]), 'un-sorted concat is non-monotonic').toBe(false)
+    // ...while the actual merged stream IS sorted. The two together prove the sort
+    // did real reordering work, not a coincidentally already-ordered input.
+    expect(isNonDecreasing(timeline.map(([, t]) => t)), 'merged stream is sorted').toBe(true)
   })
 })
