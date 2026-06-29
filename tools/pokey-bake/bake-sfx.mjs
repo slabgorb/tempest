@@ -37,6 +37,16 @@ if (![48000, 44100, 56000].includes(SAMPLE_RATE)) {
 // pokey.js is written for an AudioWorklet: it references the globals `sampleRate`
 // and `currentFrame`, extends AudioWorkletProcessor, and calls registerProcessor
 // at top level. We satisfy those with a sandbox and pull the POKEY class out.
+//
+// SECURITY NOTE (story 6-12, AC#4): node:vm is NOT a security sandbox. Per the
+// Node docs, `vm` does not provide a secure boundary — code run via
+// vm.runInContext() can still reach out and execute arbitrary operations (it
+// shares the process, and escapes via the prototype chain / passed-in objects are
+// well known). We use it here ONLY for ergonomics: to supply the AudioWorklet
+// globals the vendored file expects and lift the POKEY class out, NOT to contain
+// untrusted code. This is acceptable because vendor/pokey.js is a COMMITTED,
+// trusted, MIT-licensed dependency reviewed in-repo — equivalent to importing it.
+// Never run untrusted or network-fetched source through this path.
 function loadPokeyClass(sampleRate) {
   const src = readFileSync(join(__dirname, 'vendor', 'pokey.js'), 'utf8')
     + '\n;globalThis.__POKEY = POKEY;'; // export the class to the sandbox global
