@@ -8,6 +8,7 @@ import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
+  playerBulletColor,
   type Glyph, type GlyphColor,
 } from './glyphs'
 
@@ -265,6 +266,10 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
 // Player bullets render as the authentic two concentric dotted octagon rings
 // (Story 6-8), with a short motion streak behind for the sense of travel.
 function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
+  // Story 10-8: the whole volley shares one CHACOU tint set by how many charges
+  // are in flight this frame (the count is constant across these bullets). Only
+  // the bullet body (glyph) is recoloured; the travel streak keeps its hue.
+  const tint = playerBulletColor(s.bullets.length)
   for (const b of s.bullets) {
     const p = project(s.tube, b.lane, b.depth)
     const tail = project(s.tube, b.lane, Math.min(1, b.depth + 0.05))
@@ -273,7 +278,7 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.shadowBlur = 14
     ctx.lineWidth = 2.5
     ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(p.x, p.y); ctx.stroke()
-    strokeGlyph(ctx, playerBulletGlyph(), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14)
+    strokeGlyph(ctx, playerBulletGlyph(), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14, tint)
   }
 }
 

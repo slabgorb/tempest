@@ -265,3 +265,14 @@ export function playerBulletGlyph(): Glyph {
     { points: octagon(6), closed: true, color: 'white' },
   ]
 }
+
+// Story 10-8: ammo-count bullet tint (ROM CHACOU). The bullet body is recoloured
+// by how many player charges (shots) are currently in flight — the closer to the
+// 8-shot cap, the "hotter" the colour: <6 yellow, 6–7 cyan (the palette's blue,
+// GlyphColor has no separate `blue`), 8 (== core MAX_BULLETS) red. Pure: the
+// caller passes the live count, keeping this module core-free.
+export function playerBulletColor(chargesInFlight: number): GlyphColor {
+  if (chargesInFlight >= 8) return 'red'
+  if (chargesInFlight >= 6) return 'cyan'
+  return 'yellow'
+}
