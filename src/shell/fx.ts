@@ -18,6 +18,42 @@ interface Particle {
   color: string
 }
 
+// Authentic vector explosions (Story 10-5). Unlike the generic point `Particle`,
+// these are STRUCTURED vector shapes the renderer draws directly, with their
+// geometry animated over `life`. A `kind` discriminant lets the renderer (and
+// tests) narrow the union.
+
+// Enemy death ("explosions one to four"): a 16-spoke star that DOUBLES in size
+// across ~4 frames (scale 1 → 2 → 4 → 8) with a two-tier brightness ramp 7 → 14.
+// `brightness` is the Tempest colour-RAM intensity (0..15). Keyed off the
+// explicit `enemy-death` event (covers both bullet kills and superzapper kills).
+export interface EnemyBurst {
+  kind: 'enemy'
+  x: number
+  y: number
+  spokes: number // 16 radial arms
+  scale: number // current radial scale: 1, 2, 4, then 8
+  brightness: number // 7 (dim) for the first half, 14 (bright) for the second
+  life: number
+  max: number
+}
+
+// Player death ("splat control"): a concentric jagged star that GROWS THEN
+// SHRINKS while its colour cycles white → red → yellow EACH FRAME (ROTCOL).
+export interface PlayerSplat {
+  kind: 'player'
+  x: number
+  y: number
+  spokes: number // jagged star points
+  radius: number // grows to a peak then shrinks back
+  color: string // cycles through SPLAT_CYCLE each frame
+  cycle: number // frame counter driving the colour cycle
+  life: number
+  max: number
+}
+
+export type Explosion = EnemyBurst | PlayerSplat
+
 export interface Fx {
   /**
    * Compare the new state against the previous one and spawn effects. `events`
@@ -26,16 +62,30 @@ export interface Fx {
    * `player.alive`) are driven off the explicit event instead.
    */
   detect(s: GameState, dt: number, events?: readonly GameEvent[]): void
-  /** Advance particle/shake/flash timers by dt. */
+  /** Advance particle/explosion/shake/flash timers by dt. */
   update(dt: number): void
   readonly particles: readonly Particle[]
+  readonly explosions: readonly Explosion[]
   readonly shake: number
   readonly flash: number
   readonly flashColor: string
 }
 
+const ENEMY_SPOKES = 16
+const ENEMY_SCALE_STEPS = [1, 2, 4, 8] as const // doubling each frame
+const ENEMY_BURST_LIFE = 0.24 // ~4 quick frames
+const ENEMY_DIM = 7
+const ENEMY_BRIGHT = 14
+
+const SPLAT_POINTS = 12 // jagged star points
+const SPLAT_LIFE = 0.9
+const SPLAT_PEAK_RADIUS = 30
+// White → red → yellow, the canonical ROTCOL cycle.
+const SPLAT_CYCLE: readonly string[] = ['#ffffff', '#ff0000', '#ffff00']
+
 export function createFx(): Fx {
   let parts: Particle[] = []
+  let explosions: Explosion[] = []
   let shake = 0
   let flash = 0
   let flashColor = '#fff'
@@ -54,6 +104,26 @@ export function createFx(): Fx {
         life: life * (0.6 + Math.random() * 0.6), max: life, color,
       })
     }
+  }
+
+  // The authentic 16-spoke enemy explosion. Starts at frame 0 (scale 1, dim);
+  // update() animates the doubling + brightness ramp over its life.
+  function spawnEnemyBurst(p: { x: number; y: number }): void {
+    explosions.push({
+      kind: 'enemy', x: p.x, y: p.y, spokes: ENEMY_SPOKES,
+      scale: ENEMY_SCALE_STEPS[0], brightness: ENEMY_DIM,
+      life: ENEMY_BURST_LIFE, max: ENEMY_BURST_LIFE,
+    })
+  }
+
+  // The color-cycling player splat. Starts at radius 0 / first cycle colour;
+  // update() grows-then-shrinks the radius and advances the colour each frame.
+  function spawnPlayerSplat(p: { x: number; y: number }): void {
+    explosions.push({
+      kind: 'player', x: p.x, y: p.y, spokes: SPLAT_POINTS,
+      radius: 0, color: SPLAT_CYCLE[0], cycle: 0,
+      life: SPLAT_LIFE, max: SPLAT_LIFE,
+    })
   }
 
   function detect(s: GameState, _dt: number, events: readonly GameEvent[] = []): void {
@@ -76,11 +146,12 @@ export function createFx(): Fx {
     }
     prevBullets = cur.map((b) => ({ lane: b.lane, depth: b.depth }))
 
-    // Player death → twin bursts, shake, red flash.
+    // Player death → the color-cycling splat, shake, red flash. (The old twin
+    // particle bursts are replaced by the authentic jagged-star splat; the red
+    // full-screen flash + shake stay.)
     if (prevAlive && !s.player.alive) {
       const p = project(tube, currentLane(tube, s.player.lane), 1.0)
-      burst(p, '#ffe800', 26, 220, 0.9)
-      burst(p, '#ff5a3c', 18, 160, 0.8)
+      spawnPlayerSplat(p)
       shake = 18
       flash = 0.5
       flashColor = '#ff5a3c'
@@ -93,6 +164,13 @@ export function createFx(): Fx {
     // reads differently from a normal grab/pulse death. Event-driven because the
     // state diff alone can't tell the two deaths apart.
     for (const e of events) {
+      // Enemy destroyed (bullet OR superzapper) → the authentic 16-spoke star
+      // burst at the kill site. Event-driven so it fires for superzapper kills
+      // too, not just bullet vanishes.
+      if (e.type === 'enemy-death') {
+        spawnEnemyBurst(project(tube, e.lane, e.depth))
+      }
+
       if (e.type === 'warp-spike-crash') {
         const p = project(tube, e.lane, 1.0)
         burst(p, '#7df9ff', 24, 230, 0.7) // cyan shards spraying off the spike
@@ -122,6 +200,25 @@ export function createFx(): Fx {
       p.life -= dt
     }
     parts = parts.filter((p) => p.life > 0)
+
+    // Animate explosions over their life. `progress` runs 0 → 1 as life drains.
+    for (const ex of explosions) {
+      ex.life -= dt
+      const progress = ex.max > 0 ? 1 - Math.max(0, ex.life) / ex.max : 1
+      if (ex.kind === 'enemy') {
+        // 4-frame doubling: scale steps 1, 2, 4, 8; brightness 7 then 14.
+        const frame = Math.min(ENEMY_SCALE_STEPS.length - 1, Math.floor(progress * ENEMY_SCALE_STEPS.length))
+        ex.scale = ENEMY_SCALE_STEPS[frame]
+        ex.brightness = frame < 2 ? ENEMY_DIM : ENEMY_BRIGHT
+      } else {
+        // Grow-then-shrink (sin arch), with the colour advancing every frame.
+        ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)
+        ex.cycle += 1
+        ex.color = SPLAT_CYCLE[ex.cycle % SPLAT_CYCLE.length]
+      }
+    }
+    explosions = explosions.filter((ex) => ex.life > 0)
+
     shake *= Math.pow(0.0001, dt) // fast decay
     if (shake < 0.3) shake = 0
     flash = Math.max(0, flash - dt * 1.6)
@@ -132,6 +229,9 @@ export function createFx(): Fx {
     update,
     get particles(): readonly Particle[] {
       return parts
+    },
+    get explosions(): readonly Explosion[] {
+      return explosions
     },
     get shake(): number {
       return shake
