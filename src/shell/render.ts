@@ -92,6 +92,13 @@ function strokeGlyph(
 // Animation accumulators (render-only; never feeds back into the sim).
 let renderTime = 0
 
+// SUPERZAPPER RECHARGE banner latch (Story 10-9). The once-per-level Superzapper
+// rearms to 'full' on level entry; we flash the authentic recharge banner for a
+// beat when the level changes. Render-only state keyed on the level number — no
+// new core/sim field. `-1` so the first played level latches.
+let superzapBannerLevel = -1        // level we last announced the recharge for
+let superzapBannerUntil = 0         // renderTime at which the flash stops
+
 // Advance the shared render clock by `dt` seconds. The game's render() bumps
 // `renderTime` itself each frame; the model contact-sheet dev tool
 // (tools/contactSheet.ts) calls the per-element draws below DIRECTLY (bypassing
@@ -679,11 +686,19 @@ function drawAttract(
 function drawSelect(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
-  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.28, "700 30px 'Vector Battle', 'Orbitron', monospace", color, 16)
+  // Authentic skill-select framing (Story 10-9): the ROM's RATE YOURSELF / RANK
+  // screen with a NOVICE→EXPERT skill ladder flanking the chooser. Colors come
+  // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED.
+  drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, "900 40px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 22)
+  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, "700 16px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 8)
+  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.3, "700 26px 'Vector Battle', 'Orbitron', monospace", color, 14)
   drawGlowText(
     ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,
-    "900 72px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 28,
+    "900 64px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 26,
   )
+  // Skill ladder flanking the chooser: NOVICE (easiest) … EXPERT (hardest).
+  drawGlowText(ctx, 'NOVICE', W * 0.17, H * 0.5, "700 18px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 8)
+  drawGlowText(ctx, 'EXPERT', W * 0.83, H * 0.5, "700 18px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 8)
   drawGlowText(
     ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72,
     "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
@@ -972,6 +987,31 @@ export function render(
   // renderTime; the dive (warning === 0) clears it automatically.
   if (s.mode === 'warp' && s.warp.warning > 0 && Math.floor(renderTime * 4) % 2 === 0) {
     drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Vector Battle', 'Orbitron', monospace", '#ffffff', 18)
+    ctx.shadowBlur = 0
+  }
+
+  // Between-wave BONUS / TIME tally (Story 10-9): on the level-clear warp dive,
+  // flash the authentic bonus banners. Both GREEN per the 1981 Messages table.
+  // (Numeric tallies are a later-story concern; this lands the banners.)
+  if (s.mode === 'warp') {
+    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, "900 40px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 20)
+    drawGlowText(ctx, 'TIME', W / 2, H * 0.16 + 38, "700 20px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 10)
+    ctx.shadowBlur = 0
+  }
+
+  // SUPERZAPPER RECHARGE (Story 10-9): the Superzapper rearms to 'full' on each
+  // new level — flash the authentic recharge banner for ~2 s when the level
+  // changes. BLUE per the 1981 Messages table; blinks via renderTime like AVOID
+  // SPIKES. Latch is render-only (keyed on s.level), no new core/sim state.
+  if (s.mode === 'playing' && s.level !== superzapBannerLevel) {
+    superzapBannerLevel = s.level
+    superzapBannerUntil = renderTime + 2
+  }
+  if (
+    s.mode === 'playing' && s.player.superzapper === 'full'
+    && renderTime < superzapBannerUntil && Math.floor(renderTime * 4) % 2 === 0
+  ) {
+    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, "700 26px 'Vector Battle', 'Orbitron', monospace", '#1f8fff', 16)
     ctx.shadowBlur = 0
   }
 
