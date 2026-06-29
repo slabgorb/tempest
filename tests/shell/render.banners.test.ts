@@ -18,11 +18,17 @@
 // as with the Story 6-17 enemy-scale scan and the Story 6-8 glyph boundary scans —
 // the testable seam for "is the banner wired up, on the right state, in the right
 // color?" is the source text read via Vite's `?raw`. We assert four things per
-// banner: (1) the string is present, (2) it is drawn through the shared
-// glow-text helper (not an ad-hoc fillText), (3) it is GATED on the correct game
-// state (so it doesn't show unconditionally), and (4) its color matches the
+// banner: (1) it is drawn through the shared glow-text helper (not an ad-hoc
+// fillText), (2) it is GATED on the correct game state, (3) its color matches the
 // Messages-table FAMILY (red / green / blue), classified by channel dominance so a
-// valid hue choice within the family passes but the wrong family fails.
+// valid hue within the family passes but the wrong family fails.
+//
+// Gate assertions anchor on the actual DRAW CALL (via `guardBefore`) and match the
+// real guard CODE (e.g. `.superzapper === 'full'`, `.mode === 'warp'`) — NOT a
+// proximity match to a substring of the banner text or a comment. A bare
+// `windowAround(... 'SUPERZAPPER RECHARGE').toMatch(/superzapper/i)` is tautological
+// (the banner literal contains 'SUPERZAPPER'); `guardBefore` + a code-specific
+// regex is the version that actually fails if the gate is removed.
 import { describe, it, expect } from 'vitest'
 import renderSrc from '../../src/shell/render.ts?raw'
 
@@ -40,11 +46,16 @@ function fnBody(src: string, name: string): string {
   return src.slice(start, next < 0 ? undefined : next)
 }
 
-// A window of `radius` chars on each side of the first occurrence of `needle`.
-function windowAround(src: string, needle: string, radius = 600): string {
-  const i = src.indexOf(needle)
-  if (i < 0) return ''
-  return src.slice(Math.max(0, i - radius), i + needle.length + radius)
+// The source code IMMEDIATELY PRECEDING the glow-text DRAW CALL for `banner` —
+// i.e. the enclosing guard that sits just above the draw. Crucially this anchors
+// on the actual `drawGlowText(... 'BANNER' ...)` call, NOT on any comment or the
+// banner string itself, so a gate assertion built on it cannot be satisfied
+// tautologically by the banner text. Returns '' if the banner isn't drawn.
+function guardBefore(src: string, banner: string, radius = 400): string {
+  const re = new RegExp(`(?:drawGlowText|glowText)\\s*\\([^)]*['"\`]${escapeRe(banner)}['"\`]`)
+  const m = re.exec(src)
+  if (!m) return ''
+  return src.slice(Math.max(0, m.index - radius), m.index)
 }
 
 // True if `banner` is drawn through the shared glow-text helper (drawGlowText or
@@ -82,7 +93,10 @@ function classify(colorArg: string | null): Family {
     const b = parseInt(h.slice(4, 6), 16)
     const near = (a: number, c: number) => Math.abs(a - c) <= 24
     if (near(r, g) && near(g, b) && r > 180) return 'white'
-    if (g >= r && g >= b && g - Math.min(r, b) > 40 && !(b >= r && b - g > 24)) return 'green'
+    // Green family: green is the STRICTLY dominant channel. `g > b` (not `g >= b`)
+    // is what keeps pure cyan (#00ffff, where g === b) OUT of green so it falls
+    // through to the blue branch below — fixes the cyan-boundary misclassification.
+    if (g >= r && g > b && g - Math.min(r, b) > 40) return 'green'
     if (b >= r && b >= g && b - Math.min(r, g) > 40) return 'blue'
     if (r >= g && r >= b && r - Math.min(g, b) > 40 && near(g, b)) return r > 200 && g > 160 ? 'yellow' : 'red'
     if (r >= g && r >= b && r - Math.max(g, b) > 60) return 'red'
@@ -107,6 +121,7 @@ describe('color classifier self-check (helper sanity, not the feature)', () => {
     expect(classify("'#ff2f4f'")).toBe('red') // HIGH SCORES red
     expect(classify("'#1f8fff'")).toBe('blue') // level-0 blue
     expect(classify("'#00e5ff'")).toBe('blue') // cyan → blue family (BLULET/TURQOI)
+    expect(classify("'#00ffff'")).toBe('blue') // pure cyan (g === b tie) → blue, not green
     expect(classify("'#ffffff'")).toBe('white')
     expect(classify('CLAW_COLOR')).toBe('yellow')
     expect(classify(null)).toBe('other')
@@ -124,10 +139,13 @@ describe('Story 10-9 AC1 — SUPERZAPPER RECHARGE banner', () => {
     expect(drawnViaGlowHelper(renderSrc, 'SUPERZAPPER RECHARGE')).toBe(true)
   })
 
-  it('gates it on the superzapper being (re)charged — not shown unconditionally', () => {
+  it('gates the draw on player.superzapper === "full" (not shown unconditionally)', () => {
     // Authentic trigger: the banner appears when the once-per-level Superzapper is
-    // available again. Our model tracks that as player.superzapper === 'full'.
-    expect(windowAround(renderSrc, 'SUPERZAPPER RECHARGE')).toMatch(/superzapper/i)
+    // available again — our model tracks that as player.superzapper === 'full'.
+    // Anchor on the DRAW CALL and assert the real guard precedes it: this regex
+    // matches actual code (`.superzapper === 'full'`), NOT the banner string or
+    // the comment, so deleting the gate would make this fail.
+    expect(guardBefore(renderSrc, 'SUPERZAPPER RECHARGE')).toMatch(/\.superzapper\s*===\s*['"]full['"]/)
   })
 
   it('uses the Messages-table BLUE (BLULET), not green/red/white', () => {
@@ -144,10 +162,10 @@ describe('Story 10-9 AC2 — RATE YOURSELF skill-select ladder', () => {
     }
   })
 
-  it('renders the ladder on the level/skill SELECT screen (drawSelect), beside the start-level chooser', () => {
+  it('renders the whole ladder on the SELECT screen (drawSelect), beside the start-level chooser', () => {
     const select = fnBody(renderSrc, 'drawSelect')
     expect(select, 'drawSelect must exist').not.toBe('')
-    for (const label of ['RATE YOURSELF', 'NOVICE', 'EXPERT']) {
+    for (const label of ['RATE YOURSELF', 'RANK', 'NOVICE', 'EXPERT']) {
       expect(select, `drawSelect must render "${label}"`).toContain(label)
     }
   })
@@ -156,7 +174,8 @@ describe('Story 10-9 AC2 — RATE YOURSELF skill-select ladder', () => {
     expect(classify(bannerColorArg(renderSrc, 'RATE YOURSELF'))).toBe('green')
   })
 
-  it('colors the rank labels (NOVICE/EXPERT) RED per the Messages table', () => {
+  it('colors the rank labels (RANK/NOVICE/EXPERT) RED per the Messages table', () => {
+    expect(classify(bannerColorArg(renderSrc, 'RANK'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'NOVICE'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'EXPERT'))).toBe('red')
   })
@@ -165,23 +184,24 @@ describe('Story 10-9 AC2 — RATE YOURSELF skill-select ladder', () => {
 // ---- AC3: between-wave BONUS / TIME banners ------------------------------
 
 describe('Story 10-9 AC3 — between-wave BONUS / TIME banners', () => {
-  it('renders the BONUS and TIME strings', () => {
-    expect(renderSrc).toContain('BONUS')
-    expect(renderSrc).toContain('TIME')
-  })
-
-  it('draws the BONUS banner through the shared glow-text helper', () => {
+  // Both BONUS and TIME get the SAME four-way contract (helper / warp-gate / color)
+  // so neither rests on a presence check the comment alone could satisfy.
+  it('draws BOTH BONUS and TIME through the shared glow-text helper (not ad-hoc fillText)', () => {
     expect(drawnViaGlowHelper(renderSrc, 'BONUS')).toBe(true)
+    expect(drawnViaGlowHelper(renderSrc, 'TIME')).toBe(true)
   })
 
-  it('shows them on the between-wave / level-clear (warp) transition, not during play', () => {
-    // The level-clear → next-level handoff is the `warp` mode; the bonus summary
-    // belongs to that transition, so the banner draw must reference the warp state.
-    expect(windowAround(renderSrc, 'BONUS')).toMatch(/warp/i)
+  it('gates BOTH draws on s.mode === "warp" (between-wave only, not during play)', () => {
+    // Anchor on each DRAW CALL and assert the real `s.mode === 'warp'` guard
+    // precedes it. This regex matches code, not the "...warp dive..." comment,
+    // so removing the warp gate would make this fail.
+    expect(guardBefore(renderSrc, 'BONUS')).toMatch(/\.mode\s*===\s*['"]warp['"]/)
+    expect(guardBefore(renderSrc, 'TIME')).toMatch(/\.mode\s*===\s*['"]warp['"]/)
   })
 
-  it('colors BONUS GREEN per the Messages table', () => {
+  it('colors BOTH BONUS and TIME GREEN per the Messages table', () => {
     expect(classify(bannerColorArg(renderSrc, 'BONUS'))).toBe('green')
+    expect(classify(bannerColorArg(renderSrc, 'TIME'))).toBe('green')
   })
 })
 
@@ -190,12 +210,14 @@ describe('Story 10-9 AC3 — between-wave BONUS / TIME banners', () => {
 describe('Story 10-9 AC4 — colors follow the Messages table (cross-check)', () => {
   // Each banner's family, asserted together, is the AC4 contract: the right
   // authentic color per the ROM message table, not an arbitrary palette pick.
-  it('SUPERZAPPER RECHARGE=blue, RATE YOURSELF=green, NOVICE/EXPERT=red, BONUS=green', () => {
+  it('SUPERZAPPER=blue · RATE YOURSELF/BONUS/TIME=green · RANK/NOVICE/EXPERT=red', () => {
     expect(classify(bannerColorArg(renderSrc, 'SUPERZAPPER RECHARGE'))).toBe('blue')
     expect(classify(bannerColorArg(renderSrc, 'RATE YOURSELF'))).toBe('green')
+    expect(classify(bannerColorArg(renderSrc, 'BONUS'))).toBe('green')
+    expect(classify(bannerColorArg(renderSrc, 'TIME'))).toBe('green')
+    expect(classify(bannerColorArg(renderSrc, 'RANK'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'NOVICE'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'EXPERT'))).toBe('red')
-    expect(classify(bannerColorArg(renderSrc, 'BONUS'))).toBe('green')
   })
 })
 
