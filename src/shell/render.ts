@@ -4,6 +4,7 @@ import { HighScoreTable } from '../core/highscore'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot } from '../core/geometry'
 import { Fx } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
+import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
@@ -105,6 +106,46 @@ export function advanceRenderClock(dt: number): void {
 const phosphor = createPhosphor()
 let clawPrevLane: number | null = null
 let walkPhase = 0
+
+// Warp-dive starfield (Story 10-4): the lifecycle lives in the pure ./starfield
+// model; render strokes its live planes as blue dots rushing out from centre.
+const starfield = createStarfield()
+const STAR_COLOR = '#7fc3ff' // blue star dots
+// The 4 reused star "pictures": fixed unit directions from screen centre. Each
+// plane scatters its picture's dots outward as it dives, so 8 planes share 4
+// constellations (the book's "4 reused star pictures").
+const STAR_PICTURE_DOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
+  [[-0.8, -0.5], [0.3, -0.9], [0.9, 0.2], [-0.2, 0.7], [0.6, 0.6]],
+  [[0.7, -0.4], [-0.6, -0.7], [-0.9, 0.3], [0.1, 0.9], [0.4, 0.1]],
+  [[-0.5, 0.8], [0.8, -0.6], [0.2, -0.3], [-0.85, -0.15], [0.55, 0.75]],
+  [[0.0, -0.95], [-0.7, 0.55], [0.95, 0.05], [-0.3, -0.4], [0.45, 0.85]],
+]
+
+// Step the starfield one frame and stroke every live plane. A plane's Z maps to
+// a radial reach: far (Z≈STAR_SPAWN_Z) sits near centre, near (Z≈STAR_RETIRE_Z)
+// flings its dots to the edges — the "flying down the tube" rush. Warp-only.
+function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+  starfield.step()
+  const cx = W / 2
+  const cy = H / 2
+  const reach = Math.hypot(W, H) * 0.6
+  const span = STAR_SPAWN_Z - STAR_RETIRE_Z
+  ctx.fillStyle = STAR_COLOR
+  ctx.shadowColor = STAR_COLOR
+  for (const plane of starfield.planes) {
+    const t = (STAR_SPAWN_Z - plane.z) / span // 0 (far, centre) → 1 (near, edge)
+    const r = t * reach
+    const size = 0.6 + t * 1.8
+    ctx.globalAlpha = 0.25 + t * 0.7
+    ctx.shadowBlur = 4 + t * 8
+    for (const [ux, uy] of STAR_PICTURE_DOTS[plane.picture]) {
+      ctx.beginPath()
+      ctx.arc(cx + ux * r, cy + uy * r, size, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+  ctx.globalAlpha = 1
+}
 
 // Boundary-safe index: closed tubes wrap, open tubes clamp. Mirrors the core's
 // private boundaryIndex so spokes/rim highlights work on both tube families.
@@ -822,8 +863,12 @@ export function render(
   drawSpikes(pctx, s)
   if (s.mode === 'warp') {
     // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
+    // The 8-plane starfield streams out behind the Claw for the dive spectacle.
+    drawStarfield(pctx, W, H)
     drawWarp(pctx, s, color)
   } else {
+    // Not warping — clear the starfield so the next dive starts from centre.
+    starfield.reset()
     // Far enemies first so near ones overdraw them.
     const ordered = s.enemies.slice().sort((a, b) => a.depth - b.depth)
     for (const e of ordered) drawEnemy(pctx, s, e)
