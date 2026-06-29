@@ -78,6 +78,18 @@ export function laneWidth(tube: Tube, lane: number, depth: number): number {
   return Math.hypot(b.x - a.x, b.y - a.y)
 }
 
+// Story 6-18: the rim spoke a flipper pivots about when it flips from `lane`
+// toward the adjacent lane in direction `dir`. Lane L spans rim vertices [L, L+1]
+// (see laneCenterFar), so lanes L and L+1 share vertex L+1 and lanes L and L-1
+// share vertex L: a +dir flip pivots about vertex L+1, a -dir flip about vertex
+// L. Projected far->near like every other rim point, so the cartwheel pivot
+// tracks perspective. Pure; closed tubes wrap and open sheets clamp via
+// boundaryRail. render.ts swings the bowtie about this point so the flipper
+// tumbles end-over-end over the web instead of spinning about its own centre.
+export function flipPivot(tube: Tube, lane: number, dir: number, depth: number): Point {
+  return boundaryRail(tube, lane + (dir > 0 ? 1 : 0), depth)
+}
+
 // --- Wave 6 (6-7): authentic ROM well geometry -------------------------------
 //
 // The 16 well shapes are ported verbatim from the rev-3 ROM
