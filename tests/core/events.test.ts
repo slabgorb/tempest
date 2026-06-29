@@ -39,6 +39,11 @@ const ALL_EVENTS: GameEvent[] = [
   { type: 'player-spawn', lane: 4 },
   { type: 'player-death', cause: 'grab' },
   { type: 'segment-cross', lane: 4 }, // Story 6-10
+  { type: 'spike-shot', lane: 4 }, // Story 10-11
+  { type: 'extra-life', count: 1 }, // Story 10-11
+  { type: 'pulsar-hum-start' }, // Story 10-11
+  { type: 'pulsar-hum-stop' }, // Story 10-11
+  { type: 'warp-end' }, // Story 10-11
 ]
 
 // Exhaustive narrowing over the union: the `never` default fails to compile if a
@@ -58,6 +63,11 @@ function discriminant(e: GameEvent): string {
     case 'player-spawn':        return `${e.lane}`
     case 'player-death':        return e.cause
     case 'segment-cross':       return `${e.lane}`
+    case 'spike-shot':          return `${e.lane}`
+    case 'extra-life':          return `${e.count}`
+    case 'pulsar-hum-start':    return 'pulsar-hum-start'
+    case 'pulsar-hum-stop':     return 'pulsar-hum-stop'
+    case 'warp-end':            return 'warp-end'
     default: {
       const _exhaustive: never = e
       return _exhaustive
@@ -66,14 +76,16 @@ function discriminant(e: GameEvent): string {
 }
 
 describe('GameEvent — discriminated union (AC1)', () => {
-  it('covers eleven distinct, documented event types', () => {
+  it('covers sixteen distinct, documented event types', () => {
     const kinds = ALL_EVENTS.map((e) => e.type)
     // 8 from 5-1 + enemy-fire (6-5) + segment-cross (6-10) + superzapper-flash (10-2)
-    expect(new Set(kinds).size).toBe(11)
+    // + spike-shot/extra-life/pulsar-hum-start/pulsar-hum-stop/warp-end (10-11)
+    expect(new Set(kinds).size).toBe(16)
     expect(kinds).toEqual([
       'enemy-death', 'player-grab', 'fire', 'enemy-fire', 'warp-spike-crash',
       'level-clear', 'superzapper-activate', 'superzapper-flash', 'player-spawn',
       'player-death', 'segment-cross',
+      'spike-shot', 'extra-life', 'pulsar-hum-start', 'pulsar-hum-stop', 'warp-end',
     ])
   })
 

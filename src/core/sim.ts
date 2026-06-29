@@ -295,7 +295,11 @@ function awardScore(s: GameState, points: number): void {
   const before = s.score
   s.score += points
   const crossed = Math.floor(s.score / EXTRA_LIFE_INTERVAL) - Math.floor(before / EXTRA_LIFE_INTERVAL)
-  if (crossed > 0) s.lives += crossed
+  if (crossed > 0) {
+    s.lives += crossed
+    // Story 10-11: the authentic extra_life cue (ROM cc11) plays once per award.
+    s.events.push({ type: 'extra-life', count: crossed })
+  }
 }
 
 function resolveBulletHits(s: GameState): void {
@@ -335,6 +339,8 @@ function resolveSpikeHits(s: GameState): void {
       s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)
       dead.add(bi)
       awardScore(s, SCORE_SPIKE_SEGMENT)
+      // Story 10-11: the authentic spike_shot cue (ROM cc51) plays on the hit.
+      s.events.push({ type: 'spike-shot', lane: b.lane })
     }
   })
   if (dead.size > 0) s.bullets = s.bullets.filter((_, i) => !dead.has(i))
@@ -566,6 +572,9 @@ function resolveWarpSpikeHit(s: GameState): boolean {
   if (height > 0 && warpClawDepth(s.warp.progress) <= height) {
     s.events.push({ type: 'warp-spike-crash', lane })
     s.events.push({ type: 'player-death', cause: 'spike' })
+    // Story 10-11: the dive ended (here, by a crash) — stop the sustained warp
+    // sound so it never bleeds past the dive into the death/respawn.
+    s.events.push({ type: 'warp-end' })
     killPlayer(s)
     return true
   }
@@ -586,7 +595,23 @@ function stepWarp(s: GameState, dt: number): void {
   s.warp.velocity += warpAccel(s.level) * dt
   s.warp.progress += s.warp.velocity * dt
   if (resolveWarpSpikeHit(s)) return // crashed onto a spike — do not advance the level
-  if (s.warp.progress >= 1) advanceLevel(s)
+  if (s.warp.progress >= 1) {
+    // Story 10-11: the dive completed — stop the sustained warp sound on the same
+    // frame the level advances, so it spans the dive exactly (no bleed into next).
+    s.events.push({ type: 'warp-end' })
+    advanceLevel(s)
+  }
+}
+
+// Story 10-11: the authentic pulsar_hum (ROM cc99) loops while a pulsar is on the
+// board. Emit an edge event when the pulsar population transitions across zero —
+// `prev` is the pre-step state (read-only), `s` the post-step state — so the shell
+// can start the loop on the first pulsar and stop it when the last one leaves.
+function emitPulsarHumEdge(prev: GameState, s: GameState): void {
+  const had = prev.enemies.some((e) => e.kind === 'pulsar')
+  const has = s.enemies.some((e) => e.kind === 'pulsar')
+  if (has && !had) s.events.push({ type: 'pulsar-hum-start' })
+  else if (had && !has) s.events.push({ type: 'pulsar-hum-stop' })
 }
 
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
@@ -630,6 +655,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       resolvePlayerHits(s)
       cullEnemyBullets(s)         // retire bolts that flew past the rim
       checkLevelClear(s)
+      emitPulsarHumEdge(state, s) // pulsar appeared/left this frame → hum on/off
       break
     case 'warp':
       stepPlayer(s, input) // the Claw may still rotate during the warp; firing is disabled

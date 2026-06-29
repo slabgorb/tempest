@@ -36,6 +36,11 @@ const SOUNDS = {
   superzapper: 'kzap.wav', // superzapper fired (community rip)
   playerSpawn: 'warpin.wav', // the Claw (re)spawned (community rip)
   segmentTick: 'segment_tick.wav', // ★ authentic ($cc39) — cursor crossed into a new tube segment
+  // Story 10-11: previously-baked-but-unwired authentic POKEY samples (idx9/4/3 of
+  // the sound table — see docs/ux/2026-06-28-pokey-sfx-rom-map.md).
+  spikeShot: 'spike_shot.wav', // ★ authentic ($cc51) — a bullet shortened a spike
+  extraLife: 'extra_life.wav', // ★ authentic ($cc11) — a bonus life was awarded
+  pulsarHum: 'pulsar_hum.wav', // ★ authentic ($cc99) — looped while a pulsar is alive
 } as const
 
 export type SoundName = keyof typeof SOUNDS
@@ -60,10 +65,17 @@ const CHANNELS: Record<SoundName, string> = {
   playerGrab: 'grab',
   playerDeath: 'player-life', // death then respawn never overlap
   playerSpawn: 'player-life',
-  warpSpikeCrash: 'warp', // clear vs. crash are alternatives, never both
-  levelClear: 'warp',
+  warpSpikeCrash: 'warp', // the crash impact owns the warp voice
   superzapper: 'zap',
   segmentTick: 'segment', // own channel: ticks must survive a held fire
+  // Story 10-11: the sustained cues each get their OWN voice. levelClear is now a
+  // loop spanning the dive, so it can no longer share 'warp' with the crash impact
+  // (a mid-dive crash rings WHILE the zoom loop is up, then warp-end stops only the
+  // loop). The hum likewise rings under everything on its own voice.
+  levelClear: 'zoom', // the sustained zoom/warp loop (10-11)
+  spikeShot: 'spike',
+  extraLife: 'bonus',
+  pulsarHum: 'pulsar',
 }
 
 export interface AudioEngine {
@@ -73,6 +85,13 @@ export interface AudioEngine {
   // Play a loaded sample once. No-op if the sound is not loaded, the context is
   // not ready, or audio is unavailable.
   play(name: SoundName): void
+  // Start a sustained (looping) sample on its channel — the pulsar hum or the
+  // warp/zoom dive (Story 10-11). Steals the channel like play(), so only one loop
+  // rings per channel. Same silent no-ops as play() when unavailable/unloaded.
+  startLoop(name: SoundName): void
+  // Stop the sustained sample sounding on `name`'s channel (Story 10-11). A safe
+  // no-op when nothing is looping there.
+  stopLoop(name: SoundName): void
   // True once at least one sample has decoded. Mainly for tests / readiness UI.
   ready(): boolean
 }
@@ -139,31 +158,39 @@ export function createAudioEngine(baseUrl: string = DEFAULT_BASE_URL): AudioEngi
     load()
   }
 
-  function play(name: SoundName): void {
+  // Steal a channel: stop whatever is sounding on it so a new trigger cuts in.
+  // Its own guard, separate from starting any replacement — a prior source that
+  // already ended would throw on stop(), and that must NOT abort the cut-in.
+  function stopChannel(channel: string): void {
+    const prev = live.get(channel)
+    if (!prev) return
+    live.delete(channel)
+    try {
+      prev.stop()
+      prev.disconnect()
+    } catch {
+      /* prior source may have already ended — ignore */
+    }
+  }
+
+  // Start a buffer source on `name`'s channel, optionally looping. Shared by the
+  // one-shot play() and the sustained startLoop() (Story 10-11) — the only
+  // difference is `source.loop`. Steals the channel first so retriggers cut in
+  // instead of stacking; silently no-ops when unavailable or unloaded.
+  function startSource(name: SoundName, loop: boolean): void {
     if (!ctx || !master) return
     const buffer = buffers.get(name)
     if (!buffer) return // not loaded (yet) or failed to decode — silent no-op
     const channel = CHANNELS[name]
-    // Steal the channel: stop whatever is sounding on it so the new trigger cuts
-    // in. This gets its own guard, separate from starting the replacement — a
-    // prior source that already ended would throw on stop(), and that must NOT
-    // abort the cut-in (the whole point is to play the new sound).
-    const prev = live.get(channel)
-    if (prev) {
-      live.delete(channel)
-      try {
-        prev.stop()
-        prev.disconnect()
-      } catch {
-        /* prior source may have already ended — ignore and play the new one */
-      }
-    }
+    stopChannel(channel)
     try {
       const source = ctx.createBufferSource()
       source.buffer = buffer
+      source.loop = loop
       source.connect(master)
       // Forget a source once it finishes so it isn't left as the channel's "live"
-      // voice; otherwise the next trigger would stop an already-ended node.
+      // voice; otherwise the next trigger would stop an already-ended node. (A
+      // looping source never fires onended on its own — stopLoop ends it.)
       source.onended = () => {
         if (live.get(channel) === source) live.delete(channel)
       }
@@ -174,9 +201,21 @@ export function createAudioEngine(baseUrl: string = DEFAULT_BASE_URL): AudioEngi
     }
   }
 
+  function play(name: SoundName): void {
+    startSource(name, false)
+  }
+
+  function startLoop(name: SoundName): void {
+    startSource(name, true)
+  }
+
+  function stopLoop(name: SoundName): void {
+    stopChannel(CHANNELS[name])
+  }
+
   function ready(): boolean {
     return buffers.size > 0
   }
 
-  return { resume, play, ready }
+  return { resume, play, startLoop, stopLoop, ready }
 }
