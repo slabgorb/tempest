@@ -2,7 +2,7 @@
 import { GameState, Enemy } from '../core/state'
 import { HighScoreTable } from '../core/highscore'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot } from '../core/geometry'
-import { Fx } from './fx'
+import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
 import {
@@ -453,6 +453,68 @@ function drawParticles(ctx: CanvasRenderingContext2D, fx: Fx): void {
   ctx.globalAlpha = 1
 }
 
+// Story 10-5: authentic vector explosions. The enemy burst is a 16-spoke star
+// that doubles in size with a two-tier brightness; the player splat is a
+// concentric jagged star that grows/shrinks while its colour cycles.
+const ENEMY_BURST_BASE_LEN = 3 // spoke length at scale 1
+const ENEMY_BURST_COLOR = '#ffe66b'
+
+function drawEnemyBurst(ctx: CanvasRenderingContext2D, ex: EnemyBurst): void {
+  const len = ENEMY_BURST_BASE_LEN * ex.scale
+  const tail = Math.max(0.35, ex.life / ex.max) // gentle fade in the final frame
+  ctx.globalAlpha = (ex.brightness / 15) * tail
+  ctx.strokeStyle = ENEMY_BURST_COLOR
+  ctx.shadowColor = ENEMY_BURST_COLOR
+  ctx.shadowBlur = 8
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  for (let i = 0; i < ex.spokes; i++) {
+    const a = (i / ex.spokes) * Math.PI * 2
+    ctx.moveTo(ex.x, ex.y)
+    ctx.lineTo(ex.x + Math.cos(a) * len, ex.y + Math.sin(a) * len)
+  }
+  ctx.stroke()
+}
+
+// One jagged star outline (alternating outer/inner radius) centred on (cx, cy).
+function jaggedStarPath(
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, points: number, outerR: number, innerR: number,
+): void {
+  ctx.beginPath()
+  const steps = points * 2
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * Math.PI * 2
+    const r = i % 2 === 0 ? outerR : innerR
+    const x = cx + Math.cos(a) * r
+    const y = cy + Math.sin(a) * r
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+}
+
+function drawPlayerSplat(ctx: CanvasRenderingContext2D, ex: PlayerSplat): void {
+  if (ex.radius < 0.5) return
+  ctx.globalAlpha = Math.max(0.25, ex.life / ex.max)
+  ctx.strokeStyle = ex.color
+  ctx.shadowColor = ex.color
+  ctx.shadowBlur = 12
+  ctx.lineWidth = 2
+  // Two concentric jagged rings for the "concentric jagged star" splat.
+  jaggedStarPath(ctx, ex.x, ex.y, ex.spokes, ex.radius, ex.radius * 0.45)
+  ctx.stroke()
+  jaggedStarPath(ctx, ex.x, ex.y, ex.spokes, ex.radius * 0.55, ex.radius * 0.25)
+  ctx.stroke()
+}
+
+function drawExplosions(ctx: CanvasRenderingContext2D, fx: Fx): void {
+  for (const ex of fx.explosions) {
+    if (ex.kind === 'enemy') drawEnemyBurst(ctx, ex)
+    else drawPlayerSplat(ctx, ex)
+  }
+  ctx.globalAlpha = 1
+  ctx.shadowBlur = 0
+}
+
 // A compact Claw glyph for the lives HUD and framing screens — the same
 // chevron-with-crossbar silhouette the player ship and warp-dive Claw use,
 // shrunk to an icon. Drawn around (cx, cy) in whatever space the caller is in.
@@ -877,6 +939,7 @@ export function render(
     drawPlayer(pctx, s)
   }
   drawParticles(pctx, fx)
+  drawExplosions(pctx, fx)
   phosphor.composite(ctx, dpr, phosphorAlpha(PHOSPHOR_DECAY, dt), fx.shake)
 
   // Overlays (scanlines/flash/HUD) draw in CSS-pixel space with normal blending.
