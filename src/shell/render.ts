@@ -1,7 +1,7 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
 import { HighScoreTable } from '../core/highscore'
-import { Tube, Point, currentLane, project } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth } from '../core/geometry'
 import { Fx } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import {
@@ -222,7 +222,14 @@ function drawEnemyBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
 function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy): void {
   const tube = s.tube
   const p = project(tube, e.lane, e.depth)
-  const r = 5 + e.depth * 10
+  // Story 6-17: size enemies to the lane they ride, not a fixed pixel ramp. An
+  // enemy is a fixed object in perspective, so its size is a constant fraction
+  // of the lane width at its depth — tiny at the far vanishing point, ~full
+  // width at the near rim. The flipper bowtie (8 glyph-units wide, drawn at
+  // r/4) renders 8*(r/4) = 2r px, so r = 0.425*laneWidth fills ~85% of the lane
+  // rail-to-rail; every other kind keeps its authentic Story 6-8 proportion via
+  // the same r and its own divisor.
+  const r = laneWidth(tube, e.lane, e.depth) * 0.425
 
   switch (e.kind) {
     case 'flipper': {

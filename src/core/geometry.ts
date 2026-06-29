@@ -58,6 +58,26 @@ export function project(tube: Tube, lane: number, depth: number): Point {
   return { x: f.x + (n.x - f.x) * depth, y: f.y + (n.y - f.y) * depth }
 }
 
+// Project one rim boundary rail (the shared edge between two lanes) to `depth`,
+// the same far->near lerp `project` does for lane centers.
+function boundaryRail(tube: Tube, i: number, depth: number): Point {
+  const idx = boundaryIndex(tube, i)
+  const f = tube.far[idx]
+  const n = tube.near[idx]
+  return { x: f.x + (n.x - f.x) * depth, y: f.y + (n.y - f.y) * depth }
+}
+
+// Story 6-17: the on-screen width of `lane` at `depth` — the distance between
+// its two edge rails projected to that depth. An enemy is a fixed-size object in
+// perspective, so its render size is a fraction of this: small at the far
+// vanishing point, ~full lane width at the near rim. Pure; closed tubes wrap and
+// open sheets clamp via boundaryIndex.
+export function laneWidth(tube: Tube, lane: number, depth: number): number {
+  const a = boundaryRail(tube, lane, depth)
+  const b = boundaryRail(tube, lane + 1, depth)
+  return Math.hypot(b.x - a.x, b.y - a.y)
+}
+
 // --- Wave 6 (6-7): authentic ROM well geometry -------------------------------
 //
 // The 16 well shapes are ported verbatim from the rev-3 ROM
