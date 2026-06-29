@@ -30,12 +30,62 @@ class FakeAudioContext {
   resume() {
     return Promise.resolve()
   }
+  // Story 10-10: play() now creates sources through here. Hand out a recording
+  // source so a test can observe whether the channel's prior voice was stolen.
+  createBufferSource(): RecSource {
+    return recSource()
+  }
 }
 
 let fetched: string[]
 
+// --- Story 10-10 (voice-stealing) test scaffolding -------------------------
+// play() is the unit under test for 10-10: it must assign each sound to a
+// logical channel and STOP the prior source on that channel before starting a
+// new one (POKEY-style cut-in), instead of layering a fresh BufferSource on
+// every call. To observe that, createBufferSource() above hands out recording
+// sources that remember whether start()/stop() ran, collected in module-level
+// `sources` (reset each test, exactly like `fetched`).
+interface RecSource {
+  buffer: unknown
+  started: boolean
+  stopped: boolean
+  disconnected: boolean
+  connect(dest: unknown): void
+  start(): void
+  stop(): void
+  disconnect(): void
+}
+
+let sources: RecSource[]
+
+// Build a recording BufferSource and register it in `sources`. `overrides` lets
+// a test inject a throwing start()/stop() to exercise silent degradation (AC#3).
+function recSource(overrides: Partial<Pick<RecSource, 'start' | 'stop'>> = {}): RecSource {
+  const src: RecSource = {
+    buffer: null,
+    started: false,
+    stopped: false,
+    disconnected: false,
+    connect() {},
+    start() {
+      src.started = true
+    },
+    stop() {
+      src.stopped = true
+    },
+    disconnect() {
+      src.disconnected = true
+    },
+    ...overrides,
+  }
+  sources.push(src)
+  return src
+}
+
 beforeEach(() => {
   fetched = []
+  sources = []
   vi.stubGlobal('fetch', (input: string) => {
     fetched.push(input)
     return Promise.resolve({
@@ -158,4 +208,109 @@ describe('player-explosion cue (story 6-11: authentic player-death bake)', () =>
   // The player-death event->sound wiring is asserted behaviourally in
   // audio-dispatch.test.ts ("plays 'playerDeath' on a 'player-death' event") —
   // replacing the former `?raw` regex match (story 6-12, AC#2).
+})
+
+// Story 10-10: voice-stealing playback (per-channel cut-in). The 1981 cabinet's
+// POKEY has four hardware channels; a new sound on a channel cuts in over
+// whatever was already there. Today play() ignores this and stacks a new
+// BufferSource on every call (audio.ts), so a held fire button or a superzapper
+// mass-death layers a dozen overlapping copies. This suite pins the contract:
+//   - retriggering the SAME sound steals its own channel (prior source stopped),
+//   - sounds on DIFFERENT channels coexist (no global stop-everything),
+//   - a single one-shot is otherwise unchanged, and the engine still degrades
+//     silently when a source's start()/stop() throws.
+// The exact channel grouping (how many, which sound on which) is an internal
+// detail Dev chooses; these tests assert only the observable cut-in behaviour.
+//
+// Spin up an engine and wait until its samples have decoded, so play() has real
+// buffers to start sources from (mirrors the 'decodes loaded samples' test).
+async function readyEngine() {
+  const engine = createAudioEngine()
+  engine.resume()
+  await vi.waitFor(() => expect(engine.ready()).toBe(true))
+  return engine
+}
+
+describe('voice-stealing playback (story 10-10: per-channel cut-in)', () => {
+  it('stops the prior source when the same sound retriggers (AC#1)', async () => {
+    const engine = await readyEngine()
+    engine.play('fire')
+    engine.play('fire')
+    expect(sources, 'each trigger still creates its own source').toHaveLength(2)
+    expect(sources[0].stopped, 'the first fire voice must be stolen by the second').toBe(true)
+    expect(sources[1].started, 'the replacement voice must start').toBe(true)
+    expect(sources[1].stopped, 'the live voice must not be stopped').toBe(false)
+  })
+
+  it('leaves exactly one live source after a rapid burst of one sound (AC#2)', async () => {
+    const engine = await readyEngine()
+    // Superzapper mass-death / held-fire: many triggers of the same sound in a
+    // tight window must not stack into a layered pile-up.
+    for (let i = 0; i < 6; i++) engine.play('enemyDeath')
+    expect(sources, 'every trigger creates a source, even the stolen ones').toHaveLength(6)
+    const live = sources.filter((s) => s.started && !s.stopped)
+    expect(live, 'only the most recent trigger should still be ringing').toHaveLength(1)
+    expect(live[0], 'the surviving voice is the last one started').toBe(sources[5])
+  })
+
+  it('does not stop a sound on a different channel (AC#1)', async () => {
+    const engine = await readyEngine()
+    // "stop the prior source on ITS channel" — not a global stop-everything.
+    // Regression guard: firing must not cut off the player-death explosion.
+    engine.play('playerDeath')
+    engine.play('fire')
+    const deathVoice = sources[0]
+    const fireVoice = sources[1]
+    expect(deathVoice.stopped, 'player-death must keep ringing while fire plays').toBe(false)
+    expect(fireVoice.started, 'fire still plays on its own channel').toBe(true)
+  })
+
+  it('plays a single one-shot unchanged: one started, un-stopped source (AC#3)', async () => {
+    const engine = await readyEngine()
+    engine.play('fire')
+    expect(sources, 'no prior voice to steal — one source created').toHaveLength(1)
+    expect(sources[0].started).toBe(true)
+    expect(sources[0].stopped, 'nothing to steal, so nothing is stopped').toBe(false)
+  })
+
+  it('creates no source for a sound that has not loaded yet (AC#3)', () => {
+    const engine = createAudioEngine()
+    engine.resume() // decode microtasks not flushed — buffers still empty
+    engine.play('fire')
+    expect(sources, 'unloaded sound stays a silent no-op').toHaveLength(0)
+  })
+
+  it('swallows a throwing stop() and still starts the replacement (AC#3)', async () => {
+    // A flaky stop() on the stolen voice must neither crash the frame nor abort
+    // the cut-in — the new sound still plays.
+    class ThrowingStopCtx extends FakeAudioContext {
+      createBufferSource(): RecSource {
+        return recSource({
+          stop() {
+            throw new Error('stop failed')
+          },
+        })
+      }
+    }
+    vi.stubGlobal('AudioContext', ThrowingStopCtx)
+    const engine = await readyEngine()
+    engine.play('fire')
+    expect(() => engine.play('fire')).not.toThrow()
+    expect(sources[1].started, 'replacement starts despite a throwing stop()').toBe(true)
+  })
+
+  it('swallows a throwing start() without crashing the frame (AC#3)', async () => {
+    class ThrowingStartCtx extends FakeAudioContext {
+      createBufferSource(): RecSource {
+        return recSource({
+          start() {
+            throw new Error('start failed')
+          },
+        })
+      }
+    }
+    vi.stubGlobal('AudioContext', ThrowingStartCtx)
+    const engine = await readyEngine()
+    expect(() => engine.play('fire')).not.toThrow()
+  })
 })
