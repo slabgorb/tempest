@@ -28,6 +28,13 @@ export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade
 export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
+
+// Superzapper active-window durations, in FRAMES (Story 10-2). The ROM's TIMAX
+// holds the first activation "active" ~13 frames and the second ~5, flashing the
+// well each frame and killing on a per-frame cadence (KILENE) across the window.
+export const ZAP_WINDOW_FIRST = 13
+export const ZAP_WINDOW_SECOND = 5
+
 // --- Level-clear warp dive (Story 6-1) ---------------------------------------
 // The authentic accelerating "zoom": the Claw starts slow and ramps up, so a
 // player parked on a spiked lane gets a beat to react instead of an instant

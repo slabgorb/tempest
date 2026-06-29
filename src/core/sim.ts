@@ -10,6 +10,7 @@ import {
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffFrames,
+  ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
 import { rngInt, rngNext } from './rng'
 import { qualifiesForHighScore, insertHighScore } from './highscore'
@@ -359,6 +360,7 @@ function startLevel(s: GameState): void {
   s.bullets = []
   s.enemyBullets = [] // no lingering enemy bolts across a respawn/level (no chain-death)
   s.player.superzapper = 'full' // rearm the once-per-level Superzapper
+  s.player.zapTimer = 0         // no zap window carries across a level/respawn (10-2)
 }
 
 function killPlayer(s: GameState): void {
@@ -426,7 +428,7 @@ function startGameAtLevel(s: GameState, level: number): void {
   s.level = level
   s.score = 0
   s.lives = START_LIVES
-  s.player = { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' }
+  s.player = { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full', zapTimer: 0 }
   s.enemies = []
   s.tube = tubeForLevel(level)
   s.spikes = new Array(s.tube.laneCount).fill(0)
@@ -436,52 +438,83 @@ function startGameAtLevel(s: GameState, level: number): void {
   startLevel(s)
 }
 
-// Superzapper: once per level. The first activation is a screen-clear that
-// vaporises every enemy EXCEPT tankers (which are spared) and wipes all in-flight
-// enemy bolts (10-1); the second vaporises one enemy, the nearest the rim
-// (max depth, ties → lowest index); after that it is spent until the next level.
-// Tanker cargo is never released by a zap (it is a kill, not a hit). Scoring
-// flows through awardScore so a zap can grant extra lives just like a bullet
-// kill. Targeting is fully deterministic.
-function stepZap(s: GameState, input: Input): void {
-  if (!input.zap || !s.player.alive) return
-  if (s.player.superzapper === 'spent' || s.enemies.length === 0) {
-    // A full charge is still consumed even with nothing to hit; a weak shot with
-    // no target is wasted-but-not-spent (nothing to destroy this frame). No
-    // enemies means no kill and (by design, Story 5-1) no activation event — but
-    // a full press is still a screen-clear, so it wipes any in-flight bolts (10-1).
-    if (s.player.superzapper === 'full') {
-      s.enemyBullets = []
-      s.player.superzapper = 'used-once'
-    }
-    return
+// Index of the enemy nearest the rim (max depth, ties → lowest index) among the
+// enemies matching `pick`, or -1 if none match. Fully deterministic — no RNG.
+function nearestRimIndex(s: GameState, pick: (e: Enemy) => boolean): number {
+  let target = -1
+  for (let i = 0; i < s.enemies.length; i++) {
+    if (!pick(s.enemies[i])) continue
+    if (target === -1 || s.enemies[i].depth > s.enemies[target].depth) target = i
   }
-  if (s.player.superzapper === 'full') {
-    // First press spares tankers (carriers): every other enemy is vaporised, but
-    // tankers stay on the board. It also wipes every in-flight enemy bolt so a
-    // bolt already in the air cannot still claim the player (10-1).
-    const killed = s.enemies.filter((e) => e.kind !== 'tanker')
-    for (const e of killed) {
-      awardScore(s, scoreFor(e))
-      s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth })
-    }
-    s.events.push({ type: 'superzapper-activate', killCount: killed.length })
-    s.enemies = s.enemies.filter((e) => e.kind === 'tanker')
-    s.enemyBullets = []
-    s.player.superzapper = 'used-once'
-    return
-  }
-  // 'used-once' → destroy the single enemy nearest the rim.
-  let target = 0
-  for (let i = 1; i < s.enemies.length; i++) {
-    if (s.enemies[i].depth > s.enemies[target].depth) target = i
-  }
-  const victim = s.enemies[target]
+  return target
+}
+
+// Vaporise the enemy at `idx`: score it (so a zap can grant an extra life like a
+// bullet kill) and emit its death event. A zap is a KILL, not a hit — tanker
+// cargo is never released (no split), preserving the 10-1 declaw.
+function zapKillAt(s: GameState, idx: number): void {
+  const victim = s.enemies[idx]
   awardScore(s, scoreFor(victim))
   s.events.push({ type: 'enemy-death', enemyType: victim.kind, lane: victim.lane, depth: victim.depth })
-  s.events.push({ type: 'superzapper-activate', killCount: 1 })
-  s.enemies = s.enemies.filter((_, i) => i !== target)
+  s.enemies = s.enemies.filter((_, i) => i !== idx)
+}
+
+// One ACTIVE frame of a running zap window: flash the well, advance the kill
+// cadence, and tick the timer down. The FIRST window ('used-once' charge while
+// active) vaporises one non-tanker per frame (KILENE) until none remain; the
+// SECOND window ('spent') only flashes — its single kill already landed on the
+// press frame. The flash `color` cycles 0..7 like the ROM's QFRAME AND 7,
+// derived here from the deterministic timer (the sim has no global frame counter).
+function runZapFrame(s: GameState): void {
+  s.events.push({ type: 'superzapper-flash', color: s.player.zapTimer & 7 })
+  if (s.player.superzapper === 'used-once') {
+    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')
+    if (idx >= 0) zapKillAt(s, idx)
+  }
+  s.player.zapTimer -= 1
+}
+
+// Superzapper: once per level, now MODELLED AS A MULTI-FRAME WINDOW (Story 10-2).
+// A press opens an active window that SELF-RUNS to completion — the player does
+// not hold the button, and input is ignored while a window is live.
+//   First press (full):  screen-clear over the longer window (~13 frames). Spares
+//     tankers, wipes all in-flight bolts on the press (10-1), and vaporises one
+//     non-tanker per active frame (KILENE) until none remain. Charge → used-once.
+//   Second press (used-once): one kill, the nearest the rim (max depth, ties →
+//     lowest index), on the press frame, then the shorter window (~5 frames)
+//     flashes out. Charge → spent.
+//   Spent: inert until the next level rearms it. Targeting is fully deterministic.
+function stepZap(s: GameState, input: Input): void {
+  // A live window runs autonomously; fresh input cannot retrigger it mid-flight.
+  if (s.player.zapTimer > 0) {
+    runZapFrame(s)
+    return
+  }
+  if (!input.zap || !s.player.alive) return
+  if (s.player.superzapper === 'spent') return
+
+  if (s.player.superzapper === 'full') {
+    // First press: consume the charge, clear in-flight bolts now (10-1), and open
+    // the longer kill window, across which the non-tankers die one per frame.
+    s.enemyBullets = []
+    s.player.superzapper = 'used-once'
+    s.events.push({
+      type: 'superzapper-activate',
+      killCount: s.enemies.filter((e) => e.kind !== 'tanker').length,
+    })
+    s.player.zapTimer = ZAP_WINDOW_FIRST
+    runZapFrame(s) // frame 1 of the window: flash + first cadence kill + tick
+    return
+  }
+
+  // 'used-once' → second press: exactly one kill (nearest the rim, any kind), then
+  // the shorter window flashes out with no further kills.
   s.player.superzapper = 'spent'
+  const idx = nearestRimIndex(s, () => true)
+  if (idx >= 0) zapKillAt(s, idx)
+  s.events.push({ type: 'superzapper-activate', killCount: idx >= 0 ? 1 : 0 })
+  s.player.zapTimer = ZAP_WINDOW_SECOND
+  runZapFrame(s) // frame 1: flash + tick (no further kill — second window)
 }
 
 // Clearing a level no longer advances immediately — it enters the warp. The

@@ -138,16 +138,25 @@ describe('enemy-death events from bullets', () => {
 
 // --- superzapper (AC5) ------------------------------------------------------
 describe('superzapper events', () => {
-  it('a full blast emits one superzapper-activate and an enemy-death per kill', () => {
+  it('a full blast emits one superzapper-activate and an enemy-death per kill across the window (10-2)', () => {
     const s = playing(threeFlippers())
-    s.spawn.remaining = 1 // keep the emptied board OUT of the level-clear path this frame
-    const out = stepGame(s, ZAP, DT)
+    s.spawn.remaining = 1 // keep the emptied board OUT of the level-clear path
+    // The first press opens a multi-frame window (10-2): ONE activate fires on the
+    // press carrying the total kill count, and the three kills land one-per-frame
+    // across the window. Collect the whole window's stream and assert the net.
+    let out = stepGame(s, ZAP, DT)
+    const activations = [...eventsOfType(out, 'superzapper-activate')]
+    const deaths = [...eventsOfType(out, 'enemy-death')]
+    for (let i = 0; i < 20 && out.player.zapTimer > 0 && out.mode === 'playing'; i++) {
+      out = stepGame(out, NEUTRAL, DT)
+      activations.push(...eventsOfType(out, 'superzapper-activate'))
+      deaths.push(...eventsOfType(out, 'enemy-death'))
+    }
 
     expect(out.enemies).toHaveLength(0)
-    const activations = eventsOfType(out, 'superzapper-activate')
     expect(activations).toHaveLength(1)
     expect(activations[0].killCount).toBe(3)
-    expect(eventsOfType(out, 'enemy-death')).toHaveLength(3)
+    expect(deaths).toHaveLength(3)
   })
 
   it('a weak shot emits a superzapper-activate for the single enemy it destroys', () => {

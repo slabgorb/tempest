@@ -17,6 +17,9 @@ export interface Player {
   alive: boolean
   respawnTimer: number  // seconds remaining while mode === 'dying'
   superzapper: Superzapper
+  zapTimer: number      // frames left on the ACTIVE Superzapper window (10-2);
+                        // 0 = inactive. A press opens it; it self-runs to 0,
+                        // killing on a per-frame cadence and flashing the well.
 }
 
 export interface Bullet {
@@ -134,7 +137,7 @@ export function initialState(seed: number): GameState {
     mode: 'attract',
     level: 1,
     tube,
-    player: { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full' },
+    player: { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full', zapTimer: 0 },
     bullets: [],
     enemyBullets: [],
     enemies: [],

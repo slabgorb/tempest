@@ -35,6 +35,7 @@ const ALL_EVENTS: GameEvent[] = [
   { type: 'warp-spike-crash', lane: 4 },
   { type: 'level-clear', newLevel: 2 },
   { type: 'superzapper-activate', killCount: 3 },
+  { type: 'superzapper-flash', color: 5 }, // Story 10-2
   { type: 'player-spawn', lane: 4 },
   { type: 'player-death', cause: 'grab' },
   { type: 'segment-cross', lane: 4 }, // Story 6-10
@@ -53,6 +54,7 @@ function discriminant(e: GameEvent): string {
     case 'warp-spike-crash':    return `${e.lane}`
     case 'level-clear':         return `${e.newLevel}`
     case 'superzapper-activate':return `${e.killCount}`
+    case 'superzapper-flash':   return `${e.color}`
     case 'player-spawn':        return `${e.lane}`
     case 'player-death':        return e.cause
     case 'segment-cross':       return `${e.lane}`
@@ -64,13 +66,14 @@ function discriminant(e: GameEvent): string {
 }
 
 describe('GameEvent — discriminated union (AC1)', () => {
-  it('covers ten distinct, documented event types', () => {
+  it('covers eleven distinct, documented event types', () => {
     const kinds = ALL_EVENTS.map((e) => e.type)
-    expect(new Set(kinds).size).toBe(10) // 8 from 5-1 + enemy-fire (6-5) + segment-cross (6-10)
+    // 8 from 5-1 + enemy-fire (6-5) + segment-cross (6-10) + superzapper-flash (10-2)
+    expect(new Set(kinds).size).toBe(11)
     expect(kinds).toEqual([
       'enemy-death', 'player-grab', 'fire', 'enemy-fire', 'warp-spike-crash',
-      'level-clear', 'superzapper-activate', 'player-spawn', 'player-death',
-      'segment-cross',
+      'level-clear', 'superzapper-activate', 'superzapper-flash', 'player-spawn',
+      'player-death', 'segment-cross',
     ])
   })
 
