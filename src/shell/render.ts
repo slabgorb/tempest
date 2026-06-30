@@ -12,6 +12,7 @@ import {
   playerBulletColor,
   type Glyph, type GlyphColor,
 } from './glyphs'
+import { layoutText, CELL_H } from './vecfont'
 
 // Per-level color cycling — index by (level-1) mod palette length.
 const LEVEL_COLORS = [
@@ -570,47 +571,62 @@ function drawClawIcon(
   ctx.beginPath(); ctx.arc(cx, apexY, 1.6, 0, Math.PI * 2); ctx.fill()
 }
 
-// Draw `text` at (x, y) with a neon bloom and return the cursor untouched.
-// Vector Battle's thin monoline strokes carry far less "ink" than the old bold
-// face, so a single glow pass reads dim. Stack two additive blurred passes (a
-// wide bloom + a tighter inner glow) under a crisp core so the thin vectors light
-// up like neon without losing definition. Respects the caller's current font /
-// textAlign / textBaseline; save/restore keeps the 'lighter' blend from leaking.
-function glowText(
+// Draw stroke-vector text in the authentic VGMSGA font (src/shell/vecfont.ts) with
+// the neon glow. `sizePx` is the cap height — the 24-unit glyph cell maps onto it.
+// `align`/`vAlign` anchor the text box on (x,y). Two additive blurred passes (a
+// wide bloom + a tighter inner glow) under a crisp core light the thin vectors up
+// like neon without losing definition. The font is caps-only, so text is
+// uppercased here (matches the ROM and keeps dynamic text consistent). save/
+// restore keeps the 'lighter' blend / stroke state from leaking.
+function vecText(
   ctx: CanvasRenderingContext2D,
-  text: string, x: number, y: number, color: string, blur: number,
+  text: string, x: number, y: number, sizePx: number, color: string, blur: number,
+  align: 'left' | 'center' | 'right' = 'center',
+  vAlign: 'top' | 'middle' | 'bottom' = 'middle',
 ): void {
-  // Tracking: Vector Battle is a tight vector face, so add ~0.1em letter-spacing
-  // for an airy arcade-marquee look that also helps the thin caps read. Derived
-  // from the current font's px size so every text size gets proportional spacing.
-  // textAlign keeps centred/right text correctly positioned with tracking applied.
-  const px = /(\d+(?:\.\d+)?)px/.exec(ctx.font)
-  ctx.letterSpacing = `${((px ? parseFloat(px[1]) : 16) * 0.1).toFixed(2)}px`
-  ctx.fillStyle = color
+  const scale = sizePx / CELL_H
+  const { strokes, width } = layoutText(text.toUpperCase())
+  const w = width * scale
+  const ox = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x
+  // Glyph space is y-up with the baseline at 0; map to screen (y grows down).
+  const baseY = vAlign === 'top' ? y + sizePx : vAlign === 'middle' ? y + sizePx / 2 : y
+  const trace = (): void => {
+    ctx.beginPath()
+    for (const s of strokes) {
+      s.points.forEach((p, i) => {
+        const sx = ox + p.x * scale
+        const sy = baseY - p.y * scale
+        if (i === 0) ctx.moveTo(sx, sy)
+        else ctx.lineTo(sx, sy)
+      })
+    }
+  }
+  ctx.save()
+  ctx.lineWidth = Math.max(1, sizePx / 18)
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  ctx.strokeStyle = color
   ctx.shadowColor = color
   if (blur > 0) {
-    ctx.save()
     ctx.globalCompositeOperation = 'lighter'
     ctx.shadowBlur = blur * 1.5
-    ctx.fillText(text, x, y)
+    trace(); ctx.stroke()
     ctx.shadowBlur = blur * 0.8
-    ctx.fillText(text, x, y)
-    ctx.restore()
+    trace(); ctx.stroke()
+    ctx.globalCompositeOperation = 'source-over'
   }
   ctx.shadowBlur = 0
-  ctx.fillText(text, x, y)
+  trace(); ctx.stroke()
+  ctx.restore()
 }
 
-// Centered glowing vector-style text in screen space. Vector Battle is caps-only,
-// so uppercase here keeps the fallback fonts in caps and any dynamic text (e.g.
-// initials) consistent.
+// Centered glowing vector text (the common framing-screen case). `sizePx` is the
+// cap height; text is vertically centered on `y`.
 function drawGlowText(
   ctx: CanvasRenderingContext2D,
-  text: string, cx: number, y: number, font: string, color: string, blur: number,
+  text: string, cx: number, y: number, sizePx: number, color: string, blur: number,
 ): void {
-  ctx.textAlign = 'center'
-  ctx.font = font
-  glowText(ctx, text.toUpperCase(), cx, y, color, blur)
+  vecText(ctx, text, cx, y, sizePx, color, blur, 'center', 'middle')
 }
 
 // The high-score board (rank · initials · score), monospace-aligned and centered
@@ -626,23 +642,21 @@ function drawHighScoreTable(
   ctx.textBaseline = 'middle'
   // Authentic ROM: the HIGH SCORES header is red (Story 10-7), independent of the
   // level-cycling `color` still used for the top-rank row highlight below.
-  drawGlowText(ctx, 'HIGH SCORES', cx, top, "700 20px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 14)
+  drawGlowText(ctx, 'HIGH SCORES', cx, top, 20, '#ff2f4f', 14)
   if (table.length === 0) {
-    drawGlowText(
-      ctx, '- NO SCORES YET -', cx, top + 40,
-      "500 18px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
-    )
+    drawGlowText(ctx, '- NO SCORES YET -', cx, top + 40, 18, 'rgba(150,190,255,0.6)', 0)
     ctx.restore()
     return
   }
-  ctx.font = "500 18px 'Vector Battle', 'Orbitron', monospace"
+  // The vector font is fixed-advance, so the padded rank/name/score columns line
+  // up without a monospace face.
   for (let i = 0; i < Math.min(maxRows, table.length); i++) {
     const e = table[i]
     const rank = String(i + 1).padStart(2, ' ')
     const name = (e.name || '???').toUpperCase().slice(0, 3).padEnd(3, ' ')
     const score = String(e.score).padStart(7, '0')
     const rowColor = i === 0 ? color : '#cfe3ff'
-    glowText(ctx, `${rank}   ${name}   ${score}`, cx, top + 36 + i * 26, rowColor, i === 0 ? 14 : 10)
+    vecText(ctx, `${rank}   ${name}   ${score}`, cx, top + 36 + i * 26, 18, rowColor, i === 0 ? 14 : 10)
   }
   ctx.restore()
 }
@@ -684,25 +698,18 @@ function drawAttract(
   for (const pass of titleLogoPasses(renderTime * LOGO_RAINBOW_SPEED)) {
     const size = Math.max(1, Math.round(TITLE_BASE_PX * pass.scale))
     ctx.globalAlpha = 0.35 + 0.65 * pass.depth
-    drawGlowText(
-      ctx, 'TEMPEST', W / 2, titleY,
-      `900 ${size}px 'Vector Battle', 'Orbitron', monospace`,
-      pass.color, 8 + Math.round(20 * pass.depth),
-    )
+    drawGlowText(ctx, 'TEMPEST', W / 2, titleY, size, pass.color, 8 + Math.round(20 * pass.depth))
   }
   ctx.globalAlpha = 1
-  drawGlowText(
-    ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74,
-    "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 8,
-  )
+  drawGlowText(ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74, 16, 'rgba(150,190,255,0.7)', 8)
   drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.42, color, 10)
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
-  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, "700 26px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 18)
+  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, 26, '#ff2f4f', 18)
   ctx.globalAlpha = 1
   drawGlowText(
     ctx, 'CLICK OR ENTER TO START - SPINNER + SPACE TO PLAY', W / 2, H * 0.86 + 34,
-    "500 13px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.6)', 0,
+    13, 'rgba(150,190,255,0.6)', 0,
   )
 }
 
@@ -712,42 +719,36 @@ function drawSelect(
   // Authentic skill-select framing (Story 10-9): the ROM's RATE YOURSELF / RANK
   // screen with a NOVICE→EXPERT skill ladder flanking the chooser. Colors come
   // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED.
-  drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, "900 40px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 22)
-  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, "700 16px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 8)
-  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.3, "700 26px 'Vector Battle', 'Orbitron', monospace", color, 14)
+  drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, 40, '#39ff14', 22)
+  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)
+  drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.3, 26, color, 14)
   drawGlowText(
     ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,
-    "900 64px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 26,
+    64, CLAW_COLOR, 26,
   )
   // Skill ladder flanking the chooser: NOVICE (easiest) … EXPERT (hardest).
-  drawGlowText(ctx, 'NOVICE', W * 0.17, H * 0.5, "700 18px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 8)
-  drawGlowText(ctx, 'EXPERT', W * 0.83, H * 0.5, "700 18px 'Vector Battle', 'Orbitron', monospace", '#ff2f4f', 8)
-  drawGlowText(
-    ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72,
-    "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
-  )
+  drawGlowText(ctx, 'NOVICE', W * 0.17, H * 0.5, 18, '#ff2f4f', 8)
+  drawGlowText(ctx, 'EXPERT', W * 0.83, H * 0.5, 18, '#ff2f4f', 8)
+  drawGlowText(ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72, 16, 'rgba(150,190,255,0.7)', 6)
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
-  drawGlowText(
-    ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32,
-    "700 18px 'Vector Battle', 'Orbitron', monospace", color, 12,
-  )
+  drawGlowText(ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32, 18, color, 12)
   ctx.globalAlpha = 1
 }
 
 function drawEntry(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
-  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, "900 44px 'Vector Battle', 'Orbitron', monospace", color, 24)
+  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, 44, color, 24)
   const entry = s.entry
   if (!entry) {
     // Defensive: 'highscore' mode should always carry an entry.
-    drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.5, "700 24px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 14)
+    drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.5, 24, CLAW_COLOR, 14)
     return
   }
   drawGlowText(
     ctx, `SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.34,
-    "700 22px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 10,
+    22, '#cfe3ff', 10,
   )
   // Three initial slots: confirmed chars, the active letter (highlighted), blanks.
   const slotW = 84
@@ -761,7 +762,7 @@ function drawEntry(
     if (i < entry.charIndex) ch = entry.initials[i] ?? '_'
     else if (i === entry.charIndex) { ch = entry.currentLetter; active = true }
     if (active) {
-      drawGlowText(ctx, ch, x, y, "900 64px 'Vector Battle', 'Orbitron', monospace", CLAW_COLOR, 22)
+      drawGlowText(ctx, ch, x, y, 64, CLAW_COLOR, 22)
       ctx.strokeStyle = CLAW_COLOR
       ctx.shadowColor = CLAW_COLOR
       ctx.shadowBlur = 14
@@ -770,7 +771,7 @@ function drawEntry(
     } else {
       const dim = ch === '_'
       drawGlowText(
-        ctx, ch, x, y, "900 64px 'Vector Battle', 'Orbitron', monospace",
+        ctx, ch, x, y, 64,
         dim ? 'rgba(150,190,255,0.4)' : color, dim ? 0 : 12,
       )
     }
@@ -779,7 +780,7 @@ function drawEntry(
   ctx.globalAlpha = blink
   drawGlowText(
     ctx, 'SPIN TO CHANGE - START TO CONFIRM', W / 2, H * 0.78,
-    "500 16px 'Vector Battle', 'Orbitron', monospace", 'rgba(150,190,255,0.7)', 6,
+    16, 'rgba(150,190,255,0.7)', 6,
   )
   ctx.globalAlpha = 1
 }
@@ -803,31 +804,20 @@ function drawHud(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
   ctx.shadowBlur = 0
-  ctx.textBaseline = 'top'
-  // Labels: the thin face is fragile small, so render the HUD captions at 13px
-  // (up from 11) in a bright steel-blue with a touch of glow for legibility.
-  const NUM_FONT = "700 22px 'Vector Battle', 'Orbitron', monospace"
-  const LABEL_FONT = "700 13px 'Vector Battle', 'Orbitron', monospace"
+  // HUD readouts: 22px score/level/hi numbers; 13px captions in bright steel-blue
+  // (the thin vector stroke is fragile small) with a touch of glow. Anchored to the
+  // top edge (vAlign 'top') so the numbers tuck under the screen edge as before.
   const LABEL_COLOR = 'rgba(175,210,255,0.9)'
   // Score (left).
-  ctx.textAlign = 'left'
-  ctx.font = NUM_FONT
-  glowText(ctx, String(s.score).padStart(6, '0'), 26, 22, color, 12)
-  ctx.font = LABEL_FONT
-  glowText(ctx, 'SCORE', 26, 50, LABEL_COLOR, 5)
+  vecText(ctx, String(s.score).padStart(6, '0'), 26, 22, 22, color, 12, 'left', 'top')
+  vecText(ctx, 'SCORE', 26, 50, 13, LABEL_COLOR, 5, 'left', 'top')
   // Level (right).
-  ctx.textAlign = 'right'
-  ctx.font = NUM_FONT
-  glowText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, color, 12)
-  ctx.font = LABEL_FONT
-  glowText(ctx, 'LEVEL', W - 26, 50, LABEL_COLOR, 5)
+  vecText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, 22, color, 12, 'right', 'top')
+  vecText(ctx, 'LEVEL', W - 26, 50, 13, LABEL_COLOR, 5, 'right', 'top')
   // High score (top center): the leading board entry, or 0 when the board is empty.
   const hi = s.highScoreTable.length ? s.highScoreTable[0].score : 0
-  ctx.textAlign = 'center'
-  ctx.font = NUM_FONT
-  glowText(ctx, String(hi).padStart(6, '0'), W / 2, 22, color, 12)
-  ctx.font = LABEL_FONT
-  glowText(ctx, 'HI-SCORE', W / 2, 50, LABEL_COLOR, 5)
+  vecText(ctx, String(hi).padStart(6, '0'), W / 2, 22, 22, color, 12, 'center', 'top')
+  vecText(ctx, 'HI-SCORE', W / 2, 50, 13, LABEL_COLOR, 5, 'center', 'top')
   // Remaining lives as little Claw-icon glyphs (the player ship in miniature).
   for (let i = 0; i < s.lives; i++) {
     drawClawIcon(ctx, 36 + i * 26, H - 30, 18, CLAW_COLOR)
@@ -837,18 +827,17 @@ function drawHud(
     // Dim the still-drawn play scene so the overlay text + high-score table read
     // clearly instead of fighting the tube/enemies behind them.
     drawScrim(ctx, W, H)
-    ctx.textBaseline = 'middle'
-    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, "900 64px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 26)
+    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, 64, '#39ff14', 26)
     drawGlowText(
       ctx, `FINAL SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.28 + 50,
-      "700 22px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 12,
+      22, '#cfe3ff', 12,
     )
     drawHighScoreTable(ctx, s.highScoreTable, W / 2, H * 0.46, color, 8)
     const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
     ctx.globalAlpha = blink
     drawGlowText(
       ctx, 'CLICK OR PRESS ENTER TO PLAY AGAIN', W / 2, H * 0.84,
-      "500 18px 'Vector Battle', 'Orbitron', monospace", '#cfe3ff', 14,
+      18, '#cfe3ff', 14,
     )
     ctx.globalAlpha = 1
   }
@@ -1009,7 +998,7 @@ export function render(
   // flash the warning so the player knows to rotate off a spiked lane. Blinks via
   // renderTime; the dive (warning === 0) clears it automatically.
   if (s.mode === 'warp' && s.warp.warning > 0 && Math.floor(renderTime * 4) % 2 === 0) {
-    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, "700 28px 'Vector Battle', 'Orbitron', monospace", '#ffffff', 18)
+    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, 28, '#ffffff', 18)
     ctx.shadowBlur = 0
   }
 
@@ -1017,8 +1006,8 @@ export function render(
   // flash the authentic bonus banners. Both GREEN per the 1981 Messages table.
   // (Numeric tallies are a later-story concern; this lands the banners.)
   if (s.mode === 'warp') {
-    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, "900 40px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 20)
-    drawGlowText(ctx, 'TIME', W / 2, H * 0.16 + 38, "700 20px 'Vector Battle', 'Orbitron', monospace", '#39ff14', 10)
+    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, 40, '#39ff14', 20)
+    drawGlowText(ctx, 'TIME', W / 2, H * 0.16 + 38, 20, '#39ff14', 10)
     ctx.shadowBlur = 0
   }
 
@@ -1034,7 +1023,7 @@ export function render(
     s.mode === 'playing' && s.player.superzapper === 'full'
     && renderTime < superzapBannerUntil && Math.floor(renderTime * 4) % 2 === 0
   ) {
-    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, "700 26px 'Vector Battle', 'Orbitron', monospace", '#1f8fff', 16)
+    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, 26, '#1f8fff', 16)
     ctx.shadowBlur = 0
   }
 

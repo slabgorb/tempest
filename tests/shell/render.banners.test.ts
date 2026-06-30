@@ -66,12 +66,14 @@ function drawnViaGlowHelper(src: string, banner: string): boolean {
   return re.test(src)
 }
 
-// The color ARGUMENT passed to the glow-text call that draws `banner`. The helper
-// signature is (ctx, text, cx, y, FONT, COLOR, blur); every font literal contains
-// 'monospace', so the token right after it is the color. Returns null if not found.
+// The color ARGUMENT passed to the glow-text call that draws `banner`. Since Story
+// 10-13 replaced the TTF webfont with the stroke-vector font, the helper signature
+// is (ctx, text, cx, y, SIZE_PX, COLOR, blur) — a numeric cap-height, not a CSS
+// font string — so the color is the token right after the numeric size. Returns
+// null if not found.
 function bannerColorArg(src: string, banner: string): string | null {
   const re = new RegExp(
-    `['"\`]${escapeRe(banner)}['"\`][^)]*?monospace['"][^)]*?,\\s*([^,)]+?)\\s*,`,
+    `['"\`]${escapeRe(banner)}['"\`][^)]*?,\\s*\\d+(?:\\.\\d+)?\\s*,\\s*([^,)]+?)\\s*,`,
   )
   const m = re.exec(src)
   return m ? m[1].trim() : null

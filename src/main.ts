@@ -6,7 +6,6 @@ import { createFx } from './shell/fx'
 import { createAudioEngine } from './shell/audio'
 import { playEventSounds } from './shell/audio-dispatch'
 import { render } from './shell/render'
-import { loadVectorFont } from './shell/font'
 import { loadHighScores, saveHighScores } from './shell/storage'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
@@ -27,12 +26,6 @@ function resize(): void {
 }
 window.addEventListener('resize', resize)
 resize()
-
-// Kick off the HUD/framing vector font load. Best-effort and non-blocking: the
-// render loop keeps drawing with the fallback font and automatically picks up
-// Vector Battle on the next frame once the face resolves (canvas is repainted
-// every frame). If the load fails, the fallback simply persists.
-void loadVectorFont()
 
 const input = createInputController(canvas)
 const fx = createFx()

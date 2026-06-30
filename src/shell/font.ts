@@ -1,41 +1,14 @@
 // src/shell/font.ts
 //
-// Loads the "Vector Battle" arcade vector font used by the HUD and framing
-// screens. Render/shell-only — the pure core never touches fonts.
+// Story 10-13: the HUD / framing text is now an authentic stroke-vector font, not
+// a TTF webfont. The old "Vector Battle" face and its async webfont loader are
+// gone — text is drawn as real glowing vectors (render.ts) from a per-letter glyph
+// table lifted verbatim from the 1981 ROM (the VGMSGA alphabet). There is no async
+// font to load and no external asset to depend on.
 //
-//   Font:    Vector Battle (VectorBattle-e9XO.ttf)
-//   Author:  ck! / Freaky Fonts, 1999
-//   License: Freeware, Non-Commercial (see public/fonts/Readme.txt, shipped
-//            unmodified alongside the face per the designer's terms). A
-//            commercial license must be purchased if this project ever goes
-//            commercial.
+// The glyph table + string layout live in vecfont.ts. This module re-exports them
+// as the shell's "font" entry point so callers can import a font from one place.
 //
-// The face is a CAPS-ONLY monoline vector ROM font: callers render text
-// uppercase (render.ts does this in drawGlowText and the score table).
-
-export const UI_FONT_FAMILY = 'Vector Battle'
-
-// Static asset served from public/fonts/. Resolve against Vite's BASE_URL so the
-// '/tempest/' deploy base is honoured in both dev and build instead of being
-// hardcoded.
-const FONT_URL = `${import.meta.env.BASE_URL}fonts/VectorBattle-e9XO.ttf`
-
-// Best-effort load: on any failure (missing API, blocked/absent file) the canvas
-// keeps rendering with the 'Orbitron', monospace fallback already baked into
-// every font string in render.ts, so the game is never blocked by the font.
-export async function loadVectorFont(): Promise<boolean> {
-  // FontFace / document.fonts are absent in non-DOM contexts and very old
-  // browsers; degrade to the fallback rather than throwing at boot.
-  if (typeof FontFace === 'undefined' || typeof document === 'undefined' || !document.fonts) {
-    return false
-  }
-  try {
-    const face = new FontFace(UI_FONT_FAMILY, `url(${FONT_URL})`)
-    await face.load()
-    document.fonts.add(face)
-    return true
-  } catch (err) {
-    console.warn('[tempest] Vector Battle font failed to load; using fallback font.', err)
-    return false
-  }
-}
+// Source of the glyph data:
+//   docs/ux/2026-06-30-vector-font-rom-extract.md
+export * from './vecfont'
