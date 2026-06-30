@@ -1,7 +1,7 @@
 // src/core/sim.ts
 import { GameState, Enemy, EnemyKind, TankerCargo } from './state'
 import { Input } from './input'
-import { wrapLane, currentLane, tubeForLevel } from './geometry'
+import { Tube, wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
@@ -623,15 +623,110 @@ function emitPulsarHumEdge(prev: GameState, s: GameState): void {
   else if (had && !has) s.events.push({ type: 'pulsar-hum-stop' })
 }
 
+// One frame of the live gameplay simulation: player, firing, enemies, collisions,
+// level-clear. Shared by the real `playing` mode and the attract self-play demo
+// (Story 10-3), so the demo runs the EXACT same pipeline, just on synthetic input.
+// `prev` is the pre-step (read-only) state; `s` is the working clone.
+function stepPlaying(prev: GameState, s: GameState, input: Input, dt: number): void {
+  stepPlayer(s, input)
+  stepFiring(s, input)
+  stepZap(s, input)
+  stepBullets(s, dt)
+  stepEnemies(s, dt)
+  stepEnemyFire(s, dt)        // enemies decide to fire from their moved positions
+  stepEnemyBullets(s, dt)     // bolts (new and existing) ride down their lanes
+  resolveBulletHits(s)
+  resolveEnemyBulletHits(s)   // player shots can destroy enemy bolts
+  resolveSpikeHits(s)
+  resolveTankerArrivals(s)
+  resolveEnemyBoltHits(s)     // a bolt at the rim on the player's lane kills
+  resolvePlayerHits(s)
+  cullEnemyBullets(s)         // retire bolts that flew past the rim
+  checkLevelClear(s)          // no-op unless mode === 'playing' (the demo stays in 'attract')
+  emitPulsarHumEdge(prev, s)  // pulsar appeared/left this frame → hum on/off
+}
+
+// --- Attract self-play demo (Story 10-3) ----------------------------------
+const DEMO_FIRE_LANES = 2 // fire when an enemy or bolt lane is within this many lanes
+const DEMO_LIVES = 1      // the attract demo gets a single life (book: attract admin)
+const DEMO_MAX_LEVEL = 8  // random start level 1..8 ("RANDOM AND 7")
+
+// Shortest signed lane offset from `from` to `to`, honoring tube wrap. Positive =
+// steer toward higher lane indices. Open tubes do not wrap, so it is the direct
+// difference. Used to point the demo Claw at its target by the short way around.
+function laneOffset(tube: Tube, from: number, to: number): number {
+  const d = to - from
+  if (!tube.closed) return d
+  const n = tube.laneCount
+  const m = ((d % n) + n) % n
+  return m > n / 2 ? m - n : m
+}
+
+// The demo "brain": a pure, RNG-free function of the board that returns the
+// synthetic input for one frame. It steers the Claw toward the most-advanced
+// enemy (nearest the rim = the MAX `depth` in our convention; see session
+// deviation) by the shortest wrapped lane distance, and fires anticipatorily when
+// any enemy or enemy bolt is within DEMO_FIRE_LANES of the player. Never mutates.
+export function demoInput(s: GameState): Input {
+  const pl = currentLane(s.tube, s.player.lane)
+  // Auto-move: chase the most-advanced enemy (largest non-zero depth).
+  let target: Enemy | null = null
+  for (const e of s.enemies) {
+    if (e.depth <= 0) continue // ignore un-entered spawns ("non-zero depth")
+    if (target === null || e.depth > target.depth) target = e
+  }
+  const spin = target === null ? 0 : laneOffset(s.tube, pl, target.lane)
+  // Auto-fire: any enemy OR enemy bolt within DEMO_FIRE_LANES lanes (wrap-aware).
+  const within = (lane: number): boolean =>
+    Math.abs(laneOffset(s.tube, pl, lane)) <= DEMO_FIRE_LANES
+  const fire = s.enemies.some((e) => within(e.lane)) || s.enemyBullets.some((b) => within(b.lane))
+  return { spin, fire, zap: false, start: false }
+}
+
+// Arm a fresh demo game: a single life on a random level 1..8 (the only RNG draw),
+// reusing the normal game setup but parked in 'attract' so it reads as the title.
+function seedDemo(s: GameState): void {
+  const roll = rngInt(s.rng, DEMO_MAX_LEVEL) // 0..7
+  s.rng = roll.rng
+  startGameAtLevel(s, roll.value + 1)        // 1..8 — resets board/score/lives/spikes
+  s.mode = 'attract'                         // the demo lives inside the attract screen
+  s.lives = DEMO_LIVES
+  s.demoActive = true
+}
+
+// Return to the static title: stop the demo so the next idle frame re-seeds a
+// fresh one. (The attract renderer hides the playing scene, so leftover board
+// state is never drawn.)
+function resetDemoToTitle(s: GameState): void {
+  s.mode = 'attract'
+  s.demoActive = false
+}
+
+// True when the player supplied a real, deliberate input this frame (any real
+// input ends the demo — book: attract exits to the title on input). `start` is
+// handled separately because it begins a real game. Non-finite spin is noise.
+function hasRealInput(input: Input): boolean {
+  return input.fire || input.zap || (Number.isFinite(input.spin) && input.spin !== 0)
+}
+
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
   const s = cloneState(state)
   switch (s.mode) {
     case 'attract':
-      // Idle title screen — only `start` matters; gameplay input is ignored.
-      // Entering select (re)initialises the chosen level to 1. RNG untouched.
+      // The attract screen plays itself when idle (Story 10-3). `start` begins a
+      // real game (→ select); any other real input returns to the title; otherwise
+      // the demo seeds (once) and runs the normal playing pipeline on synthetic
+      // input. A demo death (mode leaves 'attract') also returns to the title.
       if (input.start) {
         s.mode = 'select'
         s.select = { selectedLevel: 1 }
+        s.demoActive = false
+      } else if (hasRealInput(input)) {
+        resetDemoToTitle(s)
+      } else {
+        if (!s.demoActive) seedDemo(s)
+        stepPlaying(state, s, demoInput(s), dt)
+        if (s.mode !== 'attract') resetDemoToTitle(s) // demo died/cleared → title
       }
       break
     case 'select':
@@ -649,22 +744,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       }
       break
     case 'playing':
-      stepPlayer(s, input)
-      stepFiring(s, input)
-      stepZap(s, input)
-      stepBullets(s, dt)
-      stepEnemies(s, dt)
-      stepEnemyFire(s, dt)        // enemies decide to fire from their moved positions
-      stepEnemyBullets(s, dt)     // bolts (new and existing) ride down their lanes
-      resolveBulletHits(s)
-      resolveEnemyBulletHits(s)   // player shots can destroy enemy bolts
-      resolveSpikeHits(s)
-      resolveTankerArrivals(s)
-      resolveEnemyBoltHits(s)     // a bolt at the rim on the player's lane kills
-      resolvePlayerHits(s)
-      cullEnemyBullets(s)         // retire bolts that flew past the rim
-      checkLevelClear(s)
-      emitPulsarHumEdge(state, s) // pulsar appeared/left this frame → hum on/off
+      stepPlaying(state, s, input, dt)
       break
     case 'warp':
       stepPlayer(s, input) // the Claw may still rotate during the warp; firing is disabled
