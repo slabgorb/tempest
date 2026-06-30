@@ -126,6 +126,7 @@ export interface GameState {
   highScoreTable: HighScoreTable     // in-memory top scores (persistence is 4-6)
   events: GameEvent[]                // gameplay events emitted this frame (5-1); cleared each step
   prevFire: boolean                  // last frame's input.fire — lets menu confirms edge-trigger (6-2)
+  demoActive: boolean                // the self-play attract demo is currently running (Story 10-3)
   rng: Rng
   fireRng: Rng                       // SEPARATE stream for enemy-fire rolls (6-5), so fire decisions
                                      // never desync the movement RNG (mirrors the ROM's pokey1_rand)
@@ -151,6 +152,7 @@ export function initialState(seed: number): GameState {
     highScoreTable: [],
     events: [],
     prevFire: false,
+    demoActive: false, // the attract screen boots as a static title; the demo seeds on first idle step
     rng: makeRng(seed),
     // Derive a distinct seed so the fire stream is decorrelated from movement.
     fireRng: makeRng(seed ^ 0x9e3779b9),
