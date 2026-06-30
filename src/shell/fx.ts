@@ -69,6 +69,14 @@ export interface Fx {
   readonly shake: number
   readonly flash: number
   readonly flashColor: string
+  /**
+   * The Superzapper well-color flash index (Story 10-15): `0..7` on a frame the
+   * core emitted a `superzapper-flash` (one per ACTIVE zap frame, the ROM's
+   * QFRAME-AND-7 well colour), or `null` when no zap is flashing this frame. The
+   * renderer maps the index to a palette hue and tints the whole well/web with
+   * it, reverting to the level colour the frame this goes back to `null`.
+   */
+  readonly zapFlash: number | null
 }
 
 const ENEMY_SPOKES = 16
@@ -89,6 +97,7 @@ export function createFx(): Fx {
   let shake = 0
   let flash = 0
   let flashColor = '#fff'
+  let zapFlash: number | null = null
   let prevBullets: { lane: number; depth: number }[] = []
   let prevAlive = true
 
@@ -163,12 +172,24 @@ export function createFx(): Fx {
     // at the crash lane (paired with kaboom.wav in main.ts) so a spike crash
     // reads differently from a normal grab/pulse death. Event-driven because the
     // state diff alone can't tell the two deaths apart.
+    //
+    // Superzapper well-color flash (Story 10-15): re-derived every frame. The
+    // core emits one `superzapper-flash` per ACTIVE zap frame; with none this
+    // frame the well reverts to its level colour, so clear first and (re)set it
+    // below only while the zap is flashing.
+    zapFlash = null
     for (const e of events) {
       // Enemy destroyed (bullet OR superzapper) → the authentic 16-spoke star
       // burst at the kill site. Event-driven so it fires for superzapper kills
       // too, not just bullet vanishes.
       if (e.type === 'enemy-death') {
         spawnEnemyBurst(project(tube, e.lane, e.depth))
+      }
+
+      // Superzapper active this frame → surface the well-color index (masked to
+      // the ROM's 0..7 range) for the renderer to tint the well/web with.
+      if (e.type === 'superzapper-flash') {
+        zapFlash = e.color & 7
       }
 
       if (e.type === 'warp-spike-crash') {
@@ -241,6 +262,9 @@ export function createFx(): Fx {
     },
     get flashColor(): string {
       return flashColor
+    },
+    get zapFlash(): number | null {
+      return zapFlash
     },
   }
 }

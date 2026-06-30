@@ -957,7 +957,16 @@ export function render(
   // canvas. Static geometry stays sharp; fast movers trail. The screen shake is
   // applied by composite() to the whole accumulated image.
   const pctx = phosphor.beginScene(W, H, dpr)
-  drawTube(pctx, s, color, currentLane(s.tube, s.player.lane))
+  // Superzapper well-color flash (Story 10-15): while a zap is active the FX
+  // layer surfaces the core's `superzapper-flash` index (QFRAME AND 7) as
+  // `fx.zapFlash`; tint the whole well/web with that palette hue so it strobes
+  // through the spectrum, then revert to the level colour the frame the flashes
+  // stop. The renderer owns the index→hue mapping (events.ts: "the renderer maps
+  // it to the palette"); LEVEL_COLORS' eight hues double as the well-color ramp.
+  const wellColor = fx.zapFlash != null
+    ? LEVEL_COLORS[fx.zapFlash % LEVEL_COLORS.length]
+    : color
+  drawTube(pctx, s, wellColor, currentLane(s.tube, s.player.lane))
   drawSpikes(pctx, s)
   if (s.mode === 'warp') {
     // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
