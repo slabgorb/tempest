@@ -253,17 +253,22 @@ describe('clawTransform.roll — authentic per-lane re-roll (AC-8)', () => {
     }
   })
 
-  it('VISIBLY re-rolls around the tube — not one shape spun (≥4 distinct graphics per revolution)', () => {
+  it('VISIBLY re-rolls as the claw MOVES — 8 shapes as it crosses a segment (draw_player)', () => {
+    // Authentic ROM (tempest.a65 `draw_player`): graphic = ((player_position>>1)&7)+1.
+    // player_position's TOP nibble is the segment, so `&7` cancels it and the roll
+    // depends ONLY on the sub-segment "fine" position — the claw tumbles through
+    // all 8 shapes as it crosses ONE segment, NOT once per integer lane. So sweep
+    // the real motion axis (continuous sub-lane), where s.player.lane actually lives.
     const tube = tubeForLevel(1) // closed, 16 lanes
     const rolls = new Set<number>()
-    for (let lane = 0; lane < tube.laneCount; lane++) rolls.add(clawTransform(tube, lane).roll)
+    for (let lane = 0; lane < tube.laneCount; lane += 1 / 16) rolls.add(clawTransform(tube, lane).roll)
     expect(rolls.size).toBeGreaterThanOrEqual(4)
   })
 
-  it('drives playerClawGlyph to DISTINCT authentic shapes around the tube (end-to-end re-roll)', () => {
+  it('drives playerClawGlyph to DISTINCT authentic shapes as it moves (end-to-end re-roll)', () => {
     const tube = tubeForLevel(1)
     const shapes = new Set<string>()
-    for (let lane = 0; lane < tube.laneCount; lane++) {
+    for (let lane = 0; lane < tube.laneCount; lane += 1 / 16) {
       const { roll } = clawTransform(tube, lane)
       shapes.add(JSON.stringify(playerClawGlyph(roll)))
     }

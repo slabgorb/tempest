@@ -169,8 +169,8 @@ function pulsarCell(): ModelCell {
 }
 
 // Player Claw — sweeps continuously across the near rim and back. The continuous
-// lane lets render.ts's gait bookkeeping (clawPrevLane → walk speed) read the
-// motion, so the stepping gait + body rock animate.
+// lane feeds clawTransform: the rim anchor tracks the sweep and the authentic
+// ROM CURSOR (NCRS1–8) re-rolls through its 8 shapes as it crosses each segment.
 function playerCell(): ModelCell {
   const s = baseState()
   s.enemies = []
@@ -179,7 +179,7 @@ function playerCell(): ModelCell {
     clock += dt
     s.player.lane = (0.5 + 0.5 * Math.sin(clock * 1.1)) * (LANES - 1) // sweep 0 → 2 → 0
   }
-  return { name: 'CLAW', descriptor: 'walks the rim', color: COLOR.claw, state: s, step }
+  return { name: 'CLAW', descriptor: 'rolls the rim', color: COLOR.claw, state: s, step }
 }
 
 const cells: ModelCell[] = [

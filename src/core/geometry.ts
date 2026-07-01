@@ -222,3 +222,70 @@ export function tubeForLevel(level: number): Tube {
   const n = GEOMETRIES.length
   return GEOMETRIES[(((level - 1) % n) + n) % n]
 }
+
+// --- Story 12-1: rim-anchored ROM CURSOR (claw) transform --------------------
+//
+// The player CURSOR is a FIXED-SIZE screen-space object pinned to the near rim —
+// NEVER built from interior tube depths. The old claw anchored its body at
+// interior depths 0.74/0.90; under story 10-12's perspective divide those
+// collapsed toward the vanishing point and stretched the claw ~2.5x. Anchoring
+// to the rim (depth 1.0) restores ROM fidelity and structurally immunises the
+// claw against future projection reworks. This pure transform hands render.ts
+// everything it needs to place the authentic NCRS glyph.
+export interface ClawTransform {
+  readonly anchor: Point   // rim lane-centre at the CONTINUOUS lane (smooth spinner)
+  readonly scale: number   // fixed screen footprint ∝ rim lane-width
+  readonly rotation: number// the lane's radial angle, so the claw lies along it
+  readonly roll: number    // authentic per-sub-lane graphic index 0..7 → NCRS(roll+1)
+}
+
+// The NCRS claw glyphs span ~8 ROM units; on-screen the claw hugs the rim at
+// ~18% of a rim lane-width (the compact ROM cursor, not a lane-filling body).
+const CLAW_GLYPH_UNITS = 8
+const CLAW_FOOTPRINT_FRACTION = 0.18
+
+// Wrap a continuous lane into the tube's valid range: closed tubes wrap modulo
+// laneCount; open sheets clamp to [0, laneCount-1] (mirrors wrapLane, but keeps
+// the fractional part so motion stays smooth).
+function clawLane(tube: Tube, lane: number): number {
+  if (tube.closed) return ((lane % tube.laneCount) + tube.laneCount) % tube.laneCount
+  return Math.max(0, Math.min(tube.laneCount - 1, lane))
+}
+
+// Interpolate a per-lane rim/far centre for a CONTINUOUS lane by lerping between
+// the two bracketing integer lane centres (`center` picks near vs far).
+function laneCenterLerp(
+  tube: Tube, lane: number, center: (t: Tube, l: number) => Point,
+): Point {
+  const base = Math.floor(lane)
+  const frac = lane - base
+  const a = center(tube, base)
+  const b = center(tube, base + 1)
+  return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac }
+}
+
+// Compute the claw's rim anchor, fixed size, lane-radial rotation, and authentic
+// per-sub-lane graphic roll. Pure — screen-space Points only, no canvas/DOM.
+export function clawTransform(tube: Tube, lane: number): ClawTransform {
+  const L = clawLane(tube, lane)
+  // anchor: the rim (near) lane-centre; project(...,1.0) == near, so this never
+  // depends on the far ring / perspective divide — only the rim moves the claw.
+  const anchor = laneCenterLerp(tube, L, laneCenterNear)
+  // rotation: the lane's far->near screen direction, so the claw sits along its
+  // lane pointing inward. This uses the far ring (the lane's orientation legit-
+  // imately follows the geometry) but never the claw's position or size.
+  const far = laneCenterLerp(tube, L, laneCenterFar)
+  const rotation = Math.atan2(anchor.y - far.y, anchor.x - far.x) + Math.PI / 2
+  // scale: a fixed fraction of the RIM lane-width (depth 1.0) — proportional
+  // across all 16 geometries, independent of any interior-depth projection.
+  const width = laneWidth(tube, Math.floor(L), 1.0)
+  const scale = (width * CLAW_FOOTPRINT_FRACTION) / CLAW_GLYPH_UNITS
+  // roll: authentic re-roll (tempest.a65 draw_player):
+  //   graphic = ((player_position >> 1) & 7) + 1
+  // player_position's top nibble is the segment, so `& 7` cancels it and the
+  // roll depends only on the low nibble (the sub-segment "fine" position). Our
+  // player.lane is continuous, so `fine` is the fractional lane over 0..15.
+  const fine = Math.min(15, Math.floor((L - Math.floor(L)) * 16))
+  const roll = (fine >> 1) & 7
+  return { anchor, scale, rotation, roll }
+}
