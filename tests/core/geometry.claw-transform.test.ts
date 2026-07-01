@@ -29,6 +29,7 @@ import {
   makeCircleTube,
   tubeForLevel,
   laneCenterNear,
+  laneCenterFar,
   laneWidth,
   project,
   clawTransform,
@@ -130,44 +131,47 @@ describe('clawTransform — immune to the perspective divide (AC-2 regression gu
     }
   })
 
-  it('keeps a SMALL, rim-proportional footprint (~18% of a rim lane-width), not a vanishing-point stretch', () => {
-    // The bug rendered the claw at ~153px inside a ~117px lane (ratio ~1.3). The
-    // authentic claw hugs the rim at ~18% of the lane width. Assert the rendered
-    // footprint of the SELECTED graphic is a small fraction of the rim lane-width.
+  it('STRETCHES its lane (large rim footprint) — still rim-anchored, NOT a vanishing-point stretch', () => {
+    // The old bug stretched the claw ~153px DEEP into a ~117px lane (radial-depth
+    // ratio ~1.3). The fix is rim-anchored (this whole block proves depth-immunity),
+    // and per the boss's direction the cursor STRETCHES its lane width — a
+    // substantial rim object, not the earlier ~13px speck. Assert the selected
+    // graphic spans a large fraction of the rim lane-width without overflowing it.
     const tube = tubeForLevel(1)
     for (const lane of [0, 4, 8, 12]) {
       const w = laneWidth(tube, lane, 1.0)
       const { scale, roll } = clawTransform(tube, lane)
       const ratio = renderedFootprint(roll, scale) / w
-      expect(ratio).toBeGreaterThan(0.08) // not degenerate/invisible
-      expect(ratio).toBeLessThan(0.4) // nowhere near the ~1.3 stretch bug
+      expect(ratio).toBeGreaterThan(0.4) // a substantial cursor, not a speck
+      expect(ratio).toBeLessThan(1.05) // does not overflow past the lane edges
     }
   })
 
-  it('renders ~20px on level 1 (the authentic near-rim footprint), never the ~153px stretch', () => {
+  it('renders a lane-filling cursor on level 1 (stretches the rim lane, not a ~13px speck)', () => {
     const tube = tubeForLevel(1)
+    const w = laneWidth(tube, 0, 1.0)
     const { scale, roll } = clawTransform(tube, 0)
     const px = renderedFootprint(roll, scale)
-    expect(px).toBeGreaterThan(10)
-    expect(px).toBeLessThan(42) // rejects both the ~62px (pre-10-12) and ~153px (bug)
+    expect(px).toBeGreaterThan(0.4 * w) // fills a big part of the lane
+    expect(px).toBeLessThan(1.05 * w) // but stays within the lane width
   })
 
-  it('NO graphic in the 8-shape table stretches: every roll stays small at a given lane', () => {
+  it('every one of the 8 graphics stretches its lane WITHOUT overflowing past it', () => {
     const tube = tubeForLevel(1)
     const { scale } = clawTransform(tube, 0)
     const w = laneWidth(tube, 0, 1.0)
     for (let roll = 0; roll < 8; roll++) {
       const ratio = renderedFootprint(roll, scale) / w
-      expect(ratio).toBeGreaterThan(0.05)
-      expect(ratio).toBeLessThan(0.45)
+      expect(ratio).toBeGreaterThan(0.4) // substantial on every roll
+      expect(ratio).toBeLessThan(1.05) // never the old vanishing-point stretch, never overflow
     }
   })
 })
 
 // ===========================================================================
-// Continuous, proportional across all 16 geometries (AC-4)
+// Steps between lanes (the walk), proportional across all 16 geometries (AC-4)
 // ===========================================================================
-describe('clawTransform — follows the continuous lane & scales proportionally (AC-4)', () => {
+describe('clawTransform — STEPS between lanes (walk) & scales proportionally (AC-4)', () => {
   it('produces a finite anchor and positive finite scale for every one of the 16 geometries', () => {
     for (let lvl = 1; lvl <= 16; lvl++) {
       const tube = tubeForLevel(lvl)
@@ -200,40 +204,42 @@ describe('clawTransform — follows the continuous lane & scales proportionally 
     }
   })
 
-  it('interpolates a FRACTIONAL lane between the two bracketing rim centres (smooth spinner tracking)', () => {
+  it('SNAPS the claw to a discrete lane centre — it WALKS, it does not slide', () => {
     const tube = tubeForLevel(1)
-    const c3 = laneCenterNear(tube, 3)
-    const c4 = laneCenterNear(tube, 4)
-    const mid = clawTransform(tube, 3.5).anchor
-    const eps = 1e-6
-    // the interpolated anchor lies within the bounding box of the two centres
-    expect(mid.x).toBeGreaterThanOrEqual(Math.min(c3.x, c4.x) - eps)
-    expect(mid.x).toBeLessThanOrEqual(Math.max(c3.x, c4.x) + eps)
-    expect(mid.y).toBeGreaterThanOrEqual(Math.min(c3.y, c4.y) - eps)
-    expect(mid.y).toBeLessThanOrEqual(Math.max(c3.y, c4.y) + eps)
-    // and it is NOT pinned to either integer centre (it genuinely tracks the float)
-    expect(dist(mid, c3)).toBeGreaterThan(1e-3)
-    expect(dist(mid, c4)).toBeGreaterThan(1e-3)
+    // a fractional lane rounds to its nearest segment; the anchor IS that
+    // segment's rim centre exactly — never a point interpolated between two lanes.
+    expect(dist(clawTransform(tube, 3.3).anchor, laneCenterNear(tube, 3))).toBeLessThan(1e-9)
+    expect(dist(clawTransform(tube, 3.7).anchor, laneCenterNear(tube, 4))).toBeLessThan(1e-9)
+    // just across the half-lane it has STEPPED to the next segment — a discrete
+    // jump of ~half a lane, NOT a tiny slide.
+    const before = clawTransform(tube, 3.49).anchor
+    const after = clawTransform(tube, 3.51).anchor
+    expect(dist(before, after)).toBeGreaterThan(1e-6)
+    expect(dist(after, laneCenterNear(tube, 4))).toBeLessThan(1e-9)
   })
 
-  it('sweeps smoothly with no half-lane SNAP — the old round-to-lane jump is gone', () => {
-    // The old claw used currentLane() (Math.round) so its anchor jumped ~half a
-    // lane at every x.5 crossing. A continuous transform moves in tiny steps.
-    const tube = tubeForLevel(1)
-    const meanLaneW =
-      Array.from({ length: tube.laneCount }, (_, l) => laneWidth(tube, l, 1.0)).reduce(
-        (a, w) => a + w,
-        0,
-      ) / tube.laneCount
-    let prev = clawTransform(tube, 0).anchor
-    let maxJump = 0
-    for (let lane = 0.05; lane <= tube.laneCount; lane += 0.05) {
-      const cur = clawTransform(tube, lane).anchor
-      maxJump = Math.max(maxJump, dist(prev, cur))
-      prev = cur
+  it('takes exactly one discrete stop per lane over a revolution (the walk steps, never slides)', () => {
+    const tube = tubeForLevel(1) // 16 lanes
+    const key = (p: Point): string => `${Math.round(p.x * 1e3)},${Math.round(p.y * 1e3)}`
+    const stops = new Set<string>()
+    for (let lane = 0; lane < tube.laneCount; lane += 1 / 32) {
+      stops.add(key(clawTransform(tube, lane).anchor))
     }
-    // no adjacent 0.05-lane step moves the anchor by as much as half a lane-width
-    expect(maxJump).toBeLessThan(0.5 * meanLaneW)
+    // the anchor only ever sits on one of the 16 lane centres — no in-between slide
+    expect(stops.size).toBe(tube.laneCount)
+    for (let seg = 0; seg < tube.laneCount; seg++) {
+      expect(stops.has(key(laneCenterNear(tube, seg)))).toBe(true)
+    }
+  })
+
+  it('holds scale CONSTANT within a segment and steps it at boundaries (walk, not a smooth ramp)', () => {
+    const tube = tubeForLevel(6) // non-uniform lane widths — the sharpest test
+    // within one segment (round stays constant) the scale does not change
+    expect(Math.abs(clawTransform(tube, 4.1).scale - clawTransform(tube, 4.3).scale)).toBeLessThan(
+      1e-9,
+    )
+    // stepping to the next segment, the scale steps to that lane's own width
+    expect(clawTransform(tube, 4.6).scale).toBeCloseTo(clawTransform(tube, 5.0).scale, 9)
   })
 })
 
@@ -255,35 +261,39 @@ describe('clawTransform.roll — authentic per-lane re-roll (AC-8)', () => {
 
   it('VISIBLY re-rolls as the claw MOVES — 8 shapes as it crosses a segment (draw_player)', () => {
     // Authentic ROM (tempest.a65 `draw_player`): graphic = ((player_position>>1)&7)+1.
-    // player_position's TOP nibble is the segment, so `&7` cancels it and the roll
-    // depends ONLY on the sub-segment "fine" position — the claw tumbles through
+    // The roll depends on the fine sub-segment position, so the claw tumbles through
     // all 8 shapes as it crosses ONE segment, NOT once per integer lane. So sweep
     // the real motion axis (continuous sub-lane), where s.player.lane actually lives.
     const tube = tubeForLevel(1) // closed, 16 lanes
     const rolls = new Set<number>()
     for (let lane = 0; lane < tube.laneCount; lane += 1 / 16) rolls.add(clawTransform(tube, lane).roll)
-    expect(rolls.size).toBeGreaterThanOrEqual(4)
+    // the ROM cycles ALL 8 graphics as the claw crosses each segment — assert the
+    // exact 8, so a wrong divisor (fewer poses) or off-by-one is caught.
+    expect(rolls.size).toBe(8)
   })
 
-  it('drives playerClawGlyph to DISTINCT authentic shapes as it moves (end-to-end re-roll)', () => {
+  it('drives playerClawGlyph to all 8 DISTINCT authentic shapes as it moves (end-to-end re-roll)', () => {
     const tube = tubeForLevel(1)
     const shapes = new Set<string>()
     for (let lane = 0; lane < tube.laneCount; lane += 1 / 16) {
       const { roll } = clawTransform(tube, lane)
       shapes.add(JSON.stringify(playerClawGlyph(roll)))
     }
-    // the claw shows several genuinely different silhouettes, not a single sprite
-    expect(shapes.size).toBeGreaterThanOrEqual(4)
+    // all 8 genuinely different silhouettes appear as it moves, not a single sprite
+    expect(shapes.size).toBe(8)
   })
 
-  it('WRAPS on a closed tube: lane L and lane L+laneCount select the same roll & anchor', () => {
+  it('WRAPS on a closed tube: lane L and lane L±laneCount select the same roll & anchor', () => {
     const tube = tubeForLevel(1)
     expect(tube.closed).toBe(true)
-    for (const lane of [0, 5, 11]) {
+    for (const lane of [0, 5, 11, 3.5]) {
       const a = clawTransform(tube, lane)
-      const b = clawTransform(tube, lane + tube.laneCount)
-      expect(b.roll).toBe(a.roll)
-      expect(dist(a.anchor, b.anchor)).toBeLessThan(1e-6)
+      const up = clawTransform(tube, lane + tube.laneCount)
+      const down = clawTransform(tube, lane - tube.laneCount) // negative wrap too
+      expect(up.roll).toBe(a.roll)
+      expect(down.roll).toBe(a.roll)
+      expect(dist(a.anchor, up.anchor)).toBeLessThan(1e-6)
+      expect(dist(a.anchor, down.anchor)).toBeLessThan(1e-6)
     }
   })
 
@@ -299,6 +309,80 @@ describe('clawTransform.roll — authentic per-lane re-roll (AC-8)', () => {
     expect(
       dist(clawTransform(tube, last + 5).anchor, clawTransform(tube, last).anchor),
     ).toBeLessThan(1e-6)
+  })
+})
+
+// ===========================================================================
+// The walk is SYNCED to the step & leans into its travel (round-3 boss note)
+// ===========================================================================
+describe('clawTransform.roll — the walk leans into its travel & wraps AS it steps', () => {
+  it('runs the roll continuously THROUGH the segment centre (integer lane) — no mid-stride reset', () => {
+    // The old mapping reset the roll at INTEGER lanes, half a segment out of phase
+    // with the anchor step (which snaps at the HALF-lane, `round`). That made the
+    // lean snap back to centre mid-stride — a detached "loop", not a walk. The roll
+    // must be continuous across the lane centre the claw is standing on.
+    const tube = tubeForLevel(1)
+    for (const seg of [1, 4, 9]) {
+      const before = clawTransform(tube, seg - 1e-3).roll
+      const after = clawTransform(tube, seg + 1e-3).roll
+      expect(Math.abs(after - before)).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('wraps the roll EXACTLY where the anchor steps (half-lane): stride completes as the foot plants', () => {
+    const tube = tubeForLevel(1)
+    const before = clawTransform(tube, 4.5 - 1e-3)
+    const after = clawTransform(tube, 4.5 + 1e-3)
+    // the anchor steps to the next segment here...
+    expect(dist(after.anchor, before.anchor)).toBeGreaterThan(1e-6)
+    expect(dist(before.anchor, laneCenterNear(tube, 4))).toBeLessThan(1e-9)
+    expect(dist(after.anchor, laneCenterNear(tube, 5))).toBeLessThan(1e-9)
+    // ...and the roll wraps at the SAME point: full lean (7 — the ROM bridge frame,
+    // graphic 8) just before, reset (0) just after. One stride per step.
+    expect(before.roll).toBe(7)
+    expect(after.roll).toBe(0)
+  })
+
+  it('sweeps the roll monotonically 0→7 across one step, so the lean tracks direction of travel', () => {
+    // One whole step is [seg-0.5, seg+0.5); sweeping it the roll only CLIMBS, so
+    // the apex leans further into the direction of travel the more the spinner
+    // turns. Turning the other way replays this in reverse (the apex leans back).
+    const tube = tubeForLevel(1)
+    let prev = -1
+    for (let lane = 3.5; lane < 4.5 - 1e-6; lane += 1 / 64) {
+      const roll = clawTransform(tube, lane).roll
+      expect(roll).toBeGreaterThanOrEqual(prev)
+      prev = roll
+    }
+    expect(clawTransform(tube, 3.5).roll).toBe(0) // enters the step at 0...
+    expect(clawTransform(tube, 4.5 - 1e-3).roll).toBe(7) // ...leaves at full lean
+  })
+})
+
+// ===========================================================================
+// Rotation follows the lane's radial direction (AC-1 orientation)
+// ===========================================================================
+describe('clawTransform.rotation — the claw lies along its lane radial (AC-1)', () => {
+  const norm = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a))
+
+  it('equals atan2(rim − far-centre) + π/2 for each lane (the lane-radial convention)', () => {
+    // At an integer lane the interpolated far-centre is simply laneCenterFar(lane)
+    // and the anchor is laneCenterNear(lane), so the convention is exactly derivable
+    // and pinned here — a wrong sign, dropped +π/2, or wrong ring would fail.
+    const tube = tubeForLevel(1)
+    for (const lane of [0, 1, 4, 7, 12, 15]) {
+      const { anchor, rotation } = clawTransform(tube, lane)
+      const far = laneCenterFar(tube, lane)
+      const expected = Math.atan2(anchor.y - far.y, anchor.x - far.x) + Math.PI / 2
+      expect(norm(rotation - expected)).toBeCloseTo(0, 9)
+    }
+  })
+
+  it('changes as the claw moves around the tube (orientation tracks the lane, not fixed)', () => {
+    const tube = tubeForLevel(1)
+    const rots = [0, 4, 8, 12].map((l) => norm(clawTransform(tube, l).rotation))
+    const distinct = new Set(rots.map((r) => Math.round(r * 1e6)))
+    expect(distinct.size).toBeGreaterThan(1)
   })
 })
 

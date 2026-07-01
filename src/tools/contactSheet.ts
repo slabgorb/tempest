@@ -168,18 +168,31 @@ function pulsarCell(): ModelCell {
   return { name: 'PULSAR', descriptor: 'strobes its lane', color: COLOR.pulsar, state: s, step }
 }
 
-// Player Claw — sweeps continuously across the near rim and back. The continuous
-// lane feeds clawTransform: the rim anchor tracks the sweep and the authentic
-// ROM CURSOR (NCRS1–8) re-rolls through its 8 shapes as it crosses each segment.
+// Player Claw — WALKS the rim: strides one lane, then HOLDS at the lane centre
+// (the pose freezes — proving the roll is driven by MOVEMENT, not a free loop),
+// then strides again, bouncing across the board so the lean is shown BOTH ways.
+// The continuous lane feeds clawTransform, whose authentic ROM roll leans the
+// cursor into its direction of travel and wraps exactly as it steps.
 function playerCell(): ModelCell {
   const s = baseState()
   s.enemies = []
+  const HOLD = 0.5 // s parked at a lane centre → the pose holds (static, not a loop)
+  const STRIDE = 0.6 // s to walk one lane → the 8 poses roll once, leaning in
   let clock = 0
+  let from = 0
+  let dir = 1
   const step = (dt: number) => {
     clock += dt
-    s.player.lane = (0.5 + 0.5 * Math.sin(clock * 1.1)) * (LANES - 1) // sweep 0 → 2 → 0
+    while (clock >= HOLD + STRIDE) {
+      clock -= HOLD + STRIDE
+      from += dir
+      if (from >= LANES - 1) dir = -1
+      else if (from <= 0) dir = 1
+    }
+    const t = clock > HOLD ? (clock - HOLD) / STRIDE : 0 // hold at `from`, then stride
+    s.player.lane = from + dir * t
   }
-  return { name: 'CLAW', descriptor: 'rolls the rim', color: COLOR.claw, state: s, step }
+  return { name: 'CLAW', descriptor: 'walks the rim', color: COLOR.claw, state: s, step }
 }
 
 const cells: ModelCell[] = [
