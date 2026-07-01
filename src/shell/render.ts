@@ -1,7 +1,7 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
 import { HighScoreTable } from '../core/highscore'
-import { Tube, Point, currentLane, project, laneWidth, flipPivot } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform } from '../core/geometry'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
@@ -9,7 +9,7 @@ import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
-  playerBulletColor,
+  playerBulletColor, playerClawGlyph,
   type Glyph, type GlyphColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './vecfont'
@@ -121,8 +121,6 @@ export function advanceRenderClock(dt: number): void {
 // Persistence buffer for the vector scene (shell-only afterglow). Lazily builds
 // its offscreen canvases on first beginScene/composite/clear.
 const phosphor = createPhosphor()
-let clawPrevLane: number | null = null
-let walkPhase = 0
 
 // Warp-dive starfield (Story 10-4): the lifecycle lives in the pure ./starfield
 // model; render strokes its live planes as blue dots rushing out from centre.
@@ -175,11 +173,6 @@ function bIndex(tube: Tube, i: number): number {
 
 function lerpP(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
-}
-
-function radialUnit(p: Point): Point {
-  const d = Math.hypot(p.x, p.y) || 1
-  return { x: p.x / d, y: p.y / d }
 }
 
 function strokePoly(
@@ -400,67 +393,20 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
 
 export function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState): void {
   if (!s.player.alive) return
-  const tube = s.tube
-  const cont = s.player.lane
-
-  // Walk cadence: a constant idle shuffle, faster the quicker you spin.
-  let dl = 0
-  if (clawPrevLane !== null) {
-    const n = tube.laneCount
-    dl = ((((cont - clawPrevLane + n / 2) % n) + n) % n) - n / 2
-  }
-  clawPrevLane = cont
-  const speed = Math.min(0.5, Math.abs(dl))
-  walkPhase += Math.min(0.5, 0.16 + speed * 1.2)
-
-  const lane = currentLane(tube, cont)
-  const a = tube.near[bIndex(tube, lane)]
-  const b = tube.near[bIndex(tube, lane + 1)]
-
-  // Legs lift in alternation → a stepping gait; body rocks toward the planted foot.
-  const liftL = Math.max(0, Math.sin(walkPhase))
-  const liftR = Math.max(0, Math.sin(walkPhase + Math.PI))
-  const apex = project(tube, lane, 0.74 + Math.sin(walkPhase) * 0.05)
-  const apexIn = project(tube, lane, 0.9)
-
-  const ua = radialUnit(a)
-  const ub = radialUnit(b)
-  const footA = { x: a.x + ua.x * liftL * 10, y: a.y + ua.y * liftL * 10 }
-  const footB = { x: b.x + ub.x * liftR * 10, y: b.y + ub.y * liftR * 10 }
-
-  const kneeAbase = lerpP(a, apex, 0.5)
-  const kneeBbase = lerpP(b, apex, 0.5)
-  const uka = radialUnit(kneeAbase)
-  const ukb = radialUnit(kneeBbase)
-  const kneeA = { x: kneeAbase.x + uka.x * (4 + liftL * 16), y: kneeAbase.y + uka.y * (4 + liftL * 16) }
-  const kneeB = { x: kneeBbase.x + ukb.x * (4 + liftR * 16), y: kneeBbase.y + ukb.y * (4 + liftR * 16) }
+  // Rim-anchored, fixed-size ROM CURSOR (Story 12-1). The pure transform gives
+  // the near-rim anchor, a lane-width-proportional scale, the lane's radial
+  // rotation, and the authentic per-sub-lane roll — NO interior-depth projection.
+  const { anchor, scale, rotation, roll } = clawTransform(s.tube, s.player.lane)
 
   ctx.globalAlpha = s.mode === 'dying' ? 0 : 1
-  ctx.strokeStyle = CLAW_COLOR
-  ctx.shadowColor = CLAW_COLOR
-  ctx.shadowBlur = 18
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-
-  // Two articulated legs: foot → knee → apex.
-  ctx.lineWidth = 3
-  ctx.beginPath(); ctx.moveTo(footA.x, footA.y); ctx.lineTo(kneeA.x, kneeA.y); ctx.lineTo(apex.x, apex.y); ctx.stroke()
-  ctx.beginPath(); ctx.moveTo(footB.x, footB.y); ctx.lineTo(kneeB.x, kneeB.y); ctx.lineTo(apex.x, apex.y); ctx.stroke()
-  // Cross-brace body between the knees.
-  ctx.lineWidth = 2
-  ctx.beginPath(); ctx.moveTo(kneeA.x, kneeA.y); ctx.lineTo(kneeB.x, kneeB.y); ctx.stroke()
-  // Inner muzzle chevron.
-  const ka = lerpP(kneeA, apexIn, 0.4)
-  const kb = lerpP(kneeB, apexIn, 0.4)
-  ctx.beginPath(); ctx.moveTo(ka.x, ka.y); ctx.lineTo(apexIn.x, apexIn.y); ctx.lineTo(kb.x, kb.y); ctx.stroke()
-  // Toe ticks splaying outward from each foot.
-  ctx.lineWidth = 3
-  ctx.beginPath(); ctx.moveTo(footA.x, footA.y); ctx.lineTo(footA.x + ua.x * 6, footA.y + ua.y * 6); ctx.stroke()
-  ctx.beginPath(); ctx.moveTo(footB.x, footB.y); ctx.lineTo(footB.x + ub.x * 6, footB.y + ub.y * 6); ctx.stroke()
-  // Bright muzzle tip.
+  // The claw glyph is CLAW_COLOR yellow (GLYPH_HEX.yellow); strokeGlyph strokes
+  // and glows it. playerClawGlyph(roll) selects the authentic NCRS shape.
+  strokeGlyph(ctx, playerClawGlyph(roll), anchor.x, anchor.y, scale, rotation, 18)
+  // Bright white muzzle-tip spark at the claw centre.
   ctx.fillStyle = '#fff'
+  ctx.shadowColor = '#fff'
   ctx.shadowBlur = 14
-  ctx.beginPath(); ctx.arc(apexIn.x, apexIn.y, 2.6, 0, Math.PI * 2); ctx.fill()
+  ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 2.6, 0, Math.PI * 2); ctx.fill()
   ctx.globalAlpha = 1
 }
 

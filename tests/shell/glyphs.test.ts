@@ -167,6 +167,21 @@ const PULSAR_SHARPEST_ROM_DELTAS = [
   [2, -3], [1, 6], [1, -6], [1, 6], [1, -6], [2, 3],
 ]
 
+// Player CURSOR shapes (Story 12-1). Book §8 verbatim deltas
+// (docs/tempest-1981-source-findings.md) for the graphics AC-7 names as the test
+// oracle. Each closes (deltas sum to 0,0). NCRS8's listing opens with a
+// 3-component `3,1,0` — read as a beam-off MOVE to (3,1) preceding an 8-vector
+// drawn loop; the drawn silhouette is those 8 vectors, transcribed below.
+const NCRS1_ROM_DELTAS = [
+  [0, -2], [2, -1], [3, 4], [-3, -3], [-1, 0], [0, 2], [2, 1], [-3, -1],
+]
+const NCRS4_ROM_DELTAS = [
+  [3, -2], [5, 2], [-3, 1], [2, -1], [-4, -1], [-2, 1], [2, 1], [-3, -1],
+]
+const NCRS8_ROM_DRAWN_DELTAS = [
+  [3, -4], [2, 1], [0, 2], [-3, 1], [2, -1], [0, -2], [-1, 0], [-3, 3],
+]
+
 // ===========================================================================
 // A. Flipper — RED bowtie/butterfly, 8 closed segments, 2 V-wings + crossing
 // ===========================================================================
@@ -403,26 +418,82 @@ describe('enemyBoltGlyph (Story 6-8: white pinwheel + red cross, 4 frames)', () 
 })
 
 // ===========================================================================
-// G. Player claw — rotatable, 8 graphics, YELLOW
+// G. Player claw — authentic ROM CURSOR shapes NCRS1–8 (Story 12-1)
 // ===========================================================================
-describe('playerClawGlyph (Story 6-8: 8 rotatable graphics, yellow)', () => {
-  it('is yellow', () => {
-    for (const s of playerClawGlyph(0)) expect(s.color).toBe<GlyphColor>('yellow')
+// Story 6-8 shipped a STYLIZED chevron+crossbar stand-in (dead code — drawPlayer
+// never called it). Story 12-1 replaces it with the byte-exact ROM CURSOR: 8
+// shapes NCRS1–NCRS8 (_pv_t3 graphics 1–8), a compact closed vector loop pinned
+// at the rim, re-rolled per lane. Oracle: book §8 samples name NCRS1/4/8 (AC-7).
+// The disassembly (_pv_t3 graphics 1–8) is authoritative for the full table; if
+// it disagrees with these OCR-prone book samples, the disassembly wins and these
+// oracle constants are updated (see the story's Delivery Findings).
+
+// Delta chain of the single-stroke claw glyph, honouring its closed flag so N
+// vertices → N deltas for a closed loop (matches the flipper's fidelity idiom).
+function clawDeltas(g: Glyph): number[][] {
+  const s = g[0]
+  return s.closed ? segDeltasClosed(s.points) : segDeltasOpen(s.points)
+}
+
+describe('playerClawGlyph (Story 12-1: authentic ROM CURSOR NCRS1–8, yellow)', () => {
+  it('is a single closed stroke (one continuous cursor loop)', () => {
+    const g = playerClawGlyph(0)
+    expect(g).toHaveLength(1)
+    expect(g[0].closed).toBe(true)
   })
 
-  it('has 8 distinct rotation graphics', () => {
+  it('is yellow (CLAW_COLOR) on every graphic', () => {
+    for (const roll of [0, 1, 2, 3, 4, 5, 6, 7]) {
+      for (const s of playerClawGlyph(roll)) expect(s.color).toBe<GlyphColor>('yellow')
+    }
+  })
+
+  it('graphic 1 (roll 0) is byte-exact NCRS1 (up to scale, start vertex & winding)', () => {
+    const deltas = clawDeltas(playerClawGlyph(0))
+    expect(deltas).toHaveLength(NCRS1_ROM_DELTAS.length)
+    expect(matchClosedShapeUpToScale(deltas, NCRS1_ROM_DELTAS)).toBe(true)
+  })
+
+  it('graphic 4 (roll 3) is byte-exact NCRS4 (up to scale, start vertex & winding)', () => {
+    const deltas = clawDeltas(playerClawGlyph(3))
+    expect(deltas).toHaveLength(NCRS4_ROM_DELTAS.length)
+    expect(matchClosedShapeUpToScale(deltas, NCRS4_ROM_DELTAS)).toBe(true)
+  })
+
+  it('graphic 8 (roll 7) is byte-exact NCRS8 (its 8-vector drawn loop, up to scale/start/winding)', () => {
+    const deltas = clawDeltas(playerClawGlyph(7))
+    expect(deltas).toHaveLength(NCRS8_ROM_DRAWN_DELTAS.length)
+    expect(matchClosedShapeUpToScale(deltas, NCRS8_ROM_DRAWN_DELTAS)).toBe(true)
+  })
+
+  it('every one of the 8 graphics CLOSES: its deltas sum to (0,0), as the ROM shapes do', () => {
+    for (let roll = 0; roll < 8; roll++) {
+      const deltas = clawDeltas(playerClawGlyph(roll))
+      const sx = deltas.reduce((a, d) => a + d[0], 0)
+      const sy = deltas.reduce((a, d) => a + d[1], 0)
+      expect(Math.abs(sx), `graphic ${roll + 1} x-close`).toBeLessThan(1e-6)
+      expect(Math.abs(sy), `graphic ${roll + 1} y-close`).toBeLessThan(1e-6)
+    }
+  })
+
+  it('is a compact ~8-unit cursor, NOT the old articulated walker', () => {
+    // Guard against a re-emergent sprawling multi-limb shape: the ROM cursor is a
+    // small vector chain, so its glyph-unit bounding box stays small.
+    for (let roll = 0; roll < 8; roll++) {
+      const { w, h } = bbox(allPoints(playerClawGlyph(roll)))
+      expect(Math.max(w, h), `graphic ${roll + 1} has real geometry`).toBeGreaterThan(1)
+      expect(Math.max(w, h), `graphic ${roll + 1} stays compact`).toBeLessThan(20)
+    }
+  })
+
+  it('has 8 distinct authentic graphics (re-rolled shapes, not one silhouette spun)', () => {
     const graphics = [0, 1, 2, 3, 4, 5, 6, 7].map((r) => fingerprint(playerClawGlyph(r)))
     expect(new Set(graphics).size).toBe(8)
   })
 
-  it('wraps the rotation every 8 graphics', () => {
+  it('wraps the roll every 8 graphics', () => {
     expect(fingerprint(playerClawGlyph(8))).toBe(fingerprint(playerClawGlyph(0)))
-  })
-
-  it('is an open claw silhouette (not a filled ring)', () => {
-    const g = playerClawGlyph(0)
-    expect(g.some((s) => !s.closed)).toBe(true)
-    expect(allPoints(g).length).toBeGreaterThanOrEqual(3)
+    expect(fingerprint(playerClawGlyph(-1))).toBe(fingerprint(playerClawGlyph(7)))
   })
 })
 

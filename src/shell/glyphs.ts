@@ -234,19 +234,37 @@ export function enemyBoltGlyph(frame: number): Glyph {
 }
 
 // ==========================================================================
-// G. Player claw — YELLOW chevron + crossbar, 8 rotatable graphics.
+// G. Player claw — authentic ROM CURSOR shapes NCRS1–8 (Story 12-1).
 // ==========================================================================
-function clawBase(): GlyphStroke[] {
-  return [
-    { points: [{ x: -6, y: 6 }, { x: 0, y: -8 }, { x: 6, y: 6 }], closed: false, color: 'yellow' },
-    { points: [{ x: -4, y: 1 }, { x: 4, y: 1 }], closed: false, color: 'yellow' },
-  ]
-}
+// The 8 point-vector claw graphics, transcribed byte-exact from the rev-3 ROM
+// (`tempest.a65` `_pv_t3` "claw position 1".."claw position 8", graphics 1–8).
+// Graphics 1–7 are 8-vector variants of the same claw (the apex shifts across
+// the first two vectors as the cursor rolls); graphic 8 opens with a beam-off
+// MOVE (3,1) then an 8-vector drawn loop — the drawn silhouette is those 8
+// vectors, transcribed here. Every chain closes (deltas sum to 0,0). Stored as
+// raw ROM deltas (origin-relative, no y-flip) exactly like flipperGlyph; the
+// pure render transform (core/geometry `clawTransform`) orients + rolls them.
+const CLAW_DELTAS: readonly (readonly [number, number][])[] = [
+  [[0, -2], [2, -1], [3, 4], [-3, -3], [-1, 0], [0, 2], [2, 1], [-3, -1]], // 1 (NCRS1)
+  [[1, -2], [7, 2], [-3, 1], [2, -1], [-6, -1], [0, 1], [2, 1], [-3, -1]], // 2
+  [[2, -2], [6, 2], [-3, 1], [2, -1], [-5, -1], [-1, 1], [2, 1], [-3, -1]], // 3
+  [[3, -2], [5, 2], [-3, 1], [2, -1], [-4, -1], [-2, 1], [2, 1], [-3, -1]], // 4 (NCRS4)
+  [[5, -2], [3, 2], [-3, 1], [2, -1], [-2, -1], [-4, 1], [2, 1], [-3, -1]], // 5
+  [[6, -2], [2, 2], [-3, 1], [2, -1], [-1, -1], [-5, 1], [2, 1], [-3, -1]], // 6
+  [[7, -2], [1, 2], [-3, 1], [2, -1], [0, -1], [-6, 1], [2, 1], [-3, -1]], // 7
+  [[3, -4], [2, 1], [0, 2], [-3, 1], [2, -1], [0, -2], [-1, 0], [-3, 3]], // 8 (NCRS8, post-MOVE)
+]
 
-export function playerClawGlyph(rotation: number): Glyph {
-  const r = ((rotation % 8) + 8) % 8 // 8 graphics, wraps
-  const a = r * (Math.PI / 4)
-  return clawBase().map((s) => rotStroke(s, a))
+// One centred, closed, yellow stroke per graphic. Each delta chain returns to
+// the origin, so drop the final coincident vertex (8 distinct vertices, drawn
+// as a closed loop — the same idiom as flipperGlyph). Built once, immutable.
+const CLAW_GLYPHS: readonly Glyph[] = CLAW_DELTAS.map((deltas) => {
+  const verts = fromDeltas(deltas).slice(0, deltas.length)
+  return [{ points: center(verts), closed: true, color: 'yellow' as GlyphColor }]
+})
+
+export function playerClawGlyph(roll: number): Glyph {
+  return CLAW_GLYPHS[((roll % 8) + 8) % 8] // 8 authentic graphics, wraps
 }
 
 // ==========================================================================

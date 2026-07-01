@@ -222,3 +222,71 @@ export function tubeForLevel(level: number): Tube {
   const n = GEOMETRIES.length
   return GEOMETRIES[(((level - 1) % n) + n) % n]
 }
+
+// --- Story 12-1: rim-anchored ROM CURSOR (claw) transform --------------------
+//
+// The player CURSOR is a FIXED-SIZE screen-space object pinned to the near rim —
+// NEVER built from interior tube depths. The old claw anchored its body at
+// interior depths 0.74/0.90; under story 10-12's perspective divide those
+// collapsed toward the vanishing point and stretched the claw ~2.5x. Anchoring
+// to the rim (depth 1.0) restores ROM fidelity and structurally immunises the
+// claw against future projection reworks. This pure transform hands render.ts
+// everything it needs to place the authentic NCRS glyph.
+export interface ClawTransform {
+  readonly anchor: Point   // rim lane-centre of the DISCRETE segment (the claw steps, not slides)
+  readonly scale: number   // fixed screen footprint ∝ rim lane-width
+  readonly rotation: number// the lane's radial angle, so the claw lies along it
+  readonly roll: number    // authentic per-sub-lane graphic index 0..7 → NCRS(roll+1)
+}
+
+// The NCRS claw glyphs span ~8 ROM units; on-screen the claw FILLS its rim lane
+// — the widest graphic spans the full lane-width (prongs at the lane edges), so
+// the cursor sits large on the rim like the arcade (still rim-anchored, never
+// stretching into the tube toward the vanishing point — that radial-depth
+// stretch was the original bug).
+const CLAW_GLYPH_UNITS = 8
+const CLAW_FOOTPRINT_FRACTION = 1.0
+
+// Compute the claw's rim anchor, fixed size, lane-radial rotation, and authentic
+// per-sub-lane graphic roll. Pure — screen-space Points only, no canvas/DOM.
+//
+// The claw STEPS between discrete segments and LEANS into its travel as it goes —
+// it does NOT slide continuously. This is the ROM's "walk": `draw_player` draws
+// the cursor at `player_seg` (the whole-segment index), while the fine sub-position
+// rolls the shape through its 8 poses. The roll is synced to the step (see `roll`
+// below), so the apex leans the way the spinner is turning and plants on the next
+// segment as the stride completes — the claw crawls the rim rather than looping a
+// detached animation.
+export function clawTransform(tube: Tube, lane: number): ClawTransform {
+  // discrete segment the claw stands on (round + wrap/clamp) — the STEP.
+  const seg = currentLane(tube, lane)
+  // anchor: this segment's rim (near) lane-centre; project(...,1.0) == near, so it
+  // never depends on the far ring / perspective divide — only the rim.
+  const anchor = laneCenterNear(tube, seg)
+  // rotation: the lane's far->near screen direction, so the claw sits along its
+  // lane. Uses the far ring (orientation follows geometry), never the claw size.
+  const far = laneCenterFar(tube, seg)
+  const rotation = Math.atan2(anchor.y - far.y, anchor.x - far.x) + Math.PI / 2
+  // scale: a fixed fraction of THIS segment's rim lane-width (depth 1.0) — a fixed
+  // footprint per segment, independent of any interior-depth projection.
+  const width = laneWidth(tube, seg, 1.0)
+  const scale = (width * CLAW_FOOTPRINT_FRACTION) / CLAW_GLYPH_UNITS
+  // roll: the WALK animation (tempest.a65 draw_player):
+  //   graphic = ((player_position >> 1) & 7) + 1
+  // The roll IS the lean: the claw's apex slides left→right across graphics 1→7
+  // (see glyphs.ts CLAW_DELTAS), so sweeping the roll leans the cursor. What makes
+  // it read as a WALK and not a detached loop is SYNC — the roll must run in phase
+  // with the step. So we sweep it monotonically across THIS step's window,
+  // [seg-0.5, seg+0.5) (the same half-lane window `seg = round(lane)` holds), and
+  // wrap it exactly where the anchor snaps: `u` is the fractional progress across
+  // the step (0 at the left boundary → 1 at the right), so `roll = floor(u·8)`
+  // climbs 0→7 and resets precisely as the foot plants on the next segment.
+  // Turning the spinner one way sweeps the apex that way and steps as the stride
+  // completes; turning back replays it in reverse — the lean always leads the
+  // foot. (graphic 8 / roll 7 is the ROM's beam-off "bridge" frame, right at the
+  // step.) Because `seg` and `u` share `Math.round`, the two never drift out of
+  // phase the way the old integer-boundary fine position did.
+  const u = (lane - Math.round(lane)) + 0.5 // ∈ [0, 1): progress across this step
+  const roll = Math.min(7, Math.floor(u * 8))
+  return { anchor, scale, rotation, roll }
+}
