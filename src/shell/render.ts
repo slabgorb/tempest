@@ -410,14 +410,50 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState): void {
   ctx.globalAlpha = 1
 }
 
+// Cached additive glow sprites for particles (perf). Each particle USED to be a
+// live `ctx.shadowBlur` fill — a per-particle Gaussian blur, the single most
+// expensive Canvas 2D primitive, run 100+ times a frame during bursts and at
+// device resolution inside the phosphor buffer. That is what made explosions
+// lag. Instead we bake the soft neon dot into an offscreen sprite ONCE per
+// colour and `drawImage` it per particle: a near-free bitmap blit under the same
+// 'lighter' blend. Same look, a fraction of the cost. Purely shell eye candy —
+// no sim impact. The particle palette is a tiny fixed set (spark cyan/gold,
+// spike-crash blue/white), so the cache never grows unbounded. Built lazily so
+// merely importing this module never touches the DOM (mirrors phosphor).
+const GLOW_SPRITE_SIZE = 64 // offscreen sprite resolution; scaled down on draw
+const glowSpriteCache = new Map<string, HTMLCanvasElement>()
+
+function glowSprite(color: string): HTMLCanvasElement {
+  const cached = glowSpriteCache.get(color)
+  if (cached) return cached
+  const s = GLOW_SPRITE_SIZE
+  const r = s / 2
+  const spr = document.createElement('canvas')
+  spr.width = s
+  spr.height = s
+  const g = spr.getContext('2d')!
+  // Radial falloff: an opaque core out to 25% radius, then fading to a fully
+  // transparent edge — a bright centre with a soft halo, the old shadowBlur
+  // look. RGB fading toward the transparent stop only dims the halo, which is
+  // exactly right under additive ('lighter') blending.
+  const grad = g.createRadialGradient(r, r, 0, r, r, r)
+  grad.addColorStop(0, color)
+  grad.addColorStop(0.25, color)
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, s, s)
+  glowSpriteCache.set(color, spr)
+  return spr
+}
+
 function drawParticles(ctx: CanvasRenderingContext2D, fx: Fx): void {
   for (const p of fx.particles) {
     const t = Math.max(0, p.life / p.max)
+    // Blit the cached glow scaled to roughly the old footprint (core 1.4–3.2px +
+    // ~10px shadowBlur ≈ a ~10-unit glow reach), shrinking as the particle fades.
+    const size = 6 + t * 14
     ctx.globalAlpha = t
-    ctx.fillStyle = p.color
-    ctx.shadowColor = p.color
-    ctx.shadowBlur = 10
-    ctx.beginPath(); ctx.arc(p.x, p.y, 1.4 + t * 1.8, 0, Math.PI * 2); ctx.fill()
+    ctx.drawImage(glowSprite(p.color), p.x - size / 2, p.y - size / 2, size, size)
   }
   ctx.globalAlpha = 1
 }
