@@ -14,43 +14,38 @@
 
 import { describe, it, expect } from 'vitest'
 import { levelParams, rollSpawnKind } from '../../src/core/rules'
-import { makeRng } from '../../src/core/rng'
+import { createRng } from '@arcade/shared/rng'
 import type { EnemyKind } from '../../src/core/state'
 
 const ALL_KINDS: EnemyKind[] = ['flipper', 'tanker', 'spiker', 'pulsar', 'fuseball']
 
 // Count how many of `n` seeded rolls land on each kind at a given level.
 function rollDistribution(level: number, seed: number, n: number): Map<EnemyKind, number> {
-  let r = makeRng(seed)
+  const r = createRng(seed) // mutable cursor: rollSpawnKind advances it in place
   const counts = new Map<EnemyKind, number>()
   for (let i = 0; i < n; i++) {
-    const res = rollSpawnKind(level, r)
-    counts.set(res.kind, (counts.get(res.kind) ?? 0) + 1)
-    r = res.rng
+    const kind = rollSpawnKind(level, r)
+    counts.set(kind, (counts.get(kind) ?? 0) + 1)
   }
   return counts
 }
 
 // Fraction of `n` seeded rolls that produce a non-flipper ("hard") enemy.
 function hardFraction(level: number, seed: number, n: number): number {
-  let r = makeRng(seed)
+  const r = createRng(seed)
   let hard = 0
   for (let i = 0; i < n; i++) {
-    const res = rollSpawnKind(level, r)
-    if (res.kind !== 'flipper') hard++
-    r = res.rng
+    if (rollSpawnKind(level, r) !== 'flipper') hard++
   }
   return hard / n
 }
 
 // Ordered list of kinds for a seeded roll sequence (for determinism checks).
 function rollSequence(level: number, seed: number, n: number): EnemyKind[] {
-  let r = makeRng(seed)
+  const r = createRng(seed)
   const kinds: EnemyKind[] = []
   for (let i = 0; i < n; i++) {
-    const res = rollSpawnKind(level, r)
-    kinds.push(res.kind)
-    r = res.rng
+    kinds.push(rollSpawnKind(level, r))
   }
   return kinds
 }

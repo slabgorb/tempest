@@ -1,6 +1,6 @@
 // src/core/enemies/fuseball.ts
 import { Fuseball } from '../state'
-import { Rng, rngNext } from '../rng'
+import { type Rng, nextFloat } from '@arcade/shared/rng'
 import { Tube, wrapLane } from '../geometry'
 import { LevelParams, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB } from '../rules'
 
@@ -21,22 +21,20 @@ function laneStepToward(tube: Tube, from: number, to: number): -1 | 0 | 1 {
 // (`vulnerable`), invulnerable while rolling the rim — so it cycles in and out of
 // a killable window as it rolls. (Lethal on rim CONTACT regardless — that is a
 // grab, resolved in sim.ts.)
+// `rng` is a mutable cursor advanced in place; the caller owns it.
 export function stepFuseball(
   enemy: Fuseball, dt: number, params: LevelParams, tube: Tube, rng: Rng, playerLane: number,
-): { enemy: Fuseball; rng: Rng } {
+): { enemy: Fuseball } {
   const e: Fuseball = { ...enemy }
-  let r = rng
 
   e.depth = Math.min(1, e.depth + params.fuseballSpeed * dt)
 
   e.jitterTimer -= dt
   if (e.jitterTimer <= 0) {
     e.jitterTimer = FUSEBALL_JITTER_INTERVAL
-    const roll = rngNext(r)
-    r = roll.rng
     // fuzz_move gate: only slide on a passing roll; when it slides, it steps
     // toward the player's lane (never away).
-    if (roll.value < FUSEBALL_MOVE_PROB) {
+    if (nextFloat(rng) < FUSEBALL_MOVE_PROB) {
       const dir = laneStepToward(tube, e.lane, playerLane)
       if (dir !== 0) {
         e.lane = wrapLane(tube, e.lane + dir)
@@ -45,5 +43,5 @@ export function stepFuseball(
     }
   }
 
-  return { enemy: e, rng: r }
+  return { enemy: e }
 }

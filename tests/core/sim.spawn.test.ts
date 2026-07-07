@@ -3,7 +3,7 @@ import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { rollSpawnKind, rollTankerCargo } from '../../src/core/rules'
-import { makeRng } from '../../src/core/rng'
+import { createRng } from '@arcade/shared/rng'
 import type { EnemyKind, TankerCargo } from '../../src/core/state'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -15,12 +15,10 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 // weight. Calling rollSpawnKind directly (not via the sim) avoids contamination
 // from tanker-split cargo, which can manufacture pulsar/fuseball children.
 function rolledKinds(level: number, seed: number, n = 4000): Set<EnemyKind> {
-  let r = makeRng(seed)
+  const r = createRng(seed) // mutable cursor: rollSpawnKind advances it in place
   const kinds = new Set<EnemyKind>()
   for (let i = 0; i < n; i++) {
-    const res = rollSpawnKind(level, r)
-    kinds.add(res.kind)
-    r = res.rng
+    kinds.add(rollSpawnKind(level, r))
   }
   return kinds
 }
@@ -29,12 +27,10 @@ function rolledKinds(level: number, seed: number, n = 4000): Set<EnemyKind> {
 // that can appear. Absence is EXACT (weight-0 cargo is skipped by weightedPick),
 // so a missing cargo type is a real gate, not an unlucky sample.
 function rolledCargo(level: number, seed: number, n = 4000): Set<TankerCargo> {
-  let r = makeRng(seed)
+  const r = createRng(seed)
   const cargo = new Set<TankerCargo>()
   for (let i = 0; i < n; i++) {
-    const res = rollTankerCargo(level, r)
-    cargo.add(res.cargo)
-    r = res.rng
+    cargo.add(rollTankerCargo(level, r))
   }
   return cargo
 }

@@ -5,7 +5,7 @@ import { stepGame } from '../../../src/core/sim'
 import { Input } from '../../../src/core/input'
 import { stepFlipper } from '../../../src/core/enemies/flipper'
 import { levelParams } from '../../../src/core/rules'
-import { makeRng } from '../../../src/core/rng'
+import { createRng } from '@arcade/shared/rng'
 import { makeCircleTube } from '../../../src/core/geometry'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -39,7 +39,7 @@ describe('stepFlipper climb', () => {
     const tube = makeCircleTube(16, { x: 0, y: 0 }, 60, 300)
     const params = levelParams(1)
     const enemy = { kind: 'flipper' as const, lane: 3, depth: 0, flipTimer: 999 }
-    const out = stepFlipper(enemy, 1 / 60, params, tube, makeRng(1))
+    const out = stepFlipper(enemy, 1 / 60, params, tube, createRng(1))
     expect(out.enemy.depth).toBeCloseTo(params.flipperSpeed / 60)
   })
 
@@ -47,7 +47,7 @@ describe('stepFlipper climb', () => {
     const tube = makeCircleTube(16, { x: 0, y: 0 }, 60, 300)
     const params = levelParams(1)
     const enemy = { kind: 'flipper' as const, lane: 3, depth: 0.999, flipTimer: 999 }
-    const out = stepFlipper(enemy, 1, params, tube, makeRng(1))
+    const out = stepFlipper(enemy, 1, params, tube, createRng(1))
     expect(out.enemy.depth).toBe(1)
   })
 })
