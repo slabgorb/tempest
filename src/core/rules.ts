@@ -1,6 +1,6 @@
 // src/core/rules.ts
 
-import { Rng, rngNext } from './rng'
+import { type Rng, nextFloat } from '@arcade/shared/rng'
 import type { Enemy, EnemyKind, TankerCargo } from './state'
 
 export const SPIN_SENSITIVITY = 0.15
@@ -212,16 +212,16 @@ export function scoreFor(enemy: Enemy): number {
   }
 }
 
-function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): { value: T; rng: Rng } {
+// `rng` is a mutable cursor advanced in place (one draw per pick).
+function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): T {
   const total = table.reduce((sum, [, w]) => sum + w, 0)
-  const roll = rngNext(rng)
-  let pick = roll.value * total
+  let pick = nextFloat(rng) * total
   for (const [value, w] of table) {
     if (w <= 0) continue
     pick -= w
-    if (pick < 0) return { value, rng: roll.rng }
+    if (pick < 0) return value
   }
-  return { value: table[0][0], rng: roll.rng }
+  return table[0][0]
 }
 
 // Each full pass through the 16 geometries (a "cycle") ramps the hard-enemy
@@ -241,7 +241,7 @@ export const SPAWN_CYCLE_HARD_SCALE = 0.5
 // doc-flagged suspected `$35` table bug. See story 6-13 delivery findings.)
 // The per-cycle `hard` ramp below is a separate difficulty axis (story 3-4), not
 // part of the ROM schedule; it is intentionally retained.
-export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: Rng } {
+export function rollSpawnKind(level: number, rng: Rng): EnemyKind {
   // cycle 0 for levels 1–16, 1 for 17–32, … (tubeForLevel wraps with period 16).
   const cycle = Math.floor((level - 1) / 16)
   const hard = 1 + cycle * SPAWN_CYCLE_HARD_SCALE
@@ -252,8 +252,7 @@ export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: 
     ['pulsar', level >= 17 ? 3 * hard : 0],
     ['fuseball', level >= 11 ? 3 * hard : 0],
   ]
-  const res = weightedPick(table, rng)
-  return { kind: res.value, rng: res.rng }
+  return weightedPick(table, rng)
 }
 
 // Cargo a tanker splits into must respect the same introduction schedule as the
@@ -261,12 +260,11 @@ export function rollSpawnKind(level: number, rng: Rng): { kind: EnemyKind; rng: 
 // yet entered the game. Gates mirror rollSpawnKind above — fuseball cargo L11+,
 // pulsar cargo L17+ — so a split can never manufacture a pulsar/fuseball before
 // it would otherwise appear. Below those levels a tanker carries flippers only.
-export function rollTankerCargo(level: number, rng: Rng): { cargo: TankerCargo; rng: Rng } {
+export function rollTankerCargo(level: number, rng: Rng): TankerCargo {
   const table: ReadonlyArray<readonly [TankerCargo, number]> = [
     ['flipper', 10],
     ['fuseball', level >= 11 ? 4 : 0],
     ['pulsar', level >= 17 ? 4 : 0],
   ]
-  const res = weightedPick(table, rng)
-  return { cargo: res.value, rng: res.rng }
+  return weightedPick(table, rng)
 }

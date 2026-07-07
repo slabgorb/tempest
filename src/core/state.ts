@@ -1,6 +1,6 @@
 // src/core/state.ts
 import { Tube, tubeForLevel } from './geometry'
-import { Rng, makeRng } from './rng'
+import { type Rng, createRng } from '@arcade/shared/rng'
 import { START_LIVES, spawnForLevel } from './rules'
 import type { HighScoreTable } from './highscore'
 import type { GameEvent } from './events'
@@ -153,8 +153,8 @@ export function initialState(seed: number): GameState {
     events: [],
     prevFire: false,
     demoActive: false, // the attract screen boots as a static title; the demo seeds on first idle step
-    rng: makeRng(seed),
+    rng: createRng(seed),
     // Derive a distinct seed so the fire stream is decorrelated from movement.
-    fireRng: makeRng(seed ^ 0x9e3779b9),
+    fireRng: createRng(seed ^ 0x9e3779b9),
   }
 }

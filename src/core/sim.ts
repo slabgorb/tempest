@@ -12,7 +12,7 @@ import {
   enemyCanShoot, enemyFireChance, enemyFireHoldoffFrames,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
-import { rngInt, rngNext } from './rng'
+import { nextInt, nextFloat } from '@arcade/shared/rng'
 import { qualifiesForHighScore, insertHighScore } from './highscore'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
@@ -33,6 +33,11 @@ function cloneState(s: GameState): GameState {
     select: { ...s.select },
     entry: s.entry ? { ...s.entry } : null,
     highScoreTable: s.highScoreTable.slice(),
+    // Fresh RNG cursors: the shared PRNG is MUTABLE (nextFloat advances rng.seed
+    // in place), so the working state must own copies — otherwise a draw this
+    // frame would mutate the caller's input state (breaks stepGame purity/replay).
+    rng: { ...s.rng },
+    fireRng: { ...s.fireRng },
     events: [], // fresh event channel each frame: clears last frame's events and never aliases the input
   }
 }
@@ -117,17 +122,15 @@ function stepEnemies(s: GameState, dt: number): void {
   if (s.spawn.remaining > 0) {
     s.spawn.timer -= dt
     if (s.spawn.timer <= 0) {
-      const kindRoll = rollSpawnKind(s.level, s.rng)
-      s.rng = kindRoll.rng
-      const laneRoll = rngInt(s.rng, s.tube.laneCount)
-      s.rng = laneRoll.rng
+      // Draws advance the shared MUTABLE cursor s.rng in place (same order as
+      // the old immutable threading, so the seeded sequence is unchanged).
+      const kind = rollSpawnKind(s.level, s.rng)
+      const lane = nextInt(s.rng, s.tube.laneCount)
       let cargo: TankerCargo = 'flipper'
-      if (kindRoll.kind === 'tanker') {
-        const cargoRoll = rollTankerCargo(s.level, s.rng)
-        s.rng = cargoRoll.rng
-        cargo = cargoRoll.cargo
+      if (kind === 'tanker') {
+        cargo = rollTankerCargo(s.level, s.rng)
       }
-      s.enemies.push(makeEnemy(kindRoll.kind, laneRoll.value, 0, params, cargo))
+      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))
       s.spawn.remaining -= 1
       s.spawn.timer = params.spawnInterval
     }
@@ -139,7 +142,6 @@ function stepEnemies(s: GameState, dt: number): void {
     switch (e.kind) {
       case 'flipper': {
         const res = stepFlipper(e, dt, params, s.tube, s.rng)
-        s.rng = res.rng
         moved.push(res.enemy)
         break
       }
@@ -164,9 +166,7 @@ function stepEnemies(s: GameState, dt: number): void {
             if (s.spikes[i] > tallest) { tallest = s.spikes[i]; target = i }
           }
           if (target === -1) {
-            const roll = rngInt(s.rng, s.tube.laneCount)
-            s.rng = roll.rng
-            target = roll.value
+            target = nextInt(s.rng, s.tube.laneCount)
           }
           sp.lane = target
         }
@@ -176,13 +176,11 @@ function stepEnemies(s: GameState, dt: number): void {
       }
       case 'pulsar': {
         const res = stepPulsar(e, dt, params, s.tube, s.rng)
-        s.rng = res.rng
         moved.push(res.enemy)
         break
       }
       case 'fuseball': {
         const res = stepFuseball(e, dt, params, s.tube, s.rng, s.player.lane)
-        s.rng = res.rng
         moved.push(res.enemy)
         break
       }
@@ -225,9 +223,7 @@ function stepEnemyFire(s: GameState, dt: number): void {
     if (!enemyCanShoot(e.kind, s.level)) continue
     if (e.depth < ENEMY_FIRE_MIN_DEPTH || e.depth >= ENEMY_FIRE_MAX_DEPTH) continue
     if ((e.fireCooldown ?? 0) > 0) continue
-    const roll = rngNext(s.fireRng)
-    s.fireRng = roll.rng
-    if (roll.value < enemyFireChance(s.enemyBullets.length)) {
+    if (nextFloat(s.fireRng) < enemyFireChance(s.enemyBullets.length)) {
       s.enemyBullets.push({ lane: e.lane, depth: e.depth })
       s.events.push({ type: 'enemy-fire', lane: e.lane, depth: e.depth })
       e.fireCooldown = holdoffSeconds
@@ -686,9 +682,8 @@ export function demoInput(s: GameState): Input {
 // Arm a fresh demo game: a single life on a random level 1..8 (the only RNG draw),
 // reusing the normal game setup but parked in 'attract' so it reads as the title.
 function seedDemo(s: GameState): void {
-  const roll = rngInt(s.rng, DEMO_MAX_LEVEL) // 0..7
-  s.rng = roll.rng
-  startGameAtLevel(s, roll.value + 1)        // 1..8 — resets board/score/lives/spikes
+  const level = nextInt(s.rng, DEMO_MAX_LEVEL) // 0..7
+  startGameAtLevel(s, level + 1)               // 1..8 — resets board/score/lives/spikes
   s.mode = 'attract'                         // the demo lives inside the attract screen
   s.lives = DEMO_LIVES
   s.demoActive = true
