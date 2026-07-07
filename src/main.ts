@@ -6,7 +6,12 @@ import { createFx } from './shell/fx'
 import { createAudioEngine } from './shell/audio'
 import { playEventSounds } from './shell/audio-dispatch'
 import { render } from './shell/render'
-import { loadHighScores, saveHighScores } from './shell/storage'
+import { makeHighScoreStorage, makeHighScoreRowGuard } from '@arcade/shared/highscore'
+
+// tempest records the `level` reached; the shared factory binds load/save to the
+// 'tempest-high-scores' localStorage key and validates each row's finite score +
+// level (the lobby reads the same key + shape — SH-4).
+const highScores = makeHighScoreStorage('tempest', makeHighScoreRowGuard('level'))
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
@@ -45,7 +50,7 @@ window.addEventListener('keydown', unlockAudio)
 // Seed the in-memory high-score table from persisted storage so saved scores
 // appear on the attract screen immediately at boot.
 const initial = initialState((Math.random() * 0xffffffff) >>> 0)
-initial.highScoreTable = loadHighScores()
+initial.highScoreTable = highScores.load()
 
 const loop = createLoop(
   initial,
@@ -71,7 +76,7 @@ const loop = createLoop(
   // `loop` here is safe: this callback only runs at frame time, after `loop` is
   // assigned (createLoop never invokes it synchronously).
   (oldMode) => {
-    if (oldMode === 'highscore') saveHighScores(loop.getState().highScoreTable)
+    if (oldMode === 'highscore') highScores.save(loop.getState().highScoreTable)
   },
 )
 loop.start()

@@ -1,6 +1,6 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
-import { HighScoreTable } from '../core/highscore'
+import type { HighScoreTable } from '@arcade/shared/highscore'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform } from '../core/geometry'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
@@ -615,7 +615,7 @@ function drawGlowText(
 // on cx. Shared by the attract and game-over screens.
 function drawHighScoreTable(
   ctx: CanvasRenderingContext2D,
-  table: HighScoreTable, cx: number, top: number, color: string, maxRows: number,
+  table: HighScoreTable<'level'>, cx: number, top: number, color: string, maxRows: number,
 ): void {
   // Self-contained: set our own text alignment rather than inheriting whatever a
   // prior drawGlowText left behind, and restore on exit so we leak no state.
