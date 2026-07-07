@@ -16,8 +16,8 @@ export const START_LIVES = 3
 // Highest selectable start level. There are 16 distinct tube geometries
 // (tubeForLevel cycles with period 16), so beyond 16 no new geometry exists.
 export const MAX_SELECT_LEVEL = 16
-// Maximum entries retained in the high-score table (arcade convention: top 10).
-export const MAX_HIGH_SCORES = 10
+// Board depth (MAX_HIGH_SCORES) now lives in @arcade/shared/highscore — the
+// single source of truth (SH-4). No per-repo redeclaration.
 export const SCORE_FLIPPER = 150
 export const SCORE_SPIKER = 50
 export const SCORE_TANKER = 100

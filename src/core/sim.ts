@@ -13,7 +13,7 @@ import {
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
 import { nextInt, nextFloat } from '@arcade/shared/rng'
-import { qualifiesForHighScore, insertHighScore } from './highscore'
+import { qualifiesForHighScore, insertHighScore } from '@arcade/shared/highscore'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
 import { stepPulsar } from './enemies/pulsar'
