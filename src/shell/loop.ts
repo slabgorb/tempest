@@ -3,9 +3,9 @@ import { GameState, Mode } from '../core/state'
 import { GameEvent } from '../core/events'
 import { Input } from '../core/input'
 import { stepGame } from '../core/sim'
+import { advanceFixedSteps } from '@arcade/shared/loop'
 
 const STEP = 1 / 60
-const MAX_FRAME = 0.25
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 // The shell-supplied callbacks (sampleInput / draw / onModeChange) cross the IO
@@ -44,10 +44,8 @@ export function createLoop(
 
   function frame(): void {
     const t = now()
-    let delta = (t - last) / 1000
+    const elapsed = (t - last) / 1000
     last = t
-    if (delta > MAX_FRAME) delta = MAX_FRAME
-    acc += delta
 
     // Collect every sub-step's GameEvents for the shell (audio/fx). stepGame()
     // clears state.events each step, so the post-loop state only carries the
@@ -55,35 +53,44 @@ export function createLoop(
     // enemy deaths that landed in different sub-steps of the same render frame.
     const frameEvents: GameEvent[] = []
 
-    // Only sample input when a fixed step will actually consume it. sampleInput()
-    // drains and zeroes the accumulated spinner delta, so calling it on a frame
-    // that runs no sub-step (acc < STEP — happens constantly from rAF jitter and
-    // always on >60Hz displays) would read the wheel motion and throw it away
-    // before any step uses it. That dropped input is the "laggy spinner" feel.
-    if (acc >= STEP) {
-      let input = NEUTRAL
-      try {
-        input = sampleInput()
-      } catch (e: unknown) {
-        console.error('loop: sampleInput callback threw; using neutral input', e)
-      }
-      let first = true
-      while (acc >= STEP) {
-        // Apply the sampled edges (fire/start/spin) only on the first sub-step
-        // so a single input event can't fire multiple bullets in one frame.
-        state = stepGame(state, first ? input : NEUTRAL, STEP)
-        for (const e of state.events) frameEvents.push(e)
-        // Detect mode transitions per sub-step so two transitions in one frame
-        // each fire once, in order. A throwing onModeChange must not stop the loop,
-        // and prevMode must still advance so the same transition can't re-fire.
-        if (state.mode !== prevMode) {
-          runGuarded('onModeChange', () => onModeChange?.(prevMode, state.mode))
-          prevMode = state.mode
+    // SH-5: the fixed-timestep accumulator is now the shared @arcade/shared/loop
+    // kernel — tempest composes OVER it, keeping its injected now() clock and the
+    // per-sub-step work below instead of duplicating the arithmetic. advanceFixedSteps
+    // clamps the elapsed span (its 0.25s default replaces the old local MAX_FRAME)
+    // and invokes the step callback once per fixed STEP, returning the carried
+    // remainder — which tempest just threads back into `acc` (draw takes no alpha).
+    let input = NEUTRAL
+    let sampled = false
+    let first = true
+    acc = advanceFixedSteps(acc, elapsed, STEP, () => {
+      // Sample input lazily, exactly once, and ONLY on a frame that actually
+      // steps (this callback runs solely when acc >= STEP). sampleInput() drains
+      // and zeroes the accumulated spinner delta, so sampling on a no-step frame
+      // (acc < STEP — constant from rAF jitter, always on >60Hz displays) would
+      // read the wheel motion and throw it away before any step used it. That
+      // dropped input is the "laggy spinner" feel.
+      if (!sampled) {
+        sampled = true
+        try {
+          input = sampleInput()
+        } catch (e: unknown) {
+          console.error('loop: sampleInput callback threw; using neutral input', e)
         }
-        acc -= STEP
-        first = false
       }
-    }
+      // Apply the sampled edges (fire/start/spin) only on the first sub-step so a
+      // single input event can't fire multiple bullets in one frame.
+      state = stepGame(state, first ? input : NEUTRAL, STEP)
+      for (const e of state.events) frameEvents.push(e)
+      // Detect mode transitions per sub-step so two transitions in one frame each
+      // fire once, in order. A throwing onModeChange must not stop the loop, and
+      // prevMode must still advance so the same transition can't re-fire.
+      if (state.mode !== prevMode) {
+        runGuarded('onModeChange', () => onModeChange?.(prevMode, state.mode))
+        prevMode = state.mode
+      }
+      first = false
+    })
+
     runGuarded('draw', () => draw(state, frameEvents))
     raf = requestAnimationFrame(frame)
   }
