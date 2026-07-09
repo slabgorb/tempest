@@ -12,7 +12,7 @@ import {
   playerBulletColor, playerClawGlyph,
   type Glyph, type GlyphColor,
 } from './glyphs'
-import { layoutText, CELL_H } from './vecfont'
+import { layoutText, CELL_H } from './font'
 
 // Per-level color cycling — index by (level-1) mod palette length.
 const LEVEL_COLORS = [
@@ -553,8 +553,9 @@ function drawClawIcon(
   ctx.beginPath(); ctx.arc(cx, apexY, 1.6, 0, Math.PI * 2); ctx.fill()
 }
 
-// Draw stroke-vector text in the authentic VGMSGA font (src/shell/vecfont.ts) with
-// the neon glow. `sizePx` is the cap height — the 24-unit glyph cell maps onto it.
+// Draw stroke-vector text in the authentic VGMSGA font (@arcade/shared/font, via
+// ./font) with the neon glow. `sizePx` is the cap height — the 24-unit glyph cell
+// maps onto it.
 // `align`/`vAlign` anchor the text box on (x,y). Two additive blurred passes (a
 // wide bloom + a tighter inner glow) under a crisp core light the thin vectors up
 // like neon without losing definition. The font is caps-only, so text is
