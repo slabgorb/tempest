@@ -18,6 +18,6 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@arcade/shared": "github:slabgorb/arcade-shared#feat/SH2-2-shared-font-purity-guard"
+    "@arcade/shared": "github:slabgorb/arcade-shared#v0.6.0"
   }
 }
