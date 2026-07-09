@@ -32,7 +32,7 @@ import {
 
 const LANES = 3
 const COLS = 3
-const LABEL_FONT = "700 14px 'Vector Battle', 'Orbitron', monospace"
+const LABEL_FONT = "700 14px 'Orbitron', monospace"
 const HINT_COLOR = '#7a8699'
 
 // Neutral cool board so the coloured actor glyphs pop against it. Each label
