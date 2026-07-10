@@ -1,44 +1,55 @@
 // tests/core/sim.highscore.test.ts
 //
-// RED-phase suite for Story 4-3, Part B: the PURE 'highscore' initials-entry
-// state machine plus the gameover -> qualify -> entry/attract routing.
+// SH2-13 REPOINT of the 4-3/6-2 suite: the mousewheel/arrow letter-cycle entry
+// is RETIRED for direct keyboard typing (asteroids' flow is the cabinet-wide
+// reference). The user's deliberate guiding call: we have a keyboard — typing
+// beats the ROM's spinner scheme.
 //
-// stepGame() already exists, so this file imports nothing new: it reads the
-// not-yet-added GameState fields (`entry`, `highScoreTable`) and the new
-// 'highscore' mode through LOOSE VIEWS, exactly like sim.framing.test.ts (4-2).
-// Pre-GREEN, stepGame has no 'highscore' case, so it returns the cloned state
-// unchanged and the behavioural assertions fail — the intended RED. The gameover
-// routing tests fail because gameover+start currently goes straight to 'attract'
-// (4-2 behaviour) instead of branching on qualification.
+// TEA decisions pinned here (logged as deviations in .session/SH2-13-session.md):
+//  - TYPING: letters arrive as KEYDOWN EVENTS through a new PURE core event
+//    function `enterInitial(state, key)` (the asteroids pattern — entry chars
+//    are edge events and do not ride on the per-frame Input). It delegates the
+//    buffer arithmetic to the shared reducer (@arcade/shared/name-entry): A-Z
+//    appends UPPERCASED up to 3, 'Backspace' deletes the last character (never
+//    past empty), everything else is inert. Inert outside 'highscore' mode.
+//  - ENTRY STATE: GameState.entry slims to { initials: string } — charIndex
+//    and currentLetter die with the cycle mechanism.
+//  - SPIN IS INERT during entry (it keeps its gameplay meaning elsewhere).
+//  - CONFIRM: tempest's existing confirm stays — `input.fire` on a RISING edge
+//    (prevFire, the 6-2 shift register) — but now commits the COMPLETED buffer
+//    (all 3 initials) in one press: insert { name, score, level } (no date —
+//    core purity), mode -> 'attract', entry -> null. Fire with a short buffer
+//    is inert. `input.start` stays INERT during entry (4-3 decision preserved).
+//  - GAMEOVER ROUTING unchanged: start + qualifying -> 'highscore' with a
+//    fresh empty entry; non-qualifying -> 'attract'.
 //
-// TEA decisions pinned here (logged as deviations in .session/4-3-session.md):
-//  - CONFIRM INPUT = `input.fire`. `input.start` is RESERVED for the
-//    gameover->highscore transition and is INERT during entry. This separation
-//    removes the carry-over hazard: the same `start` edge that enters 'highscore'
-//    cannot also confirm the first initial — a fresh `fire` press is required per
-//    letter. (The plan said "start or fire"; we pin fire-only.)
-//  - LETTER CYCLING: `input.spin` rotates A..Z with WRAP, sign-based ±1 per step
-//    (Math.sign granularity, mirroring 4-2's select). spin>0: A->B; spin<0 from A
-//    wraps to Z; spin>0 from Z wraps to A.
-//  - COMPLETION: after the 3rd confirmed initial the entry is inserted into
-//    GameState.highScoreTable (name = initials, score/level from the just-ended
-//    game, NO date — core is pure and cannot call Date), mode -> 'attract',
-//    GameState.entry -> null.
-//  - NON-QUALIFYING gameover+start -> 'attract' (4-2 behaviour preserved), no
-//    entry begun.
+// Pre-GREEN this file is RED on assertions: enterInitial does not exist yet
+// (read through a loose module view so its absence fails tests, not module
+// load), stepHighScore still cycles letters, and entry still carries
+// charIndex/currentLetter.
 import { describe, it, expect } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { initialState, GameState } from '../../src/core/state'
-import { stepGame } from '../../src/core/sim'
+import * as simModule from '../../src/core/sim'
 import { Input } from '../../src/core/input'
+
+const { stepGame } = simModule
+// Loose view: the typed-entry event function this story adds. Absent pre-GREEN,
+// so the guard test below fails and every use throws INSIDE a test (assertion
+// failure), never at module load.
+const enterInitial = (
+  simModule as unknown as { enterInitial?: (s: GameState, key: string) => GameState }
+).enterInitial
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const DT = 1 / 60
 
-interface EntryView { initials: string; charIndex: number; currentLetter: string }
+interface EntryView { initials: string }
 interface TableRow { name: string; score: number; level: number; date?: string }
 
-// Loose views over the not-yet-extended core types, so reads are clean and the
-// tests fail on assertions rather than throwing on undefined properties.
+// Loose views over the evolving core types, so reads are clean and the tests
+// fail on assertions rather than throwing on undefined properties.
 const modeOf = (s: GameState): string => (s as unknown as { mode: string }).mode
 const entryOf = (s: GameState): EntryView | null =>
   (s as unknown as { entry: EntryView | null }).entry
@@ -58,23 +69,20 @@ function withTable(s: GameState, table: TableRow[]): GameState {
   return s
 }
 
-// A state parked mid initials-entry. Defaults: fresh entry at letter A, charIndex
-// 0, empty board, a qualifying ended-game score/level.
+// A state parked mid initials-entry. Defaults: empty buffer, empty board, a
+// qualifying ended-game score/level.
 function entryState(
   opts: Partial<{
-    initials: string; charIndex: number; currentLetter: string
+    initials: string
     score: number; level: number; table: TableRow[]; seed: number
   }> = {},
 ): GameState {
-  const {
-    initials = '', charIndex = 0, currentLetter = 'A',
-    score = 5000, level = 3, table = [], seed = 1,
-  } = opts
+  const { initials = '', score = 5000, level = 3, table = [], seed = 1 } = opts
   let s = initialState(seed)
   s.score = score
   s.level = level
   s = withTable(s, table)
-  s = withEntry(s, { initials, charIndex, currentLetter })
+  s = withEntry(s, { initials })
   return withMode(s, 'highscore')
 }
 
@@ -89,257 +97,281 @@ function gameoverState(score: number, table: TableRow[], seed = 2): GameState {
 }
 
 const fire = (s: GameState): GameState => stepGame(s, { ...NEUTRAL, fire: true }, DT)
-const spin = (s: GameState, dir: number): GameState => stepGame(s, { ...NEUTRAL, spin: dir }, DT)
+const spinStep = (s: GameState, dir: number): GameState =>
+  stepGame(s, { ...NEUTRAL, spin: dir }, DT)
 const start = (s: GameState): GameState => stepGame(s, { ...NEUTRAL, start: true }, DT)
 const neutral = (s: GameState): GameState => stepGame(s, NEUTRAL, DT)
 
-// Confirm the letter at alphabet offset (0='A') for the current position:
-// spin up `offset` times (currentLetter resets to 'A' at each new position),
-// then fire to confirm.
-// Confirm one letter as a genuine DISCRETE tap: release fire first, then press.
-// Confirm is edge-triggered (Story 6-2: the shell now holds `fire` every frame,
-// so a multi-frame tap must register as one letter, not many).
-function enter(s: GameState, offset: number): GameState {
-  for (let i = 0; i < offset; i++) s = spin(s, 1)
-  s = neutral(s) // release between confirms
-  return fire(s)
-}
+const typeAll = (s: GameState, keys: string[]): GameState =>
+  keys.reduce((acc, k) => enterInitial!(acc, k), s)
 
 const fullBoard = (): TableRow[] =>
   Array.from({ length: 10 }, (_, i) => ({ name: `E${i}`, score: (10 - i) * 1000, level: 1 }))
 
-describe('highscore entry — letter cycling (A..Z, wrap, sign-based ±1)', () => {
-  // AC3: spin>0 rotates the current letter forward.
-  it('spin>0 advances the current letter A -> B', () => {
-    expect(entryOf(spin(entryState({ currentLetter: 'A' }), 1))?.currentLetter).toBe('B')
-  })
+// ---- the new surface exists ----------------------------------------------------
 
-  // AC3 / 4-2 parity: one step per spin regardless of magnitude (sign-based).
-  it('advances by exactly one regardless of magnitude (sign-based granularity)', () => {
-    expect(entryOf(spin(entryState({ currentLetter: 'A' }), 5))?.currentLetter).toBe('B')
-  })
-
-  // AC3: wrap DOWN — A spun backward becomes Z.
-  it('spin<0 from A wraps DOWN to Z', () => {
-    expect(entryOf(spin(entryState({ currentLetter: 'A' }), -1))?.currentLetter).toBe('Z')
-  })
-
-  // AC3: wrap UP — Z spun forward becomes A.
-  it('spin>0 from Z wraps UP to A', () => {
-    expect(entryOf(spin(entryState({ currentLetter: 'Z' }), 1))?.currentLetter).toBe('A')
-  })
-
-  // AC3: spinning only cycles the letter — it never confirms.
-  it('spinning does not confirm a letter (charIndex/initials unchanged, still in entry)', () => {
-    const out = spin(entryState({ currentLetter: 'A' }), 1)
-    expect(entryOf(out)?.charIndex).toBe(0)
-    expect(entryOf(out)?.initials).toBe('')
-    expect(modeOf(out)).toBe('highscore')
+describe('typed entry — the core event function exists', () => {
+  it('sim.ts exports enterInitial(state, key)', () => {
+    expect(typeof enterInitial).toBe('function')
   })
 })
 
-describe('highscore entry — confirming letters with fire', () => {
-  // AC3: fire appends the current letter, advances charIndex, resets letter to A.
-  it('fire confirms the current letter: appends, advances charIndex, resets currentLetter to A', () => {
-    const out = fire(entryState({ currentLetter: 'A', charIndex: 0, initials: '' }))
-    expect(entryOf(out)?.initials).toBe('A')
-    expect(entryOf(out)?.charIndex).toBe(1)
-    expect(entryOf(out)?.currentLetter).toBe('A') // reset for the next position
-    expect(modeOf(out)).toBe('highscore')
+// ---- typing letters (the shared verb, tempest numbers) --------------------------
+
+describe('typed entry — letters fill the buffer (uppercased, capped at 3)', () => {
+  it('a lowercase keydown appends its uppercase initial', () => {
+    const s = enterInitial!(entryState(), 'a')
+    expect(entryOf(s)?.initials).toBe('A')
   })
 
-  // AC3: three discrete presses accumulate three distinct letters; the letter
-  // resets between positions so each is chosen independently.
-  it('accumulates distinct letters across discrete fire presses', () => {
-    let s = entryState({ table: [] })
-    s = enter(s, 2) // 'C'
-    expect(entryOf(s)?.initials).toBe('C')
-    expect(entryOf(s)?.charIndex).toBe(1)
-    s = enter(s, 0) // 'A'
-    expect(entryOf(s)?.initials).toBe('CA')
-    expect(entryOf(s)?.charIndex).toBe(2)
-    expect(modeOf(s)).toBe('highscore') // 2 of 3 — not done yet
+  it('fills in typing order', () => {
+    const s = typeAll(entryState(), ['k', 'a', 'v'])
+    expect(entryOf(s)?.initials).toBe('KAV')
   })
 
-  // TEA decision: fire-only confirm. `start` is inert during entry, so the
-  // gameover->highscore start edge cannot carry over into a confirmation.
-  it('start is INERT during entry — it does NOT confirm a letter', () => {
-    const out = start(entryState({ currentLetter: 'A', charIndex: 0, initials: '' }))
-    expect(entryOf(out)?.charIndex).toBe(0)
-    expect(entryOf(out)?.initials).toBe('')
-    expect(modeOf(out)).toBe('highscore')
+  it('ignores a 4th letter (tempest keeps the 3-char arcade convention)', () => {
+    const s = typeAll(entryState(), ['k', 'a', 'v', 'x'])
+    expect(entryOf(s)?.initials).toBe('KAV')
   })
 
-  // Guard: neutral input is a no-op.
-  it('neutral input leaves the entry untouched', () => {
-    const out = neutral(entryState({ currentLetter: 'B', charIndex: 1, initials: 'A' }))
-    expect(entryOf(out)?.initials).toBe('A')
-    expect(entryOf(out)?.charIndex).toBe(1)
-    expect(entryOf(out)?.currentLetter).toBe('B')
-    expect(modeOf(out)).toBe('highscore')
+  it('ignores non-letter keys (digits, named keys, junk)', () => {
+    const before = entryState({ initials: 'A' })
+    for (const key of ['5', ' ', 'Enter', 'ArrowLeft', 'Escape', 'ab', '']) {
+      expect(entryOf(enterInitial!(before, key))?.initials, `key ${JSON.stringify(key)}`).toBe('A')
+    }
+  })
+
+  it('is inert outside highscore mode (attract, playing, gameover)', () => {
+    for (const mode of ['attract', 'playing', 'gameover']) {
+      const s = withMode(withEntry(initialState(9), null), mode)
+      const out = enterInitial!(s, 'a')
+      expect(modeOf(out), mode).toBe(mode)
+      expect(entryOf(out), mode).toBeNull()
+    }
   })
 })
 
-describe('highscore entry — completion inserts and returns to attract', () => {
-  // AC3 + AC6: after the 3rd confirm, insert {name, score, level} and -> attract,
-  // entry cleared to null.
-  it('after the 3rd confirmed initial: inserts the entry, -> attract, entry cleared', () => {
-    let s = entryState({ score: 1234, level: 7, table: [] })
-    s = enter(s, 2) // C
-    s = enter(s, 0) // A
-    s = enter(s, 1) // B -> completion
-    expect(modeOf(s)).toBe('attract')
-    expect(entryOf(s)).toBeNull()
-    const table = tableOf(s)
-    expect(table).toHaveLength(1)
-    expect(table[0].name).toBe('CAB')
-    expect(table[0].score).toBe(1234)
-    expect(table[0].level).toBe(7)
+// ---- Backspace (AC-2) -----------------------------------------------------------
+
+describe('typed entry — Backspace deletes (AC-2)', () => {
+  it('removes the last typed initial', () => {
+    const s = enterInitial!(entryState({ initials: 'AC' }), 'Backspace')
+    expect(entryOf(s)?.initials).toBe('A')
   })
 
-  // AC1 + AC3: the completed entry is inserted into an existing board in order.
-  it('inserts the completed entry into an existing board in descending order', () => {
-    const existing: TableRow[] = [
-      { name: 'ZZZ', score: 9000, level: 9 },
-      { name: 'YYY', score: 100, level: 1 },
-    ]
-    let s = entryState({ score: 5000, level: 4, table: existing })
-    s = enter(s, 0); s = enter(s, 0); s = enter(s, 0) // 'AAA' (three discrete taps)
-    expect(modeOf(s)).toBe('attract')
-    expect(tableOf(s).map((e) => e.name)).toEqual(['ZZZ', 'AAA', 'YYY'])
-    expect(tableOf(s).map((e) => e.score)).toEqual([9000, 5000, 100])
+  it('cannot delete past an empty buffer', () => {
+    const s = enterInitial!(entryState({ initials: '' }), 'Backspace')
+    expect(entryOf(s)?.initials).toBe('')
+    expect(modeOf(s)).toBe('highscore') // still entering
   })
 
-  // AC5 (purity): core cannot call Date — the inserted entry carries no date.
-  it('does not stamp a date on the inserted entry (core is pure)', () => {
-    let s = entryState({ score: 1, level: 1, table: [] })
-    s = enter(s, 0); s = enter(s, 0); s = enter(s, 0)
-    expect(tableOf(s)[0].date).toBeUndefined()
+  it('corrects a full-buffer typo: delete then retype', () => {
+    const typo = entryState({ initials: 'ACX' })
+    const fixed = enterInitial!(enterInitial!(typo, 'Backspace'), 'e')
+    expect(entryOf(fixed)?.initials).toBe('ACE')
+  })
+})
+
+// ---- the cycle mechanism is RETIRED ----------------------------------------------
+
+describe('the mousewheel/arrow letter-cycle is retired (AC-1)', () => {
+  it('spin is INERT during entry — it no longer cycles anything', () => {
+    const before = entryState({ initials: 'A' })
+    const up = spinStep(before, 1)
+    const down = spinStep(before, -1)
+    expect(entryOf(up)).toEqual({ initials: 'A' })
+    expect(entryOf(down)).toEqual({ initials: 'A' })
+    expect(modeOf(up)).toBe('highscore')
+    expect(tableOf(up)).toHaveLength(0)
   })
 
-  // AC3: completion fires only on the 3rd confirm, not before.
-  it('does not complete prematurely: after 2 confirms it stays in entry, board untouched', () => {
-    let s = entryState({ score: 1234, level: 7, table: [] })
-    s = enter(s, 0); s = enter(s, 0) // only 2 (each a discrete tap)
+  it('sim.ts no longer carries the cycleLetter machinery (comment-inclusive scan)', () => {
+    const simSrc = readFileSync(
+      fileURLToPath(new URL('../../src/core/sim.ts', import.meta.url)),
+      'utf8',
+    )
+    expect(simSrc).not.toMatch(/cycleLetter/)
+  })
+
+  it('the entry state slims to { initials } — charIndex/currentLetter die with the cycle', () => {
+    const fresh = start(gameoverState(5000, []))
+    expect(modeOf(fresh)).toBe('highscore')
+    expect(entryOf(fresh)).toEqual({ initials: '' })
+  })
+})
+
+// ---- confirm: fire edge commits the COMPLETED buffer ------------------------------
+
+describe('typed entry — fire commits once all 3 initials are typed', () => {
+  it('fire with a short buffer is inert (waits for the full 3)', () => {
+    const partial = entryState({ initials: 'AC' })
+    const s = fire(partial)
     expect(modeOf(s)).toBe('highscore')
-    expect(entryOf(s)?.charIndex).toBe(2)
+    expect(entryOf(s)?.initials).toBe('AC')
     expect(tableOf(s)).toHaveLength(0)
   })
+
+  it('fire with 3 typed inserts { name, score, level } and returns to attract', () => {
+    const ready = typeAll(entryState({ score: 1234, level: 7 }), ['k', 'a', 'v'])
+    const s = fire(ready)
+    expect(modeOf(s)).toBe('attract')
+    expect(entryOf(s)).toBeNull()
+    expect(tableOf(s)).toHaveLength(1)
+    expect(tableOf(s)[0]).toMatchObject({ name: 'KAV', score: 1234, level: 7 })
+  })
+
+  it('does not stamp a date on the inserted entry (core is pure)', () => {
+    const ready = typeAll(entryState(), ['k', 'a', 'v'])
+    expect(tableOf(fire(ready))[0].date).toBeUndefined()
+  })
+
+  it('inserts into an existing board in descending order', () => {
+    const board: TableRow[] = [
+      { name: 'TOP', score: 9000, level: 9 },
+      { name: 'LOW', score: 1000, level: 1 },
+    ]
+    const ready = typeAll(entryState({ score: 5000, table: board }), ['m', 'i', 'd'])
+    const table = tableOf(fire(ready))
+    expect(table.map((r) => r.name)).toEqual(['TOP', 'MID', 'LOW'])
+  })
+
+  it('start stays INERT during entry — it does not confirm (4-3 decision preserved)', () => {
+    const ready = typeAll(entryState(), ['k', 'a', 'v'])
+    const s = start(ready)
+    expect(modeOf(s)).toBe('highscore')
+    expect(tableOf(s)).toHaveLength(0)
+  })
+
+  it('neutral input leaves the entry untouched', () => {
+    const before = entryState({ initials: 'KA' })
+    const s = neutral(before)
+    expect(modeOf(s)).toBe('highscore')
+    expect(entryOf(s)).toEqual({ initials: 'KA' })
+  })
 })
 
-describe('gameover -> qualify routing', () => {
-  // AC4: qualifying gameover+start enters 'highscore' with a FRESH entry — the
-  // start press must NOT have confirmed the first initial.
-  it('gameover + start with a qualifying score enters highscore with a fresh entry (no auto-confirm)', () => {
-    const out = start(gameoverState(5000, [])) // empty board, positive score qualifies
-    expect(modeOf(out)).toBe('highscore')
-    const e = entryOf(out)
-    expect(e).not.toBeNull()
-    expect(e?.initials).toBe('')
-    expect(e?.charIndex).toBe(0)
-    expect(e?.currentLetter).toBe('A')
+// ---- gameover -> qualify routing (4-3 contracts, preserved) -----------------------
+
+describe('gameover -> qualify routing (unchanged by the mechanism swap)', () => {
+  it('gameover + start with a qualifying score enters highscore with a fresh empty entry', () => {
+    const s = start(gameoverState(5000, []))
+    expect(modeOf(s)).toBe('highscore')
+    expect(entryOf(s)).toEqual({ initials: '' })
+    expect(tableOf(s)).toHaveLength(0) // nothing inserted yet
   })
 
-  // AC4 + carry-over hazard: the start edge that enters highscore does not carry
-  // over; a separate fire press is required to confirm the first initial.
-  it('requires a fresh fire press to confirm the first initial (start did not carry over)', () => {
-    const entered = start(gameoverState(5000, [])) // gameover -> highscore (charIndex 0)
-    expect(entryOf(entered)?.charIndex).toBe(0)
-    const confirmed = fire(entered) // a FRESH press confirms letter 0
-    expect(entryOf(confirmed)?.charIndex).toBe(1)
-    expect(entryOf(confirmed)?.initials).toBe('A')
-  })
-
-  // AC4: non-qualifying gameover+start goes straight to attract (4-2 preserved).
   it('gameover + start with a NON-qualifying score goes straight to attract, no entry begun', () => {
-    const out = start(gameoverState(100, fullBoard())) // 100 < lowest board score (1000)
-    expect(modeOf(out)).toBe('attract')
-    expect(entryOf(out)).toBeNull()
+    const s = start(gameoverState(0, []))
+    expect(modeOf(s)).toBe('attract')
+    expect(entryOf(s)).toBeNull()
   })
 
-  // AC4 + strict full-board boundary: score equal to the 10th does not qualify.
   it('gameover + start with a full board and score EQUAL to the lowest does NOT qualify', () => {
-    const out = start(gameoverState(1000, fullBoard())) // equals the lowest board entry
-    expect(modeOf(out)).toBe('attract')
-    expect(entryOf(out)).toBeNull()
+    const s = start(gameoverState(1000, fullBoard()))
+    expect(modeOf(s)).toBe('attract')
+    expect(entryOf(s)).toBeNull()
   })
 
-  // Guard: gameover without start does not transition.
   it('gameover without start stays in gameover', () => {
-    expect(modeOf(neutral(gameoverState(5000, [])))).toBe('gameover')
+    const s = neutral(gameoverState(5000, []))
+    expect(modeOf(s)).toBe('gameover')
   })
 })
 
-describe('highscore entry — determinism, purity, RNG', () => {
-  // AC5: deterministic — identical (state, input, dt) -> identical result.
-  it('is deterministic: identical (state, input, dt) yields identical mode/entry/table/rng', () => {
-    const a = fire(entryState({ seed: 99 }))
-    const b = fire(entryState({ seed: 99 }))
+// ---- 6-2 regression, repointed: held fire cannot commit ---------------------------
+
+describe('confirm is edge-triggered, not level-triggered (Story 6-2 regression, repointed)', () => {
+  it('does not auto-commit when the restart click is held into highscore', () => {
+    // A mouse restart click delivers start + fire together for the press
+    // duration; the click enters highscore and the still-held button must not
+    // commit anything (the buffer is empty anyway — belt and braces).
+    let s = stepGame(gameoverState(5000, []), { ...NEUTRAL, start: true, fire: true }, DT)
+    expect(modeOf(s)).toBe('highscore')
+    for (let i = 0; i < 6; i++) s = stepGame(s, { ...NEUTRAL, fire: true }, DT)
+    expect(modeOf(s)).toBe('highscore')
+    expect(entryOf(s)).not.toBeNull()
+    expect(tableOf(s)).toHaveLength(0)
+  })
+
+  it('a fire held since BEFORE the 3rd initial cannot commit — a fresh press is required', () => {
+    // Hold the button (prevFire latches true), type the 3rd letter while it is
+    // still down, keep holding: no commit. Release, press again: commits once.
+    let s = fire(entryState({ initials: 'KA' })) // fire pressed with a short buffer — inert
+    s = enterInitial!(s, 'v') // 3rd letter typed while the button is still down
+    for (let i = 0; i < 6; i++) s = fire(s) // still held — must not commit
+    expect(modeOf(s)).toBe('highscore')
+    expect(tableOf(s)).toHaveLength(0)
+    s = neutral(s) // released
+    s = fire(s) // fresh press
+    expect(modeOf(s)).toBe('attract')
+    expect(tableOf(s)).toHaveLength(1)
+    expect(tableOf(s)[0].name).toBe('KAV')
+  })
+
+  it('a single multi-frame tap commits exactly once', () => {
+    let s = typeAll(entryState({ score: 4321, level: 2 }), ['b', 'o', 'b'])
+    for (let i = 0; i < 6; i++) s = fire(s) // one tap, held 6 frames
+    expect(modeOf(s)).toBe('attract')
+    expect(tableOf(s)).toHaveLength(1) // one insert, not six
+  })
+})
+
+// ---- determinism / purity ----------------------------------------------------------
+
+describe('typed entry — determinism, purity, RNG', () => {
+  it('enterInitial is deterministic and does not mutate its input state', () => {
+    const base = entryState({ initials: 'K' })
+    const snapshot = JSON.parse(JSON.stringify(entryOf(base)))
+    const a = enterInitial!(base, 'v')
+    const b = enterInitial!(base, 'v')
+    expect(entryOf(a)).toEqual(entryOf(b))
+    expect(entryOf(base)).toEqual(snapshot) // caller state untouched
+  })
+
+  it('identical (state, input, dt) yields identical mode/entry/table through stepGame', () => {
+    const mk = () => typeAll(entryState({ score: 777, level: 5 }), ['z', 'o', 'e'])
+    const a = fire(mk())
+    const b = fire(mk())
     expect(modeOf(a)).toBe(modeOf(b))
     expect(entryOf(a)).toEqual(entryOf(b))
     expect(tableOf(a)).toEqual(tableOf(b))
-    expect(a.rng).toEqual(b.rng)
   })
 
-  // AC5: the entry machine never consumes the seeded RNG.
-  it('entry steps never consume the RNG (spin and fire leave rng untouched)', () => {
-    const base = entryState({ seed: 7 })
-    const rngBefore = { ...base.rng }
-    expect(spin(base, 1).rng).toEqual(rngBefore)
-    expect(fire(base).rng).toEqual(rngBefore)
+  it('entry steps and typing never consume the RNG', () => {
+    const before = entryState({ initials: 'K' })
+    const rngBefore = JSON.parse(JSON.stringify(before.rng))
+    const afterType = enterInitial!(before, 'a')
+    const afterStep = neutral(afterType)
+    expect(afterStep.rng).toEqual(rngBefore)
   })
 
-  // AC5 + migration guard: cloneState must deep-clone the new `entry` field, or
-  // stepGame would mutate the caller's entry object. The original must be intact.
-  it('does not mutate the input state (cloneState must clone entry)', () => {
-    const base = entryState({ initials: 'A', charIndex: 1, currentLetter: 'A' })
-    const snapshot = JSON.parse(JSON.stringify(entryOf(base)))
-    fire(base)
-    expect(entryOf(base)).toEqual(snapshot)
+  it('does not mutate the caller state on confirm (cloneState clones entry)', () => {
+    const ready = typeAll(entryState(), ['k', 'a', 'v'])
+    const snapshot = JSON.parse(JSON.stringify(entryOf(ready)))
+    fire(ready)
+    expect(entryOf(ready)).toEqual(snapshot)
   })
 })
 
-describe('highscore entry — fire is edge-triggered, not level-triggered (Story 6-2 regression)', () => {
-  // Story 6-2 removed the shell AUTOFIRE_MS throttle, so the shell now delivers
-  // `fire` on EVERY frame the button is held. A real button tap spans several
-  // frames, so a LEVEL-triggered confirm registers one tap as many confirms and
-  // marches through all three initials. Confirm must fire on the RISING EDGE:
-  // one tap = one letter, however long the button is held. This is exactly the
-  // 4-3 design intent ("a fresh fire press is required per letter"), now enforced.
+// ---- the shared VERB + shell wiring (AC-3 / AC-2) -----------------------------------
 
-  // A single tap held for several frames confirms exactly ONE letter.
-  it('confirms exactly one letter for a single multi-frame tap (held fire)', () => {
-    let s = entryState({ table: [] }) // fresh entry at A, charIndex 0
-    for (let i = 0; i < 6; i++) s = fire(s) // one tap, held 6 frames (never released)
-    expect(entryOf(s)?.charIndex).toBe(1) // exactly one confirm, not six
-    expect(entryOf(s)?.initials).toBe('A')
-    expect(modeOf(s)).toBe('highscore') // not marched through to completion
+describe('the mechanism is the SHARED reducer and the shell forwards keys (AC-3/AC-2)', () => {
+  const srcDir = (rel: string) => fileURLToPath(new URL(rel, import.meta.url))
+  const joinSources = (dir: string): string =>
+    readdirSync(dir)
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => readFileSync(`${dir}/${f}`, 'utf8'))
+      .join('\n')
+
+  it('some core module imports @arcade/shared/name-entry', () => {
+    expect(joinSources(srcDir('../../src/core'))).toContain('@arcade/shared/name-entry')
   })
 
-  // The reported bug: at gameover a mouse click sets BOTH start and fire; the
-  // click enters highscore, then the still-held button must NOT auto-fill "AAA".
-  it('does not auto-fill initials when the restart click is held into highscore', () => {
-    // A mouse restart click delivers start + fire together for the press duration.
-    let s = stepGame(gameoverState(5000, []), { ...NEUTRAL, start: true, fire: true }, DT)
-    expect(modeOf(s)).toBe('highscore') // entered initials entry
-    for (let i = 0; i < 6; i++) s = stepGame(s, { ...NEUTRAL, fire: true }, DT) // button still down
-    expect(modeOf(s)).toBe('highscore') // still entering — NOT bounced to attract
-    expect(entryOf(s)).not.toBeNull()
-    expect(tableOf(s)).toHaveLength(0) // nothing auto-inserted
-  })
-
-  // Guard (stays green after the fix): a held tap followed by a release confirms
-  // one letter per tap, so genuine three-tap entry still completes correctly.
-  it('confirms one letter per tap when the button is released between taps', () => {
-    let s = entryState({ score: 1234, level: 7, table: [] })
-    for (let i = 0; i < 3; i++) {
-      s = fire(s) // tap...
-      s = fire(s) // ...still held — must not double-confirm
-      s = neutral(s) // release before the next tap
-    }
-    expect(modeOf(s)).toBe('attract') // exactly three confirms completed it
-    expect(entryOf(s)).toBeNull()
-    expect(tableOf(s)).toHaveLength(1)
-    expect(tableOf(s)[0].name).toBe('AAA')
+  it('the shell forwards keydown letters AND Backspace to enterInitial', () => {
+    const shell =
+      joinSources(srcDir('../../src/shell')) +
+      readFileSync(srcDir('../../src/main.ts'), 'utf8')
+    expect(shell).toContain('enterInitial')
+    expect(shell).toContain('Backspace')
   })
 })

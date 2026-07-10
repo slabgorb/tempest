@@ -733,36 +733,33 @@ function drawEntry(
     ctx, `SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.34,
     22, '#cfe3ff', 10,
   )
-  // Three initial slots: confirmed chars, the active letter (highlighted), blanks.
+  // Three initial slots (SH2-13 typed entry): typed chars bright, the next
+  // empty slot carries the highlighted cursor, remaining slots dim blanks.
   const slotW = 84
   const startX = W / 2 - slotW
   const y = H * 0.54
   ctx.textBaseline = 'middle'
   for (let i = 0; i < 3; i++) {
     const x = startX + i * slotW
-    let ch = '_'
-    let active = false
-    if (i < entry.charIndex) ch = entry.initials[i] ?? '_'
-    else if (i === entry.charIndex) { ch = entry.currentLetter; active = true }
-    if (active) {
-      drawGlowText(ctx, ch, x, y, 64, CLAW_COLOR, 22)
+    const typed = entry.initials[i]
+    const active = i === entry.initials.length
+    if (typed !== undefined) {
+      drawGlowText(ctx, typed, x, y, 64, color, 12)
+    } else if (active) {
+      drawGlowText(ctx, '_', x, y, 64, CLAW_COLOR, 22)
       ctx.strokeStyle = CLAW_COLOR
       ctx.shadowColor = CLAW_COLOR
       ctx.shadowBlur = 14
       ctx.lineWidth = 3
       ctx.beginPath(); ctx.moveTo(x - 26, y + 44); ctx.lineTo(x + 26, y + 44); ctx.stroke()
     } else {
-      const dim = ch === '_'
-      drawGlowText(
-        ctx, ch, x, y, 64,
-        dim ? 'rgba(150,190,255,0.4)' : color, dim ? 0 : 12,
-      )
+      drawGlowText(ctx, '_', x, y, 64, 'rgba(150,190,255,0.4)', 0)
     }
   }
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
   drawGlowText(
-    ctx, 'SPIN TO CHANGE - START TO CONFIRM', W / 2, H * 0.78,
+    ctx, 'TYPE A-Z - BACKSPACE FIXES - FIRE TO CONFIRM', W / 2, H * 0.78,
     16, 'rgba(150,190,255,0.7)', 6,
   )
   ctx.globalAlpha = 1
