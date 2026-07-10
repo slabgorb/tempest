@@ -2,6 +2,8 @@
 
 A faithful, browser-based clone of Atari's 1981 vector arcade game *Tempest*.
 
+**▶ Play it live: [tempest.slabgorb.com](https://tempest.slabgorb.com)**
+
 You control the **Claw** (blaster) riding the near rim of a geometric tube,
 spinning around it to shoot enemies that climb up the lanes from the far end.
 Glowing vector lines on black, rendered with HTML5 Canvas 2D — no physics
@@ -123,3 +125,11 @@ npm test -- geometry     # a single file or pattern
 
 Private project. *Tempest* is a trademark of its respective owners; this is an
 educational clone.
+
+## Releasing
+
+This repo ships from the [arcade orchestrator](https://github.com/slabgorb/arcade):
+`just release tempest` gates on tests + build, merges `develop` → `main`, tags
+`vX.Y.Z`, and pushes. Every push to `main` auto-deploys to Cloudflare R2 via
+GitHub Actions (`.github/workflows/deploy.yml`) — **`main` is production; never
+push it by hand.** A red CI run deploys nothing.

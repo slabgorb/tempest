@@ -88,6 +88,9 @@ Built in "waves," each a self-contained slice:
 ## Git Workflow
 
 - **Default branch:** `develop` (gitflow). PRs target `develop`.
+- **`main` = production:** release merges only (`just release tempest` from the
+  arcade orchestrator); every push to `main` auto-deploys to R2 — never push it
+  by hand.
 - **Branches:** `feat/{description}`, `fix/{description}`, `chore/{description}`.
 - Don't commit/push unless asked.
 
