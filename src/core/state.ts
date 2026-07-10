@@ -99,13 +99,12 @@ export interface SelectState {
   selectedLevel: number // the level the player has chosen to start at (1..16)
 }
 
-// Mid-flight state for the 'highscore' initials-entry machine. `initials` holds
-// the confirmed characters so far (0–3); `charIndex` is the position being
-// entered (0–2); `currentLetter` is the A–Z letter currently shown for it.
+// Mid-flight state for the 'highscore' initials-entry machine (SH2-13): the
+// initials typed so far (0–3 chars, uppercase A–Z). Letters and Backspace
+// arrive as keydown events through sim.enterInitial (the cabinet-wide shared
+// typing flow); `fire` commits the completed buffer.
 export interface HighScoreEntryState {
   initials: string
-  charIndex: number
-  currentLetter: string
 }
 
 export interface GameState {

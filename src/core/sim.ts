@@ -14,6 +14,7 @@ import {
 } from './rules'
 import { nextInt, nextFloat } from '@arcade/shared/rng'
 import { qualifiesForHighScore, insertHighScore } from '@arcade/shared/highscore'
+import { stepNameEntry } from '@arcade/shared/name-entry'
 import { stepFlipper } from './enemies/flipper'
 import { stepSpiker } from './enemies/spiker'
 import { stepPulsar } from './enemies/pulsar'
@@ -42,39 +43,41 @@ function cloneState(s: GameState): GameState {
   }
 }
 
-// Sign-based ±1 letter cycle over A–Z with wrap in both directions (Z→A, A→Z),
-// mirroring the select-screen spin granularity (4-2).
-function cycleLetter(letter: string, spin: number): string {
-  const offset = letter.charCodeAt(0) - 65
-  const next = (offset + Math.sign(spin) + 26) % 26
-  return String.fromCharCode(65 + next)
-}
+/** Initials the entry screen collects — the 3-char arcade convention. One of
+ * tempest's per-cabinet NUMBERS; the entry VERB itself is the cabinet-wide
+ * shared reducer (SH2-13). */
+const MAX_INITIALS = 3
 
-// The 'highscore' initials-entry machine. `spin` cycles the current letter;
-// `fire` confirms it (append, advance, reset to 'A'); the 3rd confirm inserts the
-// completed entry into the in-memory table and returns to attract. `start` and
-// neutral input are inert. RNG is never consumed here.
+// The 'highscore' initials-entry machine (SH2-13: the spinner letter-cycle is
+// retired — letters and Backspace arrive as keydown EVENTS through
+// enterInitial, never on the per-frame Input). This step watches only the
+// confirm: `fire` with the buffer COMPLETE inserts the entry and returns to
+// attract. `start`, `spin`, and neutral input are inert. RNG is never
+// consumed here.
 function stepHighScore(s: GameState, input: Input): void {
   if (!s.entry) return
   // Confirm on the RISING edge of fire only. The shell holds `fire` every frame
-  // while the button is down (6-2), so a level check would march through all
-  // three initials on a single tap — and auto-fill "AAA" when the gameover
-  // restart click is still held as the screen flips to entry.
-  if (input.fire && !s.prevFire) {
-    const initials = s.entry.initials + s.entry.currentLetter
-    const charIndex = s.entry.charIndex + 1
-    if (charIndex >= 3) {
-      s.highScoreTable = insertHighScore(s.highScoreTable, {
-        name: initials, score: s.score, level: s.level,
-      })
-      s.entry = null
-      s.mode = 'attract'
-    } else {
-      s.entry = { initials, charIndex, currentLetter: 'A' }
-    }
-  } else if (input.spin !== 0) {
-    s.entry = { ...s.entry, currentLetter: cycleLetter(s.entry.currentLetter, input.spin) }
+  // while the button is down (6-2), so a level check would commit the moment
+  // the 3rd letter lands under a still-held restart click.
+  if (input.fire && !s.prevFire && s.entry.initials.length === MAX_INITIALS) {
+    s.highScoreTable = insertHighScore(s.highScoreTable, {
+      name: s.entry.initials, score: s.score, level: s.level,
+    })
+    s.entry = null
+    s.mode = 'attract'
   }
+}
+
+/** One initials keydown on the 'highscore' entry screen. A PURE core event
+ * function the shell calls per keydown (the cabinet-wide typing flow, SH2-13):
+ * the shared reducer appends A–Z uppercased up to MAX_INITIALS and deletes on
+ * Backspace (never past empty); every other key is inert. Inert outside
+ * 'highscore' mode; a no-op returns the same state. */
+export function enterInitial(s: GameState, key: string): GameState {
+  if (s.mode !== 'highscore' || !s.entry) return s
+  const initials = stepNameEntry(s.entry.initials, key, MAX_INITIALS)
+  if (initials === s.entry.initials) return s
+  return { ...s, entry: { initials } }
 }
 
 function stepPlayer(s: GameState, input: Input): void {
@@ -758,7 +761,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       if (input.start) {
         if (qualifiesForHighScore(s.highScoreTable, s.score)) {
           s.mode = 'highscore'
-          s.entry = { initials: '', charIndex: 0, currentLetter: 'A' }
+          s.entry = { initials: '' }
         } else {
           s.mode = 'attract'
         }
