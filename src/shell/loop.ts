@@ -26,6 +26,10 @@ export interface Loop {
   start(): void
   stop(): void
   getState(): GameState
+  /** Apply a pure core EVENT function to the held state (SH2-13): keydown-edge
+   * events (initials typing) bypass the per-frame Input sample, so the shell
+   * needs one seam to thread them into the state the loop owns. */
+  dispatch(apply: (s: GameState) => GameState): void
 }
 
 export function createLoop(
@@ -105,6 +109,9 @@ export function createLoop(
     },
     getState(): GameState {
       return state
+    },
+    dispatch(apply: (s: GameState) => GameState): void {
+      state = apply(state)
     },
   }
 }

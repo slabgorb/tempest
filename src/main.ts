@@ -1,5 +1,6 @@
 // src/main.ts
 import { initialState } from './core/state'
+import { enterInitial } from './core/sim'
 import { createInputController } from './shell/input'
 import { createLoop } from './shell/loop'
 import { createFx } from './shell/fx'
@@ -79,4 +80,13 @@ const loop = createLoop(
     if (oldMode === 'highscore') highScores.save(loop.getState().highScoreTable)
   },
 )
+// Initials entry (SH2-13, the cabinet-wide typing flow): typed letters and
+// Backspace are edge events, not held state, so they bypass the per-frame
+// Input sample and feed the core's pure event function through the loop's
+// dispatch seam. enterInitial is inert outside 'highscore', so no mode guard.
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (/^[a-zA-Z]$/.test(e.key) || e.key === 'Backspace') {
+    loop.dispatch((s) => enterInitial(s, e.key))
+  }
+})
 loop.start()
