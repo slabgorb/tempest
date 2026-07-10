@@ -1,14 +1,13 @@
 // tests/core/geometry.cycle.test.ts
 //
-// RED-phase suite for Story 3-1: the 16-geometry roster + pure `tubeForLevel`.
-// Paranoid by design — it pins level 1 to the EXACT original circle, counts the
-// open/closed split exactly, exercises both builders in isolation, guards every
-// boundary point against NaN, proves the roster is render-safe through `project`,
-// and verifies the `initialState`/`startGame` wiring actually routes through
-// `tubeForLevel(1)`.
+// The 16-geometry roster + pure `tubeForLevel`. Originally the Story 3-1 RED
+// suite (stylized parametric roster); reconciled in Story 6-7 to the AUTHENTIC
+// rev-3 ROM wells. Authentic-shape assertions (topology cycle, figure-8 litmus,
+// per-shape spot checks) live in geometry.authentic.test.ts; this file keeps the
+// structural invariants (validity, period-16 cycling, totality, wiring).
 import { describe, it, expect } from 'vitest'
 import {
-  tubeForLevel, makePolygonTube, makeOpenTube, makeCircleTube, project, Tube, Point,
+  tubeForLevel, makeCircleTube, project, Tube, Point,
 } from '../../src/core/geometry'
 import { initialState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
@@ -30,9 +29,14 @@ function expectValidTube(t: Tube): void {
   }
 }
 
-describe('tubeForLevel — level 1 is the original circle (regression guard)', () => {
-  it('is byte-for-byte identical to makeCircleTube(16, origin, 60, 300)', () => {
-    expect(tubeForLevel(1)).toEqual(makeCircleTube(16, ORIGIN, 60, 300))
+describe('tubeForLevel — level 1 is the authentic ROM circle', () => {
+  it('keeps the original circle size: near rim radius ~300, far ~60', () => {
+    const t = tubeForLevel(1)
+    const nr = t.near.map((p) => Math.hypot(p.x, p.y))
+    const fr = t.far.map((p) => Math.hypot(p.x, p.y))
+    expect(Math.max(...nr)).toBeCloseTo(300, 0) // cardinal rim points sit at exactly 300
+    expect(Math.min(...nr)).toBeGreaterThan(295)
+    expect(Math.max(...fr)).toBeCloseTo(60, 0)
   })
 
   it('is a 16-lane closed tube with 16 boundary points on each rim', () => {
@@ -47,9 +51,9 @@ describe('tubeForLevel — level 1 is the original circle (regression guard)', (
 describe('tubeForLevel — the 16-geometry roster', () => {
   const roster = Array.from({ length: 16 }, (_, i) => tubeForLevel(i + 1))
 
-  it('contains exactly 8 closed and 8 open geometries', () => {
-    expect(roster.filter((t) => t.closed)).toHaveLength(8)
-    expect(roster.filter((t) => !t.closed)).toHaveLength(8)
+  it('contains exactly 10 closed and 6 open geometries (authentic topology)', () => {
+    expect(roster.filter((t) => t.closed)).toHaveLength(10)
+    expect(roster.filter((t) => !t.closed)).toHaveLength(6)
   })
 
   it('every geometry is structurally valid with laneCount >= 8', () => {
@@ -89,61 +93,6 @@ describe('tubeForLevel — cycling with period 16', () => {
   })
 })
 
-describe('makePolygonTube (closed builder)', () => {
-  it('builds a closed tube with laneCount boundary points and finite coords', () => {
-    const square = makePolygonTube(16, 4, ORIGIN, 70, 320)
-    expect(square.closed).toBe(true)
-    expect(square.laneCount).toBe(16)
-    expect(square.far).toHaveLength(16)
-    expect(square.near).toHaveLength(16)
-    expectValidTube(square)
-  })
-
-  it('produces a genuine polygon distinct from a circle of the same radius', () => {
-    const square = makePolygonTube(16, 4, ORIGIN, 70, 320)
-    const circle = makeCircleTube(16, ORIGIN, 70, 320)
-    const differs = square.far.some(
-      (p, i) => Math.abs(p.x - circle.far[i].x) > 1e-6 || Math.abs(p.y - circle.far[i].y) > 1e-6,
-    )
-    expect(differs).toBe(true)
-  })
-
-  it('keeps every side count from 3 to 8 finite (no division blow-ups)', () => {
-    for (const sides of [3, 4, 5, 6, 7, 8]) {
-      expectValidTube(makePolygonTube(12, sides, ORIGIN, 70, 320))
-    }
-  })
-})
-
-describe('makeOpenTube (open builder)', () => {
-  const dip = (t: number): number => Math.abs(t - 0.5)
-
-  it('builds an open tube with laneCount + 1 boundary points and finite coords', () => {
-    const v = makeOpenTube(16, ORIGIN, 640, dip)
-    expect(v.closed).toBe(false)
-    expect(v.laneCount).toBe(16)
-    expect(v.far).toHaveLength(17)
-    expect(v.near).toHaveLength(17)
-    expectValidTube(v)
-  })
-
-  it('applies the profile so the strip is bowed, not flat', () => {
-    const v = makeOpenTube(16, ORIGIN, 640, dip)
-    // i=8 → t=0.5 (dip 0, the trough); i=0 → t=0 (dip 0.5, the rim) must differ.
-    expect(v.near[8].y).not.toBe(v.near[0].y)
-  })
-
-  it('a flat profile still yields finite, render-safe geometry through project', () => {
-    const flat = makeOpenTube(12, ORIGIN, 560, () => 0)
-    expectValidTube(flat)
-    for (let lane = 0; lane < flat.laneCount; lane++) {
-      const p = project(flat, lane, 0.5)
-      expect(Number.isFinite(p.x)).toBe(true)
-      expect(Number.isFinite(p.y)).toBe(true)
-    }
-  })
-})
-
 describe('initialState wiring', () => {
   it('builds the level-1 tube from tubeForLevel(1)', () => {
     expect(initialState(1).tube).toEqual(tubeForLevel(1))
@@ -154,18 +103,26 @@ describe('initialState wiring', () => {
   })
 })
 
-describe('startGame wiring (restart resets to the level-1 geometry)', () => {
-  it('restores tubeForLevel(1) on restart even when a different geometry was active', () => {
-    const s = initialState(1)
+describe('startGameAtLevel wiring (a fresh game loads the chosen level geometry)', () => {
+  // Story 4-2: a restart is now framed through attract -> select -> playing. The
+  // geometry reset that used to happen on the gameover->start step now happens on
+  // the select->playing commit (startGameAtLevel). A stale deeper-level tube must
+  // still be discarded for the freshly chosen level.
+  it('restores tubeForLevel(1) for a fresh level-1 game, discarding a stale geometry', () => {
+    let s = initialState(1)
     s.mode = 'gameover'
     s.lives = 0
     // Stale geometry from a deeper level (wrong laneCount) must be discarded.
     s.tube = makeCircleTube(8, ORIGIN, 60, 300)
     s.spikes = new Array(8).fill(0)
 
-    const out = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60)
+    s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60) // gameover -> attract
+    expect(s.mode as string).toBe('attract')
+    s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60) // attract -> select (level 1)
+    expect(s.mode as string).toBe('select')
+    const out = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60) // select -> playing
 
-    expect(out.mode).toBe('playing')
+    expect(out.mode as string).toBe('playing')
     expect(out.level).toBe(1)
     expect(out.tube).toEqual(tubeForLevel(1))
     expect(out.tube.laneCount).toBe(16)

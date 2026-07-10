@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../../src/core/state'
+import { playingState } from '../helpers'
 import { stepGame } from '../../../src/core/sim'
 import { Input } from '../../../src/core/input'
 import { stepTanker } from '../../../src/core/enemies/tanker'
@@ -17,7 +17,7 @@ describe('stepTanker', () => {
 
 describe('tanker splitting', () => {
   it('splits into two cargo enemies when shot, and scores the tanker', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }]
     s.bullets = [{ lane: 4, depth: 0.5 }]
@@ -27,18 +27,20 @@ describe('tanker splitting', () => {
     expect(out.score).toBe(SCORE_TANKER)
   })
 
-  it('places the two children on adjacent lanes at the tanker depth', () => {
-    const s = initialState(1)
+  it('places the two children on the flanking lanes seg-1 and seg+1 (story 6-9)', () => {
+    // Authentic rev-3 split: children straddle the tanker into the ADJACENT lanes
+    // (seg-1, seg+1), leaving the tanker's own lane empty — not seg / seg+1.
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }]
     s.bullets = [{ lane: 4, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, 1 / 60)
     const lanes = out.enemies.map((e) => e.lane).sort((a, b) => a - b)
-    expect(lanes).toEqual([4, 5])
+    expect(lanes).toEqual([3, 5])
   })
 
   it('splits when it reaches the rim instead of grabbing the player', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [{ kind: 'tanker', lane: 4, depth: 0.95, contains: 'flipper' }]

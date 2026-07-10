@@ -1,18 +1,23 @@
 {
   "name": "tempest",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "echo \"no linting configured (using tsc --noEmit in build)\""
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "typescript": "^5.4.0",
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "@arcade/shared": "github:slabgorb/arcade-shared#v0.7.0"
   }
 }

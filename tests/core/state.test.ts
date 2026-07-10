@@ -3,9 +3,11 @@ import { initialState } from '../../src/core/state'
 import { levelParams } from '../../src/core/rules'
 
 describe('initialState', () => {
-  it('starts in playing mode at level 1 with full lives', () => {
+  // Story 4-2: the game now boots on the attract screen, not mid-game. Gameplay
+  // begins only after attract -> select -> playing (see sim.framing.test.ts).
+  it('starts on the attract screen at level 1 with full lives', () => {
     const s = initialState(123)
-    expect(s.mode).toBe('playing')
+    expect(s.mode as string).toBe('attract')
     expect(s.level).toBe(1)
     expect(s.lives).toBe(3)
     expect(s.score).toBe(0)

@@ -1,6 +1,6 @@
 // tests/core/sim.death.test.ts
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { RESPAWN_DELAY } from '../../src/core/rules'
@@ -9,7 +9,7 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 describe('enemy ↔ player collision and death', () => {
   it('kills the player when an enemy reaches the rim on the player lane', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
@@ -21,7 +21,7 @@ describe('enemy ↔ player collision and death', () => {
   })
 
   it('does not kill the player on a different lane', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [{ kind: 'flipper', lane: 9, depth: 0.99, flipTimer: 999 }]
@@ -32,7 +32,7 @@ describe('enemy ↔ player collision and death', () => {
   })
 
   it('respawns after the delay while lives remain', () => {
-    let s = initialState(1)
+    let s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
     // The lane-4 enemy kills the player (and is cleared on respawn). A second
@@ -54,7 +54,7 @@ describe('enemy ↔ player collision and death', () => {
   })
 
   it('goes to gameover when the last life is lost', () => {
-    const s = initialState(1)
+    const s = playingState(1)
     s.spawn.remaining = 0
     s.lives = 1
     s.player.lane = 4
@@ -65,15 +65,18 @@ describe('enemy ↔ player collision and death', () => {
     expect(out.lives).toBe(0)
   })
 
-  it('restarts from gameover on start', () => {
-    let s = initialState(1)
+  // Story 4-2: gameover + start now returns to the ATTRACT screen, not straight
+  // back into play. The fresh-game reset (score/lives/spikes/geometry) moves to
+  // the select -> playing commit and is covered in sim.framing.test.ts.
+  it('returns to the attract screen from gameover on start (not straight to play)', () => {
+    let s = playingState(1)
     s.mode = 'gameover'
-    s.score = 5000
-    s.spikes[2] = 0.5
+    // Story 4-3 routes a QUALIFYING ended-game score to the 'highscore' initials
+    // screen on gameover+start; only a non-qualifying score still goes straight to
+    // attract. A 0 score never qualifies, so it pins this gameover->attract branch.
+    s.score = 0
     s = stepGame(s, { ...NEUTRAL, start: true }, 1 / 60)
-    expect(s.mode).toBe('playing')
-    expect(s.score).toBe(0)
-    expect(s.lives).toBe(3)
-    expect(s.spikes.every((h) => h === 0)).toBe(true)
+    expect(s.mode as string).toBe('attract')
+    expect(s.mode as string).not.toBe('playing')
   })
 })

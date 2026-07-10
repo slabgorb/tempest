@@ -7,7 +7,7 @@
 // and — critically — proves stepGame does NOT mutate its input warp state
 // (the `cloneState` must clone `warp`, a subtle determinism trap).
 import { describe, it, expect } from 'vitest'
-import { initialState } from '../../src/core/state'
+import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
@@ -17,7 +17,7 @@ const FIRING: Input = { spin: 0, fire: true, zap: false, start: false }
 
 // Clear a fresh level-1 game and take the single step that enters the warp.
 function enterWarp(): GameState {
-  const s = initialState(1)
+  const s = playingState(1)
   s.spawn.remaining = 0
   s.enemies = []
   return stepGame(s, NEUTRAL, 1 / 60)
