@@ -4,7 +4,7 @@ export default defineConfig({
   // Served under /tempest/ on arcade.slabgorb.com (the SFX already live at
   // /tempest/sfx/). Vite rewrites root-relative asset URLs to honour this base
   // in both dev and build, so index.html's /src/main.ts resolves correctly.
-  base: '/tempest/',
+  base: '/',
   build: {
     // Multi-page: ship the game (index.html) AND the model contact sheet dev
     // tool (models.html), mirroring star-wars's build. Without this, vite build
