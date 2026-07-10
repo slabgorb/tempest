@@ -117,7 +117,9 @@ describe('pokey-bake sfx-data (AC#1: authentic ALSOUN envelope data)', () => {
 })
 
 describe('pokey-bake render pipeline (AC#2: non-silent WAV bake)', () => {
-  it('bakes every SFX to a non-silent 16-bit WAV with no SILENT warnings', () => {
+  // CPU-bound end-to-end bake: ~10s on GitHub Actions runners, so it needs more
+  // than Vitest's default 5s per-test timeout (scoped here, not globally).
+  it('bakes every SFX to a non-silent 16-bit WAV with no SILENT warnings', { timeout: 30_000 }, () => {
     const out = mkdtempSync(join(tmpdir(), 'pokey-bake-'))
     try {
       // Drive the real bake end to end through the vendored web-pokey core.
