@@ -1,6 +1,7 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
+import { withGlow, glowPolyline } from '@arcade/shared/glow'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform } from '../core/geometry'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
@@ -175,47 +176,41 @@ function lerpP(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }
 }
 
-function strokePoly(
-  ctx: CanvasRenderingContext2D, pts: readonly Point[], closed: boolean,
-): void {
-  if (pts.length === 0) return
-  ctx.beginPath()
-  pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
-  if (closed) ctx.closePath()
-  ctx.stroke()
-}
-
 export function drawTube(
   ctx: CanvasRenderingContext2D, s: GameState, color: string, playerLane: number,
 ): void {
   const tube = s.tube
   // Spokes: per-boundary gradient, dim at the far rim → bright at the near rim.
+  // The far→near depth gradient IS the GlowStyle.stroke (a CanvasGradient). Since a
+  // gradient can't double as a shadowColor, the level `color` is passed explicitly so
+  // the halo glows the level colour, not fall back to an empty shadow. Blur 8/width 2
+  // are tempest's own tube constants — withGlow owns only the set/draw/reset envelope.
   for (let i = 0; i < tube.far.length; i++) {
     const f = tube.far[i]
     const near = tube.near[i]
     const g = ctx.createLinearGradient(f.x, f.y, near.x, near.y)
     g.addColorStop(0, 'rgba(255,255,255,0.04)')
     g.addColorStop(1, color)
-    ctx.strokeStyle = g
-    ctx.lineWidth = 2
-    ctx.shadowColor = color
-    ctx.shadowBlur = 8
-    ctx.beginPath()
-    ctx.moveTo(f.x, f.y)
-    ctx.lineTo(near.x, near.y)
-    ctx.stroke()
+    withGlow(ctx, { stroke: g, width: 2, blur: 8, color }, () => {
+      ctx.beginPath()
+      ctx.moveTo(f.x, f.y)
+      ctx.lineTo(near.x, near.y)
+      ctx.stroke()
+    })
   }
-  // Far ring (dim).
-  ctx.lineWidth = 1.5
-  ctx.shadowBlur = 6
-  ctx.strokeStyle = 'rgba(150,190,255,0.28)'
-  strokePoly(ctx, tube.far, tube.closed)
-  // Near ring (bright rim).
-  ctx.lineWidth = 3.5
-  ctx.shadowColor = color
-  ctx.shadowBlur = 18
-  ctx.strokeStyle = color
-  strokePoly(ctx, tube.near, tube.closed)
+  // Far ring (dim). The dim blue is the STROKE; its halo keeps the inherited level
+  // `color`, passed explicitly — without it withGlow would default the shadowColor to
+  // the dim-blue stroke and flatten the halo. glowPolyline wants [x,y] pairs.
+  glowPolyline(
+    ctx, tube.far.map((p) => [p.x, p.y] as [number, number]),
+    { stroke: 'rgba(150,190,255,0.28)', width: 1.5, blur: 6, color }, tube.closed,
+  )
+  // Near ring (bright rim). Stroke === halo === level colour, so GlowStyle.color's
+  // default (?? stroke) already resolves to the level colour.
+  glowPolyline(
+    ctx, tube.near.map((p) => [p.x, p.y] as [number, number]),
+    { stroke: color, width: 3.5, blur: 18 }, tube.closed,
+  )
   // Rim vertex sparks.
   ctx.fillStyle = '#ffffff'
   ctx.shadowBlur = 12
