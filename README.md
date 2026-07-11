@@ -4,6 +4,8 @@ A faithful, browser-based clone of Atari's 1981 vector arcade game *Tempest*.
 
 **▶ Play it live: [tempest.slabgorb.com](https://tempest.slabgorb.com)**
 
+![Tempest gameplay — the Claw rounding a square tube while cyan Flippers climb the lanes from the far rim](https://arcade-assets.slabgorb.com/tempest/screenshot.png)
+
 You control the **Claw** (blaster) riding the near rim of a geometric tube,
 spinning around it to shoot enemies that climb up the lanes from the far end.
 Glowing vector lines on black, rendered with HTML5 Canvas 2D — no physics
