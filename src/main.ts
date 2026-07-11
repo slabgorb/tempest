@@ -8,6 +8,7 @@ import { createAudioEngine } from './shell/audio'
 import { playEventSounds } from './shell/audio-dispatch'
 import { render } from './shell/render'
 import { makeHighScoreStorage, makeHighScoreRowGuard } from '@arcade/shared/highscore'
+import { resizeToDisplay } from '@arcade/shared/view'
 
 // tempest records the `level` reached; the shared factory binds load/save to the
 // 'tempest-high-scores' localStorage key and validates each row's finite score +
@@ -17,18 +18,17 @@ const highScores = makeHighScoreStorage('tempest', makeHighScoreRowGuard('level'
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
 
-let dpr = Math.min(2, window.devicePixelRatio || 1)
+// The DPR-resize + CSS-box sizing is @arcade/shared/view's resizeToDisplay (SH2-10),
+// which owns the Math.min(2, devicePixelRatio||1) cap+guard every cabinet hand-rolled.
 let W = window.innerWidth
 let H = window.innerHeight
+let dpr = 1 // real value set by resize() below, from the resolved ViewportSize
 
 function resize(): void {
-  dpr = Math.min(2, window.devicePixelRatio || 1)
-  W = window.innerWidth
-  H = window.innerHeight
-  canvas.width = Math.floor(W * dpr)
-  canvas.height = Math.floor(H * dpr)
-  canvas.style.width = `${W}px`
-  canvas.style.height = `${H}px`
+  const vp = resizeToDisplay(canvas, window.innerWidth, window.innerHeight, window.devicePixelRatio)
+  W = vp.cssWidth
+  H = vp.cssHeight
+  dpr = vp.dpr
 }
 window.addEventListener('resize', resize)
 resize()
