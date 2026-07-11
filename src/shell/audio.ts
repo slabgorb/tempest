@@ -1,19 +1,21 @@
 // src/shell/audio.ts
 //
-// Shell-side WebAudio SFX engine (Story 5-2). Loads the game's real arcade `.wav`
-// samples from Cloudflare R2 and plays them by name. This is IO (shell), not
-// simulation (core): the pure core emits `GameEvent` DATA and never imports this
-// module — it must stay free of `AudioContext`/DOM (CLAUDE.md hard boundary).
+// Tempest's SFX manifest + engine constructor. The WebAudio ENGINE itself (lazy
+// AudioContext, master gain, buffer load/decode, POKEY-style voice-stealing, silent
+// degrade) was extracted to @arcade/shared/audio in SH2-16 — four cabinets shared
+// the identical mechanism. This module keeps only tempest's NUMBERS (the SOUNDS
+// name->file manifest, the CHANNELS voice map, the R2 base URL) and constructs the
+// shared engine from them. The event->sound wiring stays in audio-dispatch.ts.
 //
-// Every failure mode degrades silently: no WebAudio support, a blocked autoplay
-// context, a failed fetch, or an undecodable sample all leave the game running
-// without sound rather than throwing. Browsers also forbid creating an
-// `AudioContext` before a user gesture, so the context is built lazily inside
-// `resume()` (wired to a click/keydown handler in Story 5-5) and every method is
-// a no-op until then.
+// This is IO (shell), not simulation (core): the pure core emits `GameEvent` DATA
+// and never imports this module — it must stay free of `AudioContext`/DOM.
 //
-// Scope (5-2): the engine + sound manifest only. Mapping `GameEvent`s to sound
-// names and draining `state.events` each frame is Story 5-5's job.
+// Every failure mode still degrades silently (no WebAudio, blocked autoplay, failed
+// fetch, undecodable sample) — that behaviour now lives in the shared engine.
+import {
+  createAudioEngine as createSharedAudioEngine,
+  type AudioEngine as SharedAudioEngine,
+} from '@arcade/shared/audio'
 
 // R2 samples live on the dedicated assets host. arcade.slabgorb.com itself now
 // routes to the game's Cloudflare tunnel (the Vite origin), so the .wav samples
@@ -78,144 +80,19 @@ const CHANNELS: Record<SoundName, string> = {
   pulsarHum: 'pulsar',
 }
 
-export interface AudioEngine {
-  // Create/resume the AudioContext and start loading samples. Safe to call
-  // repeatedly (e.g. on every user gesture); only the first call does work.
-  resume(): void
-  // Play a loaded sample once. No-op if the sound is not loaded, the context is
-  // not ready, or audio is unavailable.
-  play(name: SoundName): void
-  // Start a sustained (looping) sample on its channel — the pulsar hum or the
-  // warp/zoom dive (Story 10-11). Steals the channel like play(), so only one loop
-  // rings per channel. Same silent no-ops as play() when unavailable/unloaded.
-  startLoop(name: SoundName): void
-  // Stop the sustained sample sounding on `name`'s channel (Story 10-11). A safe
-  // no-op when nothing is looping there.
-  stopLoop(name: SoundName): void
-  // True once at least one sample has decoded. Mainly for tests / readiness UI.
-  ready(): boolean
-}
+// Tempest's concrete engine type — the shared `AudioEngine<N>` specialised to this
+// cabinet's SoundName union, so `play()` stays typed and audio-dispatch.ts can do
+// `Pick<AudioEngine, 'play' | 'startLoop' | 'stopLoop'>` without a type argument.
+export type AudioEngine = SharedAudioEngine<SoundName>
 
-// Resolve the AudioContext constructor, covering the legacy `webkitAudioContext`
-// prefix (older Safari/iOS) and non-browser environments. Read off `globalThis`
-// with an explicit shape — `AudioContext` is a global ambient, not a member of
-// the `Window` interface, so a bare `window.AudioContext` access won't typecheck.
-function getAudioContextCtor(): typeof AudioContext | undefined {
-  const g = globalThis as {
-    AudioContext?: typeof AudioContext
-    webkitAudioContext?: typeof AudioContext
-  }
-  return g.AudioContext ?? g.webkitAudioContext
-}
-
+// Construct tempest's SFX engine from its manifest. The default base URL keeps the
+// 0-arg call sites (main.ts, the sample-loading tests) working; a custom base URL
+// is threaded through for tests. masterGain is omitted so the shared 0.4 default
+// (tempest's long-standing headroom value) applies.
 export function createAudioEngine(baseUrl: string = DEFAULT_BASE_URL): AudioEngine {
-  let ctx: AudioContext | null = null
-  let master: GainNode | null = null
-  let loadStarted = false
-  const buffers = new Map<SoundName, AudioBuffer>()
-  // Story 10-10: the source currently sounding on each logical channel, so the
-  // next trigger on that channel can steal (stop) it. Cleared by `onended` when a
-  // source finishes on its own, so a later trigger never tries to stop a node that
-  // already ended.
-  const live = new Map<string, AudioBufferSourceNode>()
-
-  // Fetch + decode every manifest sample once. A failure on any one sample
-  // (network, CORS, undecodable) is swallowed — that sound simply never plays.
-  function load(): void {
-    if (loadStarted || !ctx) return
-    loadStarted = true
-    const context = ctx
-    for (const name of Object.keys(SOUNDS) as SoundName[]) {
-      fetch(baseUrl + SOUNDS[name])
-        .then((res) => res.arrayBuffer())
-        .then((data) => context.decodeAudioData(data))
-        .then((buffer) => {
-          buffers.set(name, buffer)
-        })
-        .catch(() => {
-          /* one missing sound is non-fatal — leave it unloaded, stay silent */
-        })
-    }
-  }
-
-  function resume(): void {
-    if (!ctx) {
-      const Ctor = getAudioContextCtor()
-      if (!Ctor) return // no WebAudio — engine stays inert
-      try {
-        ctx = new Ctor()
-        master = ctx.createGain()
-        master.gain.value = 0.4 // headroom so overlapping SFX don't clip
-        master.connect(ctx.destination)
-      } catch {
-        ctx = null
-        master = null
-        return
-      }
-    }
-    // The context can start 'suspended' until a gesture unlocks it.
-    if (ctx.state === 'suspended') void ctx.resume()
-    load()
-  }
-
-  // Steal a channel: stop whatever is sounding on it so a new trigger cuts in.
-  // Its own guard, separate from starting any replacement — a prior source that
-  // already ended would throw on stop(), and that must NOT abort the cut-in.
-  function stopChannel(channel: string): void {
-    const prev = live.get(channel)
-    if (!prev) return
-    live.delete(channel)
-    try {
-      prev.stop()
-      prev.disconnect()
-    } catch {
-      /* prior source may have already ended — ignore */
-    }
-  }
-
-  // Start a buffer source on `name`'s channel, optionally looping. Shared by the
-  // one-shot play() and the sustained startLoop() (Story 10-11) — the only
-  // difference is `source.loop`. Steals the channel first so retriggers cut in
-  // instead of stacking; silently no-ops when unavailable or unloaded.
-  function startSource(name: SoundName, loop: boolean): void {
-    if (!ctx || !master) return
-    const buffer = buffers.get(name)
-    if (!buffer) return // not loaded (yet) or failed to decode — silent no-op
-    const channel = CHANNELS[name]
-    stopChannel(channel)
-    try {
-      const source = ctx.createBufferSource()
-      source.buffer = buffer
-      source.loop = loop
-      source.connect(master)
-      // Forget a source once it finishes so it isn't left as the channel's "live"
-      // voice; otherwise the next trigger would stop an already-ended node. (A
-      // looping source never fires onended on its own — stopLoop ends it.)
-      source.onended = () => {
-        if (live.get(channel) === source) live.delete(channel)
-      }
-      source.start()
-      live.set(channel, source)
-    } catch {
-      /* never let a single sound failure crash the frame */
-    }
-  }
-
-  function play(name: SoundName): void {
-    startSource(name, false)
-  }
-
-  function startLoop(name: SoundName): void {
-    startSource(name, true)
-  }
-
-  function stopLoop(name: SoundName): void {
-    stopChannel(CHANNELS[name])
-  }
-
-  function ready(): boolean {
-    return buffers.size > 0
-  }
-
-  return { resume, play, startLoop, stopLoop, ready }
+  return createSharedAudioEngine<SoundName>({
+    baseUrl,
+    sounds: SOUNDS,
+    channels: CHANNELS,
+  })
 }
