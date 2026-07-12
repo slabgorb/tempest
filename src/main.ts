@@ -9,6 +9,8 @@ import { playEventSounds } from './shell/audio-dispatch'
 import { render } from './shell/render'
 import { makeHighScoreStorage, makeHighScoreRowGuard } from '@arcade/shared/highscore'
 import { resizeToDisplay } from '@arcade/shared/view'
+import { INITIAL_PAUSED, isPauseKey, togglePaused } from '@arcade/shared/pause'
+import { drawEscOverlay } from '@arcade/shared/esc-overlay'
 
 // tempest records the `level` reached; the shared factory binds load/save to the
 // 'tempest-high-scores' localStorage key and validates each row's finite score +
@@ -53,6 +55,32 @@ window.addEventListener('keydown', unlockAudio)
 const initial = initialState((Math.random() * 0xffffffff) >>> 0)
 initial.highScoreTable = highScores.load()
 
+// SH2-14: Escape toggles pause via the shared @arcade/shared/pause gate — the
+// cabinet-wide VERB. Edge, not level (guard e.repeat) so a held key can't
+// machine-gun the toggle. The freeze itself is the loop's stepUnlessPaused gate,
+// which polls the isPaused accessor passed to createLoop below.
+let paused = INITIAL_PAUSED
+window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (!e.repeat && isPauseKey(e.key.toLowerCase())) paused = togglePaused(paused)
+})
+
+// Per-cabinet NUMBERS for the pause card: tempest's keybinds, its authentic 1981
+// green banner colour (#39ff14, the BONUS/TIME face), and the dim alpha. Copy /
+// colour / opacity are playtest-tunable.
+const TEMPEST_PAUSE = {
+  lines: [
+    'PAUSED',
+    '',
+    'ESC          RESUME',
+    'ARROWS       ROTATE',
+    'SPACE        FIRE',
+    'SHIFT        SUPERZAP',
+    'ENTER        START',
+  ],
+  color: '#39ff14',
+  opacity: 0.72,
+} as const
+
 const loop = createLoop(
   initial,
   () => input.sample(),
@@ -69,6 +97,13 @@ const loop = createLoop(
     // of by a brittle source text-match.
     playEventSounds(audio, frameEvents)
     render(ctx, s, W, H, fx, dpr, rdt)
+    // SH2-14: the pause overlay dims the frozen tube and draws the keybind card
+    // over it. render() leaves the ctx in its phosphor-composited state, so set
+    // the dpr transform explicitly to draw the card in CSS-pixel space (W, H).
+    if (paused) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      drawEscOverlay(ctx, W, H, TEMPEST_PAUSE)
+    }
   },
   () => performance.now(),
   // The 4-3 state machine inserts the committed entry and transitions
@@ -79,6 +114,8 @@ const loop = createLoop(
   (oldMode) => {
     if (oldMode === 'highscore') highScores.save(loop.getState().highScoreTable)
   },
+  // SH2-14: the loop polls this each sub-step; a paused sub-step freezes the sim.
+  () => paused,
 )
 // Initials entry (SH2-13, the cabinet-wide typing flow): typed letters and
 // Backspace are edge events, not held state, so they bypass the per-frame
