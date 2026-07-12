@@ -1,0 +1,879 @@
+[
+  {
+    "id": "W-001",
+    "class": "DIVERGENCE",
+    "title": "Tick order: the arcade moves charges AFTER invaders and fires enemy charges after moving them; we move bullets before enemies",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 874,
+      "verbatim": "\tJSR MOVCHA\t\t;MOVE CHARGES"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 633,
+      "verbatim": "  stepBullets(s, dt)"
+    },
+    "claim": "PLAY (ALWELG:869-878) runs MOVCUR, FIREPC, PROSUZ, MOVNYM, MOVINV, MOVCHA, FIREIC, COLLIS, PROEXP, ANALYZ. Our stepPlaying (sim.ts:630-644) runs stepPlayer, stepFiring, stepZap, stepBullets, stepEnemies, stepEnemyFire, stepEnemyBullets, resolve*. The first three slots match exactly (cursor, player fire, superzapper). After that: (a) we move player charges (stepBullets, line 633) BEFORE enemies; the arcade moves ALL charges (player and enemy, one MOVCHA loop) AFTER MOVINV, so an invader is at its new position when the bullet advances through it; (b) the arcade fires enemy charges (FIREIC) AFTER MOVCHA, so a newly launched enemy bolt sits still for its birth frame; we call stepEnemyFire then stepEnemyBullets, so our new bolt already moves one step on the frame it is born; (c) the arcade has no spawn step here at all — MOVNYM occupies that slot (see W-002).",
+    "reasoning": "Order is observable: a bullet fired at an enemy exactly one bullet-step away resolves on a different frame in the two builds, and every enemy bolt in our build is one bolt-step (≈0.015 depth) closer to the player than the arcade's on its first visible frame. It is also the cheapest class of divergence to fix — a reordering of five calls, no new state.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-002",
+    "class": "NO_COUNTERPART",
+    "title": "Nymphs do not exist in our simulation",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1134,
+      "verbatim": "\tJSR CONYMP\t\t;YES. MAKE IT AN INVADER"
+    },
+    "ours": null,
+    "claim": "The arcade has a second enemy population: NNYMPH=64 nymph slots (ALCOMN.MAC:811). MOVNYM (ALWELG:1107-1174) walks all 64 every frame, decrements each active nymph's NYMPY by 1, rotates it one line every other frame while NYMPY >= $40 (QFRAME AND 1), reserves its line as off-limits once it enters the 'alone zone' (NYMPY < $40), and converts it to a live invader (CONYMP) when NYMPY hits 0. NWNYMC (the per-wave nymph count, TNYMMX) is the wave's whole enemy budget. We have no nymph entity at all: sim.ts spawns enemies straight into the tube from a countdown timer.",
+    "reasoning": "The nymph pool is the arcade's entire enemy-supply model — it is what makes the far end of the well visibly crawl with pinwheels before they hatch, it is the back-pressure that caps live invaders (W-004), it gates whether pulsars/fuseballs turn back (W-024/W-029), and it is the 'no nymphs left' signal that converts spikers to tankers (W-041, which we already model off spawn.remaining). We have re-derived three of its consequences separately and independently; the object itself is missing.",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "W-003",
+    "class": "DIVERGENCE",
+    "title": "Spawn regulation is invader-slot back-pressure, not a spawn interval timer",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1113,
+      "verbatim": "\tCMP WINVMX"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 127,
+      "verbatim": "    if (s.spawn.timer <= 0) {"
+    },
+    "claim": "MOVNYM (ALWELG:1110-1123) computes INMCOU + INCCOU (invaders on lines + chasers), compares it against WINVMX, and if the slots are booked — or a superzap is running (SUZTIM != 0) — it sets TEMPY negative, which STOPS every nymph from advancing that frame. There is no spawn timer anywhere in ALWELG. Nymphs simply march up and hatch as fast as free invader slots allow. We instead release one enemy every params.spawnInterval seconds (rules.ts:187: max(0.3, 1.2/ramp)) regardless of how many are already alive.",
+    "reasoning": "The consequence is that the arcade's wave pressure is self-regulating and bursty (kill three flippers and three nymphs hatch on the next frames), while ours is a metronome. It also means our board population is unbounded (see W-004). Fixing W-002 and W-004 together makes this fall out; fixing it alone is a rewrite of stepEnemies' spawn block.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-004",
+    "class": "DIVERGENCE",
+    "title": "The arcade allows at most 7 live invaders; we have no cap at all",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 695,
+      "verbatim": "TINVMX:\t.BYTE T1,1,99.,6"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 136,
+      "verbatim": "      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))"
+    },
+    "claim": "WINVMX = 6 for every wave 1-99 (TINVMX), and NINVAD = 7 (ALCOMN.MAC:809). ACTINV (ALWELG:1219-1263) scans slots WINVMX..0 for a vacancy and returns 'no slot' when all are taken; MOVINV loops the same 7 slots. So the arcade never has more than 7 active invaders on screen, at ANY level. Our stepEnemies pushes a new enemy whenever the spawn timer elapses, with no population cap: at level 10 our budget is 24 enemies (rules.ts:183) released every 0.51 s, so 20+ can be alive simultaneously.",
+    "reasoning": "This is a first-order difficulty and readability difference. Tempest is legible because the well never holds more than seven things; a level-10 board in our build can hold three times that. Every other balance constant we tuned by hand was tuned against a board that the arcade would never produce.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-005",
+    "class": "DIVERGENCE",
+    "title": "Enemy behaviour is a per-invader bytecode program (the CAM), not five hard-coded steppers",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1526,
+      "verbatim": "\tJSR JSRCAM\t\t;EXECUTE CAM REQUESTED"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 145,
+      "verbatim": "    switch (e.kind) {"
+    },
+    "claim": "Every invader carries INVCAM, a program counter into the CAM table (ALWELG:2374-2526). MOVINV (1508-1534) loads it into CAMPC and executes CAM opcodes through the JSRCAM dispatcher until a VEXIT yields the frame, then writes CAMPC back. There are 20 opcodes (TABJSR, 1611-1632): VEXIT, VSLOOP/VSLOPB (set loop counter, from a literal or from a memory parameter), VELOOP, VSETPC, VSKIP0, VBR0PC (branch on CAMSTA), VNOOP, VSMOVE, VSTRAI, VJUMPS, VJUMPM, VCHROT, VKITST, VELTST, VSFUSE, VFUSKI, VSPUMO, VCHPLA, VCHKPU. Eleven programs are written in it: TRALUP, NOJUMP, MOVJMP, SPIRAL, SPIRCH, TOPPER, COWJMP/COWJM2, FUSEUP, FUSELR, PULSCH, AVOIDR. Our five per-kind step functions (sim.ts:145-197) have no program counter, no loop counter, no branch, and no shared opcode vocabulary; an enemy's behaviour is a function of its `kind` alone.",
+    "reasoning": "This is the structural finding the rest of the enemy divergences hang off. Our modules cannot express, at any constant setting: 'move up N frames then flip' (MOVJMP), 'flip continuously while climbing' (SPIRAL), 'reverse flip direction every 2 then every 3 jumps' (SPIRCH), 'flip only when NOT standing on a spike' (COWJMP), 'flip away from the player' (AVOIDR), or 'crouch 4 frames at the rim then jump toward the player at double angular speed' (TOPPER). Retro-fitting them as booleans on five steppers will reproduce the shapes badly and will not survive the next level's program. Honest sizing: this is a rewrite of src/core/enemies/* into a small CAM interpreter plus the eleven programs — the enemy modules do not survive it.",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "W-006",
+    "class": "DIVERGENCE",
+    "title": "The flipper's whole behaviour is selected per level from CAMWAV — level 1 flippers never flip while climbing",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 712,
+      "verbatim": "\t.BYTE NOJUMP-CAM"
+    },
+    "ours": {
+      "file": "src/core/enemies/flipper.ts",
+      "line": 35,
+      "verbatim": "  if (e.flipTimer <= 0) {"
+    },
+    "claim": "CAMWAV (ALWELG:711-727) is a TZANDF table indexed by (wave-1) mod 16 that picks the FLIPPER's CAM program for the wave; the entry it yields is stored in WFLICAM and handed to every new flipper by NEWFLI (1428-1433). The sixteen entries, in order, are NOJUMP, MOVJMP, SPIRAL, SPIRCH, COWJM2, MOVJMP, SPIRCH, SPIRAL, COWJM2, AVOIDR, SPIRCH, SPIRAL, COWJM2, NOJUMP, AVOIDR, SPIRCH — the source even labels the levels above it (CIRCLE, SQUARE, CROSS, PEANUT, KEY, ...). Wave 1 (the circle) gets NOJUMP, which is literally VSMOVE / VEXIT / VSETPC NOJUMP (2387-2390): climb, yield, repeat. A level-1 flipper NEVER flips while it climbs; it only starts flipping once it reaches the rim and becomes a chaser (W-009). Our flipper flips on every level, every params.flipPattern.moveFrames — 8 frames (0.133 s) at level 1.",
+    "reasoning": "This is the single most visible gameplay difference in the audit. The opening level of Tempest is famously a shooting gallery of flippers coming straight up the lanes; ours is a swarm of flippers strobing sideways five times a second. It also means levels 5, 9, 13 (COWJM2: flip only when off a spike), 10 and 15 (AVOIDR: flip AWAY from the player), and 3, 8, 12 (SPIRAL: flip continuously) all play identically in our build.",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "W-007",
+    "class": "DIVERGENCE",
+    "title": "Flip direction is never random — it is set by rule (toward the player, away from it, or preserved across jumps)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2514,
+      "verbatim": "\tVCHPLA\t\t\t;SET DIRECTION TOWARD PLAYER"
+    },
+    "ours": {
+      "file": "src/core/enemies/flipper.ts",
+      "line": 36,
+      "verbatim": "    e.flipDir = nextFloat(rng) < 0.5 ? -1 : 1"
+    },
+    "claim": "An invader's rotation lives in the INVROT bit of INVAC1 (ALCOMN.MAC) and PERSISTS across jumps — JJUMPS/JJUMPM just keep using it. It is only ever changed deliberately: JCHPLA (1876-1889) computes the polar delta to the cursor and sets INVROT to the SHORTEST way toward the player; JCHROT (1722-1726) flips the bit. AVOIDR does VCHPLA then VCHROT (2514-2515), i.e. it deliberately flips away from the player. SPIRCH does VCHROT after every 2 jumps, then after every 3 (2423-2443). PULSCH does VCHPLA before every flip (2504). TOPPER's chaser gets JCHPLA, or the opposite of the other chaser's direction if one exists (1845-1869). Not one call site draws a random direction. We draw one from the RNG on every flip, for flippers (flipper.ts:36) and pulsars (pulsar.ts:32).",
+    "reasoning": "A rule-driven direction is what makes arcade flippers feel like they are hunting you and makes the AVOIDR levels feel evasive; a coin-flip makes them feel like Brownian motion and, statistically, makes them approach the player half as often. It also means our RNG is consumed at a completely different rate, so no seeded replay can ever line up.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-008",
+    "class": "DIVERGENCE",
+    "title": "A flip takes 8 angle-steps: 8 frames for a climbing flipper, WTTFRA steps/frame at the rim",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2457,
+      "verbatim": "KJULP2:\tVJUMPM\t\t\t;DOUBLE SPEED JUMP"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 175,
+      "verbatim": "  const flipFrames = level >= 33 ? 3 : 4"
+    },
+    "claim": "JJUMPM (1892-1976) advances the jump angle in INVAL2 by exactly ONE unit (mod 16) per call and ends the jump when the angle reaches CALSAN's final angle, which is the start angle + 8 — so a jump is 8 steps. Climbing programs (MOVJMP, SPIRAL, SPIRCH, COWJMP, AVOIDR) call VJUMPM once per VEXIT, i.e. 1 step/frame => an 8-frame flip. Only TOPPER (the rim chaser) loops VJUMPM WTTFRA times per frame (2456-2459, 'DOUBLE SPEED JUMP'), and WTTFRA is 2 for waves 1-32 and 3 for waves 33+ (TWTTFRA, 704-706) => a 4-frame flip at the rim, 2.67 at deep levels. Our flipFrames is 4 for every flipper at every depth (3 at L33+).",
+    "reasoning": "Our climbing flips are twice as fast as the arcade's, which is what makes a flipper cross a lane in 4 frames instead of 8 and halves the window in which the player can rotate 'through' a mid-flip flipper (see W-010). Our rim value (4) happens to be right, for the wrong reason — flipFrames was modelled on flip_top_accel, which is WTTFRA, a rim-only parameter.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-009",
+    "class": "DIVERGENCE",
+    "title": "An invader reaching the rim becomes a CHASER — a distinct state with its own CAM, counter and pincer rule",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1747,
+      "verbatim": "ATOP:\tJSR CHASER\t\t;YES. CONVERT TO CHASER"
+    },
+    "ours": {
+      "file": "src/core/enemies/flipper.ts",
+      "line": 16,
+      "verbatim": "  e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)"
+    },
+    "claim": "JSMOVE detects INVAY <= CURSY and calls CHASER (1824-1874), which: pins the invader exactly at CURSY; decrements INMCOU and increments INCCOU (the arcade tracks 'invaders on lines' and 'invaders chasing the cursor' separately); sets CAMPC to TOPPER; and picks the chase direction — the shortest way to the player via JCHPLA, UNLESS exactly one other chaser already exists, in which case it sends this one the OPPOSITE way to pincer the player (1845-1869). TOPPER (2447-2460) then crouches 4 frames, tests for a cursor kill each frame (VKITST), and jumps around the rim at WTTFRA angle-steps per frame. Our flipper has no rim state: it clamps depth at 1 (flipper.ts:16) and keeps running its climbing behaviour; the grab is resolved externally in resolvePlayerHits.",
+    "reasoning": "The chaser is the enemy that actually kills you in Tempest, and the pincer rule is why two flippers at the rim close from both sides instead of chasing in a conga line. Ours can never do this. Cheap to bolt onto our steppers as a state, but it wants the CAM (W-005) to be honest.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-010",
+    "class": "CONFIRMED",
+    "title": "A mid-flip invader cannot grab the cursor",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1982,
+      "verbatim": "\tIFPL\t\t\t;MOVING (NOT JUMPING)"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 389,
+      "verbatim": "    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl"
+    },
+    "claim": "JKITST (1980-1993) tests INVAC1 for IFPL — the INVMOT ($80) bit clear, i.e. the invader is on its lines and NOT jumping — before it will compare INVAL1/INVAL2 against CURSL1/CURSL2 and kill the cursor. A jumping invader passing over the player's lane does not kill. Our resolvePlayerHits excludes flippers with `e.flipping` (sim.ts:390) for exactly this reason.",
+    "reasoning": "Our story-6-14 rule is a faithful reading of the ROM. Recorded so the audit's negative findings can be trusted."
+  },
+  {
+    "id": "W-011",
+    "class": "DIVERGENCE",
+    "title": "Enemies per wave: the arcade's TNYMMX table starts at 10 and is not a straight line",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 697,
+      "verbatim": "TNYMMX:\t.BYTE TZ,1,16.,10.,12.,15.,17.,20.,22.,20.,24.,27.,29.,27.,24.,26.,28.,30.,27."
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 183,
+      "verbatim": "    enemyCount: 6 + (level - 1) * 2,"
+    },
+    "claim": "NWNYMC (the wave's nymph count = its total enemy budget) is itemised per wave: 10, 12, 15, 17, 20, 22, 20, 24, 27, 29, 27, 24, 26, 28, 30, 27 for waves 1-16, then TA/T1 records to wave 99 (698-703). Note it is NOT monotonic — it DROPS at wave 7 (22 -> 20) and again at wave 12 (27 -> 24). Ours is 6 + 2*(level-1): 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36. Wave 1 is 6 for us and 10 in the arcade; wave 16 is 36 for us and 27 in the arcade.",
+    "reasoning": "A straight-line count makes early waves too short and late waves too long. The table is 16 bytes; there is no reason to approximate it.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-012",
+    "class": "DIVERGENCE",
+    "title": "The invader speed curve (TINVIN) is a steep piecewise table with a dip at wave 17, not a straight line from L1 to L33",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 592,
+      "verbatim": "\t.BYTE TA,1,8,-44.,-5"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 150,
+      "verbatim": "export function flipperSpeedForLevel(level: number): number {"
+    },
+    "claim": "WINVIL (the base invader speed, used by flippers and tankers, doubled for fuseballs, offset for enemy shots) comes from TINVIN (591-599). Waves 1-8 are TA: -44 with -5 PER WAVE (wave 8 = -79). Waves 9-16 are itemised: -81, -84, -84, -84, -88, -92, -96, -96. Wave 17-25 RESTARTS at -81 (enemies get SLOWER at wave 17), 26-32 at -99, 33-39 at -108, 40-48 at -110, 49-64 at -120, 65-99 alternates -160/-191. TIMES8 (560-578) scales by 8 into 8.8 fixed point, so along-units/frame = |WINVIL|/32. Wave 1 = 1.375, wave 8 = 2.469, wave 16 = 3.000, wave 17 = 2.531, wave 33 = 3.375. Our flipperSpeedForLevel interpolates LINEARLY from 1.375 (L1) to 3.375 (L33): wave 8 = 1.813 (27% too slow), wave 16 = 2.313 (23% too slow), and it never dips at 17.",
+    "reasoning": "The ramp over waves 1-8 is -5 per wave — nearly four times steeper than our linear slope of 2/32 per wave. Our mid-game (waves 5-16) is therefore markedly slower than the arcade's, which is where most players spend their time. Replacing flipperSpeedForLevel with the TINVIN table is a table transcription, not a re-tune.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-013",
+    "class": "CONFIRMED",
+    "title": "The L1 and L33 flipper speed anchors (1.375 and 3.375 along-units/frame) are correct",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 754,
+      "verbatim": "\t.WORD TINVIN,WINVIL"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 148,
+      "verbatim": "const FLIPPER_ALONG_PER_FRAME_L1 = 1.375"
+    },
+    "claim": "TINVIN's wave-1 byte is -44 and its wave-33 byte is -108; TIMES8 multiplies by 8 into an 8.8 fixed-point per-frame increment, giving 44*8/256 = 1.375 and 108*8/256 = 3.375 along-units/frame. Our FLIPPER_ALONG_PER_FRAME_L1 = 1.375 and FLIPPER_ALONG_PER_FRAME_L33 = 3.375 (rules.ts:148-149), and the well spans ILINLIY=$10 to ILINDDY=$F0 = 224 units (ALCOMN.MAC:819-820), matching our WARP_ALONG_SPAN of 224.",
+    "reasoning": "The endpoints and the unit conversion are exactly right. Only the shape between them is wrong (W-012). Recorded so the fix for W-012 does not accidentally 'correct' the anchors."
+  },
+  {
+    "id": "W-014",
+    "class": "DIVERGENCE",
+    "title": "The spiker moves at exactly the flipper's speed for waves 1-20; ours is 40% slower and on its own curve",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 602,
+      "verbatim": "TSPIIN:\t.BYTE TB,1,20.,0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 188,
+      "verbatim": "    spikerSpeed: 0.22 * ramp,"
+    },
+    "claim": "The spiker's speed slot is WINVIL+ZABTRA, filled from TSPIIN (602-605) using type code TB, which DOTB (829-832) implements as 'the record byte PLUS the already-computed WINVIL' (the CONTOUR loop walks WTABLE backwards, so WINVIL is set first). TSPIIN's byte is 0 for waves 1-20, so the spiker's speed IS the flipper's speed: 1.375 along/frame at wave 1 = 0.368 depth/s. It then becomes WINVIL-48 for waves 21-32, WINVIL-40 for 33-48, WINVIL-48 for 49-99 — i.e. FASTER than a flipper in the late game. Our spikerSpeed is 0.22 * (1 + 0.15*(level-1)): 0.22 depth/s at L1, on a curve unrelated to the flipper's.",
+    "reasoning": "The spiker draws its spike at its own climb rate, so its speed sets how fast spikes grow — the primary threat model of the warp. At 0.22 vs 0.368 depth/s our spikers take 67% longer to lay the same spike.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-015",
+    "class": "CONFIRMED",
+    "title": "Fuseball speed is exactly 2x the invader speed",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 544,
+      "verbatim": "\tSTA WFUSIH\t\t;FUSE INC=2X INVADER SPEED"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 190,
+      "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
+    },
+    "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
+    "reasoning": "Exact match, including that it is derived from the invader speed rather than being an independent constant — so it will automatically stay correct when W-012 replaces the speed curve."
+  },
+  {
+    "id": "W-016",
+    "class": "CONFIRMED",
+    "title": "Enemy refire holdoff: 80 frames at wave 1, -3/wave to 23 at wave 20, 20 for 21-64, 10 for 65+",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 583,
+      "verbatim": "\t.BYTE TA,1,20.,80.,-3"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 97,
+      "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
+    },
+    "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, in the same units (60 Hz frames), converted to seconds only at the call site (sim.ts:223).",
+    "reasoning": "Byte-for-byte correct, including the piecewise breakpoints. Recorded as a positive control on the unit conversion (frames -> seconds) used throughout this audit."
+  },
+  {
+    "id": "W-017",
+    "class": "CONFIRMED",
+    "title": "The self-limiting enemy fire probability table (CHANCE) matches ours",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2737,
+      "verbatim": "CHANCE:\t.BYTE 0,0E0,0F0,0FA,0FF\t;HIGHER CHANCE FOR ENEMY SHOT IF LESS ON SCREEN"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 89,
+      "verbatim": "const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]"
+    },
+    "claim": "FIREIC (2705-2708) draws RANDOM and fires when RANDOM >= CHANCE[ESHCOU], where ESHCOU is the number of enemy shots already on screen. The thresholds 0, $E0, $F0, $FA, $FF give firing probabilities of 256/256 = 1.0, 32/256 = 0.125, 16/256 = 0.0625, 6/256 = 0.0234, 1/256 = 0.0039. Our ENEMY_FIRE_CHANCE is [1.0, 0.125, 0.0625, 0.023, 0.004], indexed the same way (sim.ts:229).",
+    "reasoning": "Exact match to three significant figures on every entry."
+  },
+  {
+    "id": "W-018",
+    "class": "CONFIRMED",
+    "title": "Who may fire: flippers/tankers/spikers always, pulsars only from wave 60, fuseballs never",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 707,
+      "verbatim": "TWPULF:\t.BYTE T1,60.,99.,ZFIRYE"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 82,
+      "verbatim": "    case 'pulsar':  return level >= 60"
+    },
+    "claim": "FIREIC gates on the INVFIR ($40) bit of INVAC2 (2696-2698). TNEWI2 (1485-1489) sets that bit per type: flipper ZFIRYE, pulsar ZFIRNO, tanker ZFIRYE, spiker(TRALER) ZFIRYE, fuse ZFIRNO. NEWPUL (1434-1438) then ORs WPULFI into the pulsar's byte, and WPULFI comes from TWFULF/TWPULF — which has NO record below wave 60 (so it resolves to 0 via the TE default) and ZFIRYE for waves 60-99. Our enemyCanShoot returns true for flipper/tanker/spiker, level >= 60 for pulsar, false for fuseball.",
+    "reasoning": "Exactly right, including the unusual wave-60 pulsar gate. (The arcade also ORs ZFIRYE into WPULFI unconditionally on the HARD cabinet option, ALWELG:515-517 — we have no cabinet options, which is fine.)"
+  },
+  {
+    "id": "W-019",
+    "class": "DIVERGENCE",
+    "title": "The concurrent enemy-shot cap is per wave (WCHAMX+1 = 2 at wave 1), not a flat 4",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 586,
+      "verbatim": "TCHAMX:\t.BYTE TZ,1,9,1,1,1,2,3,2,2,3,3\t;ADD 1"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 62,
+      "verbatim": "export const MAX_ENEMY_BULLETS = 4"
+    },
+    "claim": "FIREIC searches enemy-charge slots WCHAMX..0 for a vacancy (2709-2726), so the live cap is WCHAMX+1 (hence the ';ADD 1' comment). TCHAMX (586-588) gives WCHAMX = 1,1,1,2,3,2,2,3,3 for waves 1-9, then 2 for waves 10-64, then 3 for 65-99. The cap is therefore 2 bolts on waves 1-3, 3 on wave 4, 4 on wave 5, 3 on waves 6-7, 4 on waves 8-9, 3 on waves 10-64 and 4 on waves 65+ — it goes DOWN as well as up. NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count. We hard-cap at 4 on every level (sim.ts:225).",
+    "reasoning": "On level 1 the arcade permits two enemy bolts in the air; we permit four. Because ENEMY_FIRE_CHANCE is indexed by the live-bolt count, our extra headroom also raises the effective fire RATE (a 3rd and 4th bolt can be drawn where the arcade would find no slot). Early levels are meaningfully more dangerous in our build.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-020",
+    "class": "DIVERGENCE",
+    "title": "Enemy bolt speed is invader speed + 2.0 along-units/frame (0.536 depth/s), not +0.72 depth/s",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 601,
+      "verbatim": "\t.BYTE TB,1,99.,-64."
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 72,
+      "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
+    },
+    "claim": "TCHARIN is a single TB record for waves 1-99 with byte -64, and TB (DOTB, 829-832) means 'byte + WINVIL'. So WCHARL = WINVIL - 64 for EVERY wave, then TIMES8 scales it: the bolt is always exactly 64*8/256 = 2.0 along-units/frame faster than an invader, i.e. 2.0*60/224 = 0.536 depth/s faster. At wave 1 that is (44+64)/32 = 3.375 along/frame = 0.904 depth/s. Our ENEMY_BOLT_SPEED_OFFSET is 0.72 depth/s, giving 0.368 + 0.72 = 1.088 depth/s at L1 — 20% too fast. The code comment claiming 'flipper-relative +0xc0' is not what the source says.",
+    "reasoning": "Bolt speed is the whole dodge window. 20% fast at level 1 removes about a fifth of the time the player has to rotate off the lane. The correct value is a one-line constant change (0.536), and it stays correct at every level because it is an additive offset in both models.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-021",
+    "class": "DIVERGENCE",
+    "title": "The enemy-fire depth gate is 'not too near the rim' — there is no far-end minimum depth at all",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2694,
+      "verbatim": "\tCMP I,ILINLIY+20\t;YES"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 65,
+      "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
+    },
+    "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
+    "reasoning": "Our far-end floor silences every freshly-spawned enemy for the first 19% of its climb, which the arcade does not do; and our near cap lets enemies shoot from 0.857-0.9 where the arcade has already stopped them. Both are single-constant changes; the mid-jump rule is one condition in stepEnemyFire.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-022",
+    "class": "DIVERGENCE",
+    "title": "Fuseball vulnerability is INVERTED: the arcade's fuseball is killable only while it is rolling between lanes",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2975,
+      "verbatim": "\tIFMI\t\t\t;VULNERABLE FUSE?"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 316,
+      "verbatim": "      if (e.kind === 'fuseball' && !e.vulnerable) continue"
+    },
+    "claim": "COLCHK's fuse branch (2965-2979) requires THREE things before a player charge may kill a fuseball: it is not at the rim (INVAY != CURSY, 2969-2970 — a fuseball at the top is entirely bulletproof); the charge's base line matches INVAL1; and INVAL2 is NEGATIVE (bit 7 set). INVAL2 has bit 7 set only while the fuse is mid-jump — JUMPSD writes $81/$87 into it when a lateral jump starts (2025-2034), and JJUMPM writes $20 (positive) into it the instant the fuse lands on a line, with the comment 'MAKE IT INVINCIBLE' (1928). So: rolling between lanes = VULNERABLE, parked on a lane = INVINCIBLE, at the rim = INVINCIBLE. Our model is the exact opposite: `vulnerable` starts false, toggles on each lane slide (fuseball.ts:41), and resolveBulletHits skips the fuseball when it is NOT vulnerable — with a comment stating it is 'killable by a bullet only in its on-lane vulnerable phase... invulnerable while rolling the rim'.",
+    "reasoning": "This is a correctness inversion, not a tuning error, and it inverts the skill: in the arcade you must time your shot for the moment the fuseball is crossing between lanes; in ours you must wait for it to settle. It also makes our rim fuseball killable where the arcade's cannot be touched at all.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-023",
+    "class": "DIVERGENCE",
+    "title": "Fuseballs do not chase the player before wave 17 — they pick left/right at random",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 687,
+      "verbatim": "\t.BYTE TR,17.,32.,0,40"
+    },
+    "ours": {
+      "file": "src/core/enemies/fuseball.ts",
+      "line": 38,
+      "verbatim": "      const dir = laneStepToward(tube, e.lane, playerLane)"
+    },
+    "claim": "The fuseball's chase behaviour is controlled by WFUSCH (D7 = chase at the top, D6 = chase on the tube, ALCOMN.MAC:786) and comes from TWFUSC (686-690). TWFUSC's FIRST record starts at wave 17, and the table ends in TE — so for every wave below 17, CONTOUR's EOT path (442) yields 0 and WFUSCH = 0, meaning NEITHER chase bit is set. JFUSEUP/MAYBLR (2121-2165) then always take the LEFRIT branch, which chooses the rotation direction from RANDOM (2171-2178). Fuseballs first appear at wave 11 (W-036), so for their entire early-game life they wander. Even from wave 17 the chase is conditional: TR alternates 0/$40 across waves 17-32, and MAYBLR only chases on an EVEN invader index (2157-2159). Our fuseball ALWAYS steps toward the player's lane.",
+    "reasoning": "Our fuseball is a homing missile from the moment it appears; the arcade's is a drunk that becomes a hunter later. This is the difference between 'fuseballs are the level-11 surprise' and 'fuseballs are unavoidable'.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-024",
+    "class": "DIVERGENCE",
+    "title": "On early waves a fuseball turns back before reaching the rim while nymphs remain",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2115,
+      "verbatim": "\tCMP I,20\t\t;YES. TURN BACK BEFORE TOP"
+    },
+    "ours": {
+      "file": "src/core/enemies/fuseball.ts",
+      "line": 30,
+      "verbatim": "  e.depth = Math.min(1, e.depth + params.fuseballSpeed * dt)"
+    },
+    "claim": "JFUSEUP (2105-2130): if there are nymphs left AND CURWAV < 17 ('EARLY WAVE?'), the fuseball's climb is capped at Y = $20 (depth 0.929) instead of CURSY — reaching it triggers a lateral move (LEFRIT/FUCHPL) rather than an arrival. Only when the nymph queue is empty does it 'HEAD FOR THE TOP' (2118). It also reverses at the BOTTOM of its range ($80, 2132-2143), so it yo-yos. Our fuseball climbs monotonically to depth 1 and grabs.",
+    "reasoning": "The arcade's early-game fuseball is a lane-denial hazard that patrols the middle of the well; ours is a killer that always arrives. Note this rule depends on the nymph count (W-002), so it cannot be modelled correctly until nymphs exist — a shared prerequisite with W-029 and W-041.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-025",
+    "class": "DIVERGENCE",
+    "title": "A pulsar flips TOWARD the player; ours flips in a random direction",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2504,
+      "verbatim": "PULSC3:\tVCHPLA\t\t\t;SET FLIP DIRECTION TOWARD PLAYER"
+    },
+    "ours": {
+      "file": "src/core/enemies/pulsar.ts",
+      "line": 32,
+      "verbatim": "    const dir = nextFloat(rng) < 0.5 ? -1 : 1"
+    },
+    "claim": "The pulsar's CAM program is PULSCH (2493-2509): set a loop counter from PUCHDE (the per-wave 'pulsar chase delay', TPUCHDE 680-685), move that many frames, then check whether a pulse is imminent (VCHKPU), then VCHPLA — set the flip direction toward the player via JCHPLA's shortest polar delta — and start the flip. Our stepPulsar draws the direction from the RNG and uses params.flipInterval (rules.ts:185) rather than PUCHDE.",
+    "reasoning": "The pulsar is supposed to walk deliberately onto your lane and then electrify it; a random walk makes it a slow flipper. PUCHDE is also a real per-wave table (40/20 alternating at waves 17-32, ramping to 20/10 by wave 40+), while our flipInterval is a hand-tuned 1.5/ramp.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-026",
+    "class": "DIVERGENCE",
+    "title": "The pulse is a single GLOBAL phase shared by every pulsar, ~9 frames on / ~31 off — not a per-enemy 0.6 s pulse",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1539,
+      "verbatim": "\tADC PULTIM"
+    },
+    "ours": {
+      "file": "src/core/enemies/pulsar.ts",
+      "line": 26,
+      "verbatim": "    e.pulseTimer = e.pulsing ? PULSE_DURATION : params.pulseInterval"
+    },
+    "claim": "MOVINV updates the pulse ONCE per frame, outside the invader loop (1536-1570): PULSON += PULTIM; a sign change of PULSON is the on/off transition (PULSON >= 0 = pulsing); PULSON bounces between +15 and -63 (1558-1568), with PULTIM = 4 for waves 1-48, 6 for 49-64, 8 for 65+ (WPULTIM, 610-613). With PULTIM = 4 the full cycle is ~40 frames (0.67 s), of which only ~9 frames (~0.15 s) are ON. Every pulsar on the board pulses in unison off this one counter. We give each pulsar its OWN pulseTimer, ON for PULSE_DURATION = 0.6 s (36 frames) and OFF for pulseInterval = max(1.2, 3.0/ramp) s.",
+    "reasoning": "Our pulse is 4x too long, 2x too infrequent, and out of phase between pulsars. The arcade's synchronised, short, fast strobe is what makes a pulsar level readable — you learn the beat and move on the gap. Independent per-enemy phases make the board unlearnable.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-027",
+    "class": "DIVERGENCE",
+    "title": "A pulse only kills when the pulsar is above the potency height (PULPOT)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1806,
+      "verbatim": "\tIFCC\t\t\t;PULSAR IN RANGE?"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 394,
+      "verbatim": "  const killer = grabber ?? s.enemies.find((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)"
+    },
+    "claim": "JPULMO's kill test (1802-1817) requires PULSON to be positive (pulse on) AND INVAY < PULPOT AND both cursor legs to match the pulsar's legs. PULPOT is $A0 for waves 1-64 and $C0 for 65+ (WPULPOT, 606-609) — $A0 is depth 0.357 in our convention. So a pulsing pulsar deeper than 0.357 (i.e. in the far third of the well) does NOT kill. Our resolvePlayerHits kills whenever a pulsing pulsar shares the player's lane, at ANY depth, including one that has just hatched at the far end.",
+    "reasoning": "One extra depth condition. Without it, the player's lane becomes instantly lethal the moment a pulsar spawns anywhere on it, which is not a thing the arcade does. (We already have the correct PULPOT-derived constant in rules.ts:125 — PULSAR_NEAR_FAR_DEPTH — for the SPEED test; the kill test needs the same threshold.)",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-028",
+    "class": "CONFIRMED",
+    "title": "Pulsar dual climb speed: flipper speed while below the potency height, spd_pulsar above it",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1786,
+      "verbatim": "\tLDY I,ZABFLI\t\t;NO. GO FASTER"
+    },
+    "ours": {
+      "file": "src/core/enemies/pulsar.ts",
+      "line": 19,
+      "verbatim": "  const climbSpeed = e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed"
+    },
+    "claim": "JPULMO (1780-1788) selects the speed index: ZABPUL by default, but if the pulsar is going up and INVAY >= PULPOT (i.e. it is still deeper than the potency height) it swaps to ZABFLI — 'NO. GO FASTER'. WINVIL+ZABPUL / WINVIN+ZABPUL are hard-set to $A0/$FE (547-550) = -1.375 along-units/frame = 82.5/60 per frame = 0.368 depth/s, level-independent. Our PULSAR_CLIMB_SPEED = 82.5/224 = 0.368 depth/s and PULSAR_NEAR_FAR_DEPTH = (0xf0-0xa0)/224 = 0.357, used exactly this way.",
+    "reasoning": "Both the threshold and the two speeds are right, including the fact that the pulsar's own speed is a hardcoded constant rather than a per-wave table entry."
+  },
+  {
+    "id": "W-029",
+    "class": "DIVERGENCE",
+    "title": "Pulsars descend as well as climb — they yo-yo while nymphs remain",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1796,
+      "verbatim": "\tIFCS\t\t\t;TIME TO REVERSE?"
+    },
+    "ours": {
+      "file": "src/core/enemies/pulsar.ts",
+      "line": 19,
+      "verbatim": "  const climbSpeed = e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed"
+    },
+    "claim": "The pulsar's INVAC2 carries a direction bit (INVDIR, ALCOMN.MAC:869). JPULMO (1789-1801) moves it DOWN when the bit is set, and reverses it back to UP once it descends past PULPOT — unless the nymph queue is empty, in which case it forces the pulsar up ('SEND PULSAR UP', 1793). CHASER (1829-1837) likewise sends a pulsar that reaches the rim back DOWN if any nymphs remain. So a pulsar patrols up and down between the rim and the potency height for as long as the wave still has nymphs. Our pulsar's depth only ever increases.",
+    "reasoning": "Same prerequisite as W-024: the reversal is keyed on NYMCOU, so this cannot be modelled correctly until nymphs exist (W-002). The visible effect is large — arcade pulsars hover and strobe in the middle of the well; ours march to the rim and park.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-030",
+    "class": "DIVERGENCE",
+    "title": "A tanker auto-splits at depth 0.929 and its children appear at the parent's depth, not 0.9 / 0.85",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1750,
+      "verbatim": "\tIFCC\t\t\t;TOO CLOSE TO TOP FOR CARRIER?"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 126,
+      "verbatim": "export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth"
+    },
+    "claim": "JSMOVE (1749-1760) splits a carrier the moment its INVAY drops below $20 — depth ($F0-$20)/224 = 0.929, the SAME $20 threshold we already use for SPIKER_TURNAROUND_DEPTH (rules.ts:115). KILINV then places both children at TEMP0 = the parent's own INVAY (2301-2302), i.e. at the parent's exact depth. We split at TANKER_SPLIT_DEPTH = 0.9 and clamp the children to SPLIT_CHILD_DEPTH = 0.85 (tanker.ts:19).",
+    "reasoning": "Small numerically (0.9 vs 0.929) but it interacts with PLAYER_RIM_DEPTH = 0.92: in the arcade the children are born ABOVE the grab line and are an immediate threat (mitigated by the no-flip rule, W-032); in ours they are born safely below it. Two constants.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-031",
+    "class": "CONFIRMED",
+    "title": "Split children straddle the parent — lanes L-1 and L+1, parent's lane left empty",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2354,
+      "verbatim": "\tADC I,2"
+    },
+    "ours": {
+      "file": "src/core/enemies/tanker.ts",
+      "line": 22,
+      "verbatim": "    makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),"
+    },
+    "claim": "KILINV computes the first child's line as INVAL1 - 1 (2331-2333) and the second's as that value + 2 (2352-2355), both masked to 0F — so the two children land on the lanes either side of the dead carrier and nothing is left on its own lane. Our splitTanker emits children on wrapLane(lane-1) and wrapLane(lane+1).",
+    "reasoning": "Exact match, including the wrap. (The arcade additionally ORs ZROCCW into the second child's status, 2364-2366, so the pair flips in OPPOSITE directions — that part we cannot express until W-007.)"
+  },
+  {
+    "id": "W-032",
+    "class": "NO_COUNTERPART",
+    "title": "Children of a split that happens near the rim are given the NON-FLIPPING cam",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1498,
+      "verbatim": "\tIFCC\t\t\t;SPLITTING TOO CLOSE TO PLAYER?"
+    },
+    "ours": null,
+    "claim": "SPLCHA (1494-1505) compares the split depth (TEMP0) against $20 and, if the split is happening within $20 of the rim, routes the child through NEWGEN instead of NEWTY2. NEWGEN assigns the type's DEFAULT cam from TNEWCAM (1483-1484), which for a flipper is NOJUMP — 'YES. NO FLIPPING'. NEWTY2, the normal path, would have given the flipper the wave's WFLICAM program. So a tanker that auto-splits at the rim (the common case — see W-030) always produces two flippers that can only climb, never flip. We have no cam and no such rule; our split children are ordinary enemies.",
+    "reasoning": "This is the fairness valve that makes the rim-split survivable: two flippers appearing on the lanes either side of you at depth 0.929 would be an unavoidable death if they could immediately flip onto you. Its absence in our build is masked only because our children spawn lower (0.85) and our grab line is 0.92. Fixing W-030 without also fixing this would make rim splits lethal.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-033",
+    "class": "DIVERGENCE",
+    "title": "Tankers carry ONLY flippers until wave 33; fuseball cargo starts at 33 and pulsar cargo at 41",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 615,
+      "verbatim": "\t.BYTE T1,1,32.,ZCARFL"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 266,
+      "verbatim": "    ['fuseball', level >= 11 ? 4 : 0],"
+    },
+    "claim": "NEWTAN (1445-1474) picks the cargo by drawing a random index 0-3 into WTACAR and walking it until it finds a type with openings. WTACAR has four entries: slots 0 and 1 are hard-set to ZCARFL on every wave (CONTOUR, 551-553); slot 2 comes from WWTAC2 (614-617) = ZCARFL for waves 1-32, ZCARFU for 33-40, ZCARPU for 41-99; slot 3 comes from WWTAC3 (618-620) = ZCARFL for waves 1-48, ZCARFU for 49-99. So ALL FOUR slots are flippers for waves 1-32: a tanker cannot carry anything but flippers until wave 33, cannot carry a pulsar until wave 41, and the pulsar cargo lives in only one of four slots even then. We roll fuseball cargo from level 11 and pulsar cargo from level 17, at weights 4 against flipper's 10.",
+    "reasoning": "Our tankers manufacture fuseballs 22 levels early and pulsars 24 levels early. Combined with W-035 (tankers appearing at wave 3) this materially changes the enemy mix of the entire first third of the game. The fix is to replace rollTankerCargo's gates with the WTACAR table.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-034",
+    "class": "DIVERGENCE",
+    "title": "Enemy type selection is a per-type MIN/MAX population solver, not a weighted random table",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1275,
+      "verbatim": "\tLDA X,WFLMAX"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 244,
+      "verbatim": "export function rollSpawnKind(level: number, rng: Rng): EnemyKind {"
+    },
+    "claim": "NYMCHA (1266-1412) decides what a hatching nymph becomes, in this order: (1) compute per-type 'openings' = WFLMAX[type] - FLIPCO[type] (the live count of that type) for all 5 types; (2) subtract 2 openings of the carried type for EVERY live tanker, so cargo is reserved in advance (1286-1303); (3) clamp openings to the total free invader slots; (4) if exactly one type has openings, take it; (5) otherwise satisfy any type whose live count is below its WFLMIN first (1351-1364); (6) then attempt a 'smart launch' — if both a spiker and a tanker slot are free, look at the enemy line the nymph is standing on and launch a SPIKER on a short/dead line or a TANKER on a long one (1366-1385); (7) failing all that, draw RANDO2 AND 3, add 1 — a random type that EXCLUDES flippers (1386-1389) — and walk from there to the first needy type. Our rollSpawnKind is a single weighted pick from a fixed table (flipper 10, tanker 4, spiker 3, pulsar 3, fuseball 3) with level gates and a per-cycle 'hard' multiplier.",
+    "reasoning": "The arcade's board composition is a CONSTRAINT SATISFACTION over the live population — it guarantees the wave's minimums, never exceeds its maximums, reserves slots for the contents of tankers already on the board, and biases spikers toward lanes that already have short spikes. Ours is memoryless: it can roll five flippers in a row on a wave whose maximum is 4, and it will never guarantee the wave's required spiker. This is the second-largest rewrite in the audit after the CAM, and it depends on nymphs (W-002) and the slot cap (W-004).",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "W-035",
+    "class": "DIVERGENCE",
+    "title": "Tankers first appear on wave 3 and spikers on wave 4 — not both on level 5",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 651,
+      "verbatim": "WTANMX:\t.BYTE TZ,1,5,0,0,1,0,1"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 250,
+      "verbatim": "    ['tanker', level >= 5 ? 4 * hard : 0],"
+    },
+    "claim": "WTANMX (651-657) itemises the tanker MAX for waves 1-5 as 0, 0, 1, 0, 1 — so exactly one tanker is allowed on wave 3, none on wave 4, one on wave 5, then 2 for waves 6-16. WTANMI (645-650) itemises the MIN as 0, 0, 1, 0 — wave 3 REQUIRES its tanker. WSPIMX (628-635) itemises the spiker max for waves 1-6 as 0, 0, 0, 2, 3, 4 — the first spiker is possible on wave 4 — and WSPIMI (621-627) makes wave 4 require one. Our gates are `level >= 5` for both, with weights rather than counts.",
+    "reasoning": "Off by two waves for the tanker and one for the spiker, and the non-monotonic zero at wave 4 (tankers vanish again) is not expressible in our weight model at all. Note the tables also blank out later: WSPIMX has no record for waves 17-19, 33-34 or 40-42, so spikers disappear entirely on those waves.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-036",
+    "class": "CONFIRMED",
+    "title": "Fuseballs first appear on wave 11 and pulsars on wave 17",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 663,
+      "verbatim": "\t.BYTE TZ,17.,32.,5,3,2,2,2,2,2,2,2,2,2,2,2,3,4,2"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 252,
+      "verbatim": "    ['pulsar', level >= 17 ? 3 * hard : 0],"
+    },
+    "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Our gates are `level >= 17` for pulsars and `level >= 11` for fuseballs (rules.ts:252-253).",
+    "reasoning": "Both introduction waves are exactly right. (The tables also have GAPS we do not model — no fuseballs on waves 17-21 or 26, and the pulsar max is 5 on wave 17 alone before settling at 2-3 — but the introduction wave itself is correct.)"
+  },
+  {
+    "id": "W-037",
+    "class": "DIVERGENCE",
+    "title": "From wave 4 every lane STARTS with a spike already on it",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 696,
+      "verbatim": "TELIHI:\t.BYTE TZANDF,1,99.,0,0,0,0E0,0D8,0D4,0D0,0C8,0C0,0B8,0B0,0A8,0A0,0A0,0A0,0A8,0A0,9C,9A,98"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 558,
+      "verbatim": "  s.spikes = new Array(s.tube.laneCount).fill(0)"
+    },
+    "claim": "TELIHI is a TZANDF table (indexed by (wave-1) mod 16) giving NWTELI, the INITIAL height of every enemy line for the new wave. INIENE (303-313) writes that one value into LINEY for all NLINES=16 lines. The bytes are 0, 0, 0, $E0, $D8, $D4, $D0, $C8, $C0, $B8, $B0, $A8, $A0, $A0, $A0, $A8 — so waves 1-3 start clean, and from wave 4 EVERY lane begins with a spike, growing from depth ($F0-$E0)/224 = 0.071 at wave 4 to ($F0-$A0)/224 = 0.357 by wave 13. We reset every lane to zero on every level (advanceLevel, sim.ts:558) and grow spikes only from spikers.",
+    "reasoning": "This is a whole missing layer of the level design: from wave 4 onward the well is pre-seeded with a floor of spikes that the player must shoot down before the warp, and every wave's spiker work is ADDITIVE on top of it. Our waves 4-16 are visibly emptier than the arcade's, and our warp is correspondingly safer.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-038",
+    "class": "CONFIRMED",
+    "title": "The spiker turns around at Y = $20 (depth 0.929)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2223,
+      "verbatim": "\tCMP I,20"
+    },
+    "ours": {
+      "file": "src/core/enemies/spiker.ts",
+      "line": 13,
+      "verbatim": "  if (e.depth >= SPIKER_TURNAROUND_DEPTH) {"
+    },
+    "claim": "JSTRAI (2222-2229) compares the spiker's INVAY against $20; when it climbs past it ('MAX HEIGHT?'), it sets the ZDIRDO bit to send it back down and pins INVAY at $20. That is depth ($F0-$20)/224 = 0.929, which is exactly our SPIKER_TURNAROUND_DEPTH (rules.ts:115).",
+    "reasoning": "Correct, including the choice to keep it separate from the spike-height cap. (The spike-height cap itself is wrong — see W-039.)"
+  },
+  {
+    "id": "W-039",
+    "class": "DIVERGENCE",
+    "title": "Spikes can reach depth 0.929, not 0.75",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2216,
+      "verbatim": "\tIFCC\t\t\t;NEW ENEMY LINE?"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 176,
+      "verbatim": "        s.spikes[sp.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(s.spikes[sp.lane], sp.depth))"
+    },
+    "claim": "JSTRAI (2214-2221) writes the spiker's own INVAY straight into LINEY whenever it is higher than the current line height — the spike IS the spiker's high-water mark, with no cap other than the spiker's own $20 turnaround (W-038). So a fully grown spike reaches depth 0.929, essentially the rim. We clamp the stored spike height to SPIKE_MAX_DEPTH = 0.75 (rules.ts:28) even though we already turn the spiker around at 0.929 — so the last 0.18 of the spiker's climb lays no spike at all.",
+    "reasoning": "Spike height is the entire warp-crash threat model. Our tallest possible spike stops well short of the rim, so an unattended spiker is far less punishing than the arcade's — and W-037's pre-seeded spikes plus a 0.929 ceiling is what makes late-level warps genuinely dangerous. The cap and the turnaround should be the same $20.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-040",
+    "class": "DIVERGENCE",
+    "title": "A spiker that bottoms out hops to the NEEDIEST lane (shortest/empty spike); we send it to the TALLEST",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2272,
+      "verbatim": "\tIFCS\t\t\t;NEEDIEST LINE SO FAR?"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 169,
+      "verbatim": "            if (s.spikes[i] > tallest) { tallest = s.spikes[i]; target = i }"
+    },
+    "claim": "ASTRAL (2252-2291) is the spiker's relocation routine. Starting from a RANDOM line, it walks all 16 lines and keeps the one with the LARGEST LINEY — and a dead line (LINEY = 0) is scored as $FF, the 'worst case' (2267-2270). Because LINEY is a depth-from-the-rim measure where a larger value means a LOWER tip, the largest LINEY is the SHORTEST spike, and an empty lane beats every spike. So the spiker deliberately goes to the lane that needs a spike most. Our spiker hop (sim.ts:166-175) scans for the TALLEST standing spike and goes there, falling back to a random lane only when no spike exists at all.",
+    "reasoning": "The polarity is inverted. The arcade's spiker spreads its spikes across the well (which is why late levels end up with a spike on nearly every lane); ours piles them all onto one lane, leaving the rest of the well clean and the warp trivially dodgeable. One comparison operator, but it changes the shape of every board.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-041",
+    "class": "CONFIRMED",
+    "title": "A bottomed-out spiker with no nymphs left converts into a flipper-carrying tanker",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2240,
+      "verbatim": "\tORA I,ZCARFL\t\t;CARRYING FLIPPERS"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 161,
+      "verbatim": "            moved.push(makeEnemy('tanker', sp.lane, 0, params, 'flipper'))"
+    },
+    "claim": "JSTRAI (2236-2247): when the spiker reaches the bottom of its range and NYMCOU is zero, it rewrites INVAC2's carrier bits to ZCARFL and INVAC1's appearance bits to ZABTAN — it becomes a tanker carrying flippers, and CAMSTA is set to 0 so the CAM branches it out of TRALUP into NOJUMP (2381). Our spiker does exactly this when s.spawn.remaining === 0, spawning a flipper-carrying tanker at depth 0.",
+    "reasoning": "Correct in mechanism and in cargo, and our spawn.remaining is a faithful stand-in for NYMCOU here. Recorded because it is a non-obvious rule we got right."
+  },
+  {
+    "id": "W-042",
+    "class": "DIVERGENCE",
+    "title": "The Superzapper kills tankers (it strips their cargo first); ours spares them entirely",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3563,
+      "verbatim": "\tLDA Y,INVAC2\t\t;MAKE SURE IT'S NOT A CARRIER"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 476,
+      "verbatim": "    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')"
+    },
+    "claim": "KILENE's EXIKIL (3562-3566) takes the first live invader it finds, CLEARS the INVCAR bits in its INVAC2, and then explodes it — the carrier bit is stripped precisely so that the kill does not split it. So the arcade's zap DOES destroy tankers; it just denies you the cargo. Our first-zap cadence and our kill-count both filter tankers out (`e.kind !== 'tanker'`, sim.ts:476 and 513), so a tanker survives a full superzap.",
+    "reasoning": "Ours can leave the board un-clearable by a zap that the arcade would clear. The 'declaw' intent (a zap must not manufacture enemies) is right, but the arcade achieves it by stripping the cargo, not by skipping the target.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-043",
+    "class": "DIVERGENCE",
+    "title": "The first zap window is 19 frames and kills once every OTHER frame (8 kills max); ours is 13 frames, one kill per frame",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3539,
+      "verbatim": "TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 35,
+      "verbatim": "export const ZAP_WINDOW_FIRST = 13"
+    },
+    "claim": "With CSUSTA=3 and CSUINT=1 (3490-3492), TIMAX resolves to 0, 3+8*2 = 19, 3+1*2 = 5, 0, 0, indexed by SUZCNT. So the first zap runs 19 frames and the second 5. KILENE (3542-3546) only kills when SUZTIM >= CSUSTA (3) AND (SUZTIM AND CSUINT) == 0 — i.e. on every SECOND frame from frame 4 — giving at most 8 kills across the first window (which is exactly what the '8*' in TIMAX is sizing). It also takes the first live invader scanning DOWN from slot WINVMX (3548), which is slot order, not nearest-the-rim. Our ZAP_WINDOW_FIRST is 13 frames with one kill on EVERY active frame (runZapFrame, sim.ts:473-480), targeting the enemy nearest the rim. Our ZAP_WINDOW_SECOND = 5 is correct.",
+    "reasoning": "13 kills in 13 frames vs 8 kills in 19. Ours is both faster and deadlier; the arcade's staccato every-other-frame cadence is what makes the zap read as a sweep rather than a flash. Two constants plus one modulo.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-044",
+    "class": "CONFIRMED",
+    "title": "Eight player charges may be in flight at once",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 812,
+      "verbatim": "NPCHARG=8"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 8,
+      "verbatim": "export const MAX_BULLETS = 8"
+    },
+    "claim": "NPCHARG = 8 player charge slots (NICHARG = 4 more for enemy shots). FIREPC (2661-2681) scans slots NPCHARG-1..0 for a vacancy and simply does nothing if all eight are busy. Our MAX_BULLETS = 8, enforced the same way in stepFiring (sim.ts:96).",
+    "reasoning": "Exact match. Our firing is also level-triggered (we fire on every frame `input.fire` is held, no rising edge), which matches FIREPC's unconditional test of the MFIRE switch bit."
+  },
+  {
+    "id": "W-045",
+    "class": "CONFIRMED",
+    "title": "Player charge speed is PCVELO = 9 along-units/frame",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 890,
+      "verbatim": "PCVELO\t=9\t\t\t;PLAYER SHOT VELOCITY (I)"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 7,
+      "verbatim": "export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev-3 frees the slot at ~25 frames / ~0.42s"
+    },
+    "claim": "MOVCHA adds PCVELO to a player charge's Y every frame (2540) and retires it when it reaches ILINDDY = $F0 (2549-2554). The well is 224 units deep, so a charge crosses it in 224/9 = 24.9 frames = 0.415 s. Our BULLET_SPEED = 2.4 depth/s = 2.4 * 224/60 = 8.96 along-units/frame, and a bullet crosses depth 1 -> 0 in 0.417 s.",
+    "reasoning": "Within 0.5% of the ROM. A textbook case of the unit trap resolving to a match: 2.4 depth/s and 9 along-units/frame are the same number."
+  },
+  {
+    "id": "W-046",
+    "class": "DIVERGENCE",
+    "title": "The bullet/enemy hit tolerance (ENSIZE) is 7 along-units for a flipper and 6 for a fuseball; ours is roughly double",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 545,
+      "verbatim": "\tLDA I,<PCVELO+3>/2"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 287,
+      "verbatim": "const HIT_DEPTH = 0.06"
+    },
+    "claim": "COLCHK compares |charge Y - invader Y| against ENSIZE indexed by the invader's TYPE (2963-2964). ENSIZE for the fuseball is set literally to (PCVELO+3)/2 = 6 (545-546). For flippers, tankers and pulsars it is computed by TIMES8 (570-577) as ((255 - hi) + 13) >> 1 where hi is the high byte of speed*8 — which evaluates to 7 at waves 1-16 and 8 at waves 33+. In our depth units (224 along-units = depth 1.0) that is 0.031-0.036 for a flipper and 0.027 for a fuseball. Our HIT_DEPTH is 0.06 (13.4 units, ~1.9x too generous) and our FUSEBALL_HIT_DEPTH is 0.09 (20 units, ~3.3x too generous). Our comment at sim.ts:288-291 asserts the ROM's fuseball tolerance is WIDER than the default; the source shows it is NARROWER (6 vs 7).",
+    "reasoning": "A hit box twice the ROM's makes every shot easier and, at BULLET_SPEED 9 units/frame, means our bullet registers a hit a frame earlier than the arcade's. The correct model is also structurally different — the tolerance is derived from the closing speed (it is half of PCVELO + the enemy's speed), so it should be a function, not a constant.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "W-047",
+    "class": "DIVERGENCE",
+    "title": "A player charge cuts a spike down to its own position, survives two hit-frames, and scores 1 point per frame",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2602,
+      "verbatim": "\tSTA Y,LINEY\t\t;YES. UPDATE LINE ENEMY TO"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 338,
+      "verbatim": "      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)"
+    },
+    "claim": "LIFECT (2589-2626) runs from MOVCHA on every frame a player charge is at or past a spike tip: it SLOWS the charge (PCVELO - 4 = 5 units/frame, 2542-2545), sets LINEY to the charge's CURRENT Y — cutting the spike down to exactly where the bullet is — increments the charge's CHARCO counter, awards 1 point (2609-2615), and deactivates the charge once CHARCO reaches 2 (2618-2624). So one shot eats ~2 frames' worth (~10 units, ~0.045 depth) of spike and scores ~2 points, and the spike visibly recedes ahead of the bullet. Ours removes a flat SPIKE_SHORTEN = 0.08 depth, kills the bullet instantly, and awards SCORE_SPIKE_SEGMENT = 3.",
+    "reasoning": "Different mechanism, different feel (the arcade's bullet burrows into the spike), and different economy: 3 points per shot vs ~2, and 0.08 depth per shot vs ~0.045. Not a headline issue, but SPIKE_SHORTEN is nearly 2x the ROM's, which — with W-039's 0.75 cap — is why our spikes are so much easier to clear.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "W-048",
+    "class": "STRUCTURAL",
+    "title": "Enemy position is an 8.8 fixed-point integer stepped once per 60 Hz IRQ; ours is a float stepped by dt",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1739,
+      "verbatim": "\tADC Y,WINVIL"
+    },
+    "ours": {
+      "file": "src/core/enemies/flipper.ts",
+      "line": 16,
+      "verbatim": "  e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)"
+    },
+    "claim": "JSMOVE (1731-1777) keeps each invader's position as a 16-bit fixed-point pair — INVAYL (fraction) and INVAY (integer, 0 = rim end, $F0 = far end) — and adds the per-type WINVIL/WINVIN increment once per frame with a carry between the bytes. Every threshold in the game ($20, $30, PULPOT, CURSY) is an integer comparison on INVAY. We carry `depth` as a float in [0,1] and integrate it as depth += speed * dt.",
+    "reasoning": "Acceptable, and required by our frame-rate-independent core. The mapping is exact and already established in rules.ts: depth = ($F0 - INVAY)/224 and one along-unit/frame = 60/224 depth/s. Recorded so that the numeric findings above are not re-litigated as unit confusion: every value quoted in this audit was converted through that mapping before being compared.",
+    "recommendation": "accept"
+  }
+]
