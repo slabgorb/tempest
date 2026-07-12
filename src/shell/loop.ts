@@ -4,6 +4,7 @@ import { GameEvent } from '../core/events'
 import { Input } from '../core/input'
 import { stepGame } from '../core/sim'
 import { advanceFixedSteps } from '@arcade/shared/loop'
+import { stepUnlessPaused } from '@arcade/shared/pause'
 
 const STEP = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -38,6 +39,9 @@ export function createLoop(
   draw: (s: GameState, frameEvents: readonly GameEvent[]) => void,
   now: () => number,
   onModeChange?: (oldMode: Mode, newMode: Mode) => void,
+  // SH2-14: the shell polls this each sub-step to freeze the sim while paused.
+  // Optional so existing callers/tests default to never-paused.
+  isPaused?: () => boolean,
 ): Loop {
   let state = initial
   let acc = 0
@@ -73,24 +77,40 @@ export function createLoop(
       // (acc < STEP — constant from rAF jitter, always on >60Hz displays) would
       // read the wheel motion and throw it away before any step used it. That
       // dropped input is the "laggy spinner" feel.
-      if (!sampled) {
-        sampled = true
-        try {
-          input = sampleInput()
-        } catch (e: unknown) {
-          console.error('loop: sampleInput callback threw; using neutral input', e)
+      // SH2-14: the frozen-frame gate. When paused, the thunk never runs — no
+      // input is sampled and stepGame is not called — and stepUnlessPaused returns
+      // the prior state reference, so this sub-step is a no-op that still drains
+      // the accumulator (paused time is discarded, not banked → no burst on resume).
+      const prevSub = state
+      state = stepUnlessPaused(
+        () => {
+          if (!sampled) {
+            sampled = true
+            try {
+              input = sampleInput()
+            } catch (e: unknown) {
+              console.error('loop: sampleInput callback threw; using neutral input', e)
+            }
+          }
+          // Apply the sampled edges (fire/start/spin) only on the first sub-step so
+          // a single input event can't fire multiple bullets in one frame.
+          return stepGame(state, first ? input : NEUTRAL, STEP)
+        },
+        state,
+        isPaused?.() ?? false,
+      )
+      // A frozen sub-step (state unchanged) accrues no events and fires no mode
+      // transition — skip the shell-side drains so nothing misfires against the
+      // held state.
+      if (state !== prevSub) {
+        for (const e of state.events) frameEvents.push(e)
+        // Detect mode transitions per sub-step so two transitions in one frame each
+        // fire once, in order. A throwing onModeChange must not stop the loop, and
+        // prevMode must still advance so the same transition can't re-fire.
+        if (state.mode !== prevMode) {
+          runGuarded('onModeChange', () => onModeChange?.(prevMode, state.mode))
+          prevMode = state.mode
         }
-      }
-      // Apply the sampled edges (fire/start/spin) only on the first sub-step so a
-      // single input event can't fire multiple bullets in one frame.
-      state = stepGame(state, first ? input : NEUTRAL, STEP)
-      for (const e of state.events) frameEvents.push(e)
-      // Detect mode transitions per sub-step so two transitions in one frame each
-      // fire once, in order. A throwing onModeChange must not stop the loop, and
-      // prevMode must still advance so the same transition can't re-fire.
-      if (state.mode !== prevMode) {
-        runGuarded('onModeChange', () => onModeChange?.(prevMode, state.mode))
-        prevMode = state.mode
       }
       first = false
     })
