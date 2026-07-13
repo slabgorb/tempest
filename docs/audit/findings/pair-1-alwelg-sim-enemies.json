@@ -241,7 +241,7 @@
   {
     "id": "W-014",
     "class": "DIVERGENCE",
-    "title": "The spiker moves at exactly the flipper's speed for waves 1-20; ours is 40% slower and on its own curve",
+    "title": "The spiker moves at exactly the flipper's speed for waves 1-20; ours is on its own curve and ~26% FASTER",
     "source": {
       "file": "ALWELG.MAC",
       "line": 602,
@@ -252,8 +252,8 @@
       "line": 188,
       "verbatim": "    spikerSpeed: 0.22 * ramp,"
     },
-    "claim": "The spiker's speed slot is WINVIL+ZABTRA, filled from TSPIIN (602-605) using type code TB, which DOTB (829-832) implements as 'the record byte PLUS the already-computed WINVIL' (the CONTOUR loop walks WTABLE backwards, so WINVIL is set first). TSPIIN's byte is 0 for waves 1-20, so the spiker's speed IS the flipper's speed: 1.375 along/frame at wave 1 = 0.368 depth/s. It then becomes WINVIL-48 for waves 21-32, WINVIL-40 for 33-48, WINVIL-48 for 49-99 — i.e. FASTER than a flipper in the late game. Our spikerSpeed is 0.22 * (1 + 0.15*(level-1)): 0.22 depth/s at L1, on a curve unrelated to the flipper's.",
-    "reasoning": "The spiker draws its spike at its own climb rate, so its speed sets how fast spikes grow — the primary threat model of the warp. At 0.22 vs 0.368 depth/s our spikers take 67% longer to lay the same spike.",
+    "claim": "The spiker's speed slot is WINVIL+ZABTRA, filled from TSPIIN (602-605) using type code TB, which DOTB (829-832) implements as 'the record byte PLUS the already-computed WINVIL' (the CONTOUR loop walks WTABLE backwards, so WINVIL is set first). TSPIIN's byte is 0 for waves 1-20, so the spiker's speed IS the flipper's speed: 1.375 along-units/frame at wave 1, which at the ROM's 28.44 fps (FR-001) is 0.175 depth/s. It then becomes WINVIL-48 for waves 21-32, WINVIL-40 for 33-48, WINVIL-48 for 49-99 — i.e. FASTER than a flipper in the late game. Our spikerSpeed is 0.22 * (1 + 0.15*(level-1)): 0.22 depth/s at L1, on a curve unrelated to the flipper's — 26% FASTER than the arcade's spiker, not slower.",
+    "reasoning": "The spiker draws its spike at its own climb rate, so its speed sets how fast spikes grow — the primary threat model of the warp. Corrected for the 28.444 fps rebase (see FR-013 in pair-11-framerate-adjudication.json): the DIVERGENCE verdict and the fix (pin the spiker to the flipper's speed, drop the ad-hoc ramp) both stand, but the DIRECTION reverses. The original consequence — 'at 0.22 vs 0.368 depth/s our spikers take 67% longer to lay the same spike' — was an artefact of the 60 Hz base and is backwards: at 0.22 vs 0.175 depth/s our spikers lay a spike ~21% FASTER than the arcade's, and pinning them to the rebased flipper speed will SLOW them, not speed them up. Anyone applying the old reasoning without the rebase would tune the spiker in the wrong direction.",
     "recommendation": "fix",
     "size": "s"
   },
@@ -288,8 +288,8 @@
       "line": 97,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
-    "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, in the same units (60 Hz frames), converted to seconds only at the call site (sim.ts:223).",
-    "reasoning": "Byte-for-byte correct, including the piecewise breakpoints. Recorded as a positive control on the unit conversion (frames -> seconds) used throughout this audit."
+    "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, and in the same units: ROM GAME frames, converted to seconds only at the call site (sim.ts:223), where the divisor is wrong.",
+    "reasoning": "Byte-for-byte correct, including the piecewise breakpoints — the frame COUNTS are confirmed and must not be touched by the rebase. Corrected for the 28.444 fps rebase (see FR-005 and FR-006 in pair-11-framerate-adjudication.json): the verdict stands, but this finding's stated grounds — 'a positive control on the unit conversion (frames -> seconds) used throughout this audit' — are refuted. It is a positive control on the frame counts ONLY; the ROM's own header two lines above the table (';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)', ALWELG.MAC:581) is a NEGATIVE control on the 60 Hz base, and sim.ts:223's '/ 60' is a real defect — wave-1 holdoff 1.33 s where the arcade waits 80/28.44 = 2.81 s, i.e. our enemies refire 2.11x more often at every level (tracked as FR-006)."
   },
   {
     "id": "W-017",
@@ -347,7 +347,7 @@
   {
     "id": "W-020",
     "class": "DIVERGENCE",
-    "title": "Enemy bolt speed is invader speed + 2.0 along-units/frame (0.536 depth/s), not +0.72 depth/s",
+    "title": "Enemy bolt speed is invader speed + 2.0 along-units/frame (0.254 depth/s), not +0.72 depth/s — and not the 0.536 this finding first prescribed",
     "source": {
       "file": "ALWELG.MAC",
       "line": 601,
@@ -358,8 +358,8 @@
       "line": 72,
       "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
     },
-    "claim": "TCHARIN is a single TB record for waves 1-99 with byte -64, and TB (DOTB, 829-832) means 'byte + WINVIL'. So WCHARL = WINVIL - 64 for EVERY wave, then TIMES8 scales it: the bolt is always exactly 64*8/256 = 2.0 along-units/frame faster than an invader, i.e. 2.0*60/224 = 0.536 depth/s faster. At wave 1 that is (44+64)/32 = 3.375 along/frame = 0.904 depth/s. Our ENEMY_BOLT_SPEED_OFFSET is 0.72 depth/s, giving 0.368 + 0.72 = 1.088 depth/s at L1 — 20% too fast. The code comment claiming 'flipper-relative +0xc0' is not what the source says.",
-    "reasoning": "Bolt speed is the whole dodge window. 20% fast at level 1 removes about a fifth of the time the player has to rotate off the lane. The correct value is a one-line constant change (0.536), and it stays correct at every level because it is an additive offset in both models.",
+    "claim": "TCHARIN is a single TB record for waves 1-99 with byte -64, and TB (DOTB, 829-832) means 'byte + WINVIL'. So WCHARL = WINVIL - 64 for EVERY wave, then TIMES8 scales it: the bolt is always exactly 64*8/256 = 2.0 along-units/frame faster than the invader that fired it. At the ROM's real 28.44 fps (FR-001) that offset is 2.0 * (256/9) / 224 = 0.254 depth/s, and the wave-1 bolt's absolute speed is (44+64)/32 = 3.375 along/frame = 0.4286 depth/s. Our ENEMY_BOLT_SPEED_OFFSET is 0.72 depth/s — 2.83x the ROM's offset — giving 0.368 + 0.72 = 1.088 depth/s at L1, 2.54x the arcade's bolt. The code comment claiming 'flipper-relative +0xc0' is not what the source says.",
+    "reasoning": "Bolt speed is the whole dodge window, and ours is more than twice the arcade's. Corrected for the 28.444 fps rebase (see FR-010 in pair-11-framerate-adjudication.json): the CLASS stands, but the fix value this finding originally prescribed — 0.536 — is itself 2.0 * 60/224, the same invented base, and applying it as written would bake the 2.11x error permanently into the code and then 'confirm' it against this audit. The correct constant is 0.254 depth/s (= 2.0 * ROM_FPS / 224); once the flipper speed is also rebased (FR-008) the L1 bolt lands on the ROM's 0.4286 depth/s exactly, and the offset stays correct at every level because it is additive in both models. The rebase must land BEFORE this fix.",
     "recommendation": "fix",
     "size": "s"
   },
@@ -461,7 +461,7 @@
   {
     "id": "W-026",
     "class": "DIVERGENCE",
-    "title": "The pulse is a single GLOBAL phase shared by every pulsar, ~9 frames on / ~31 off — not a per-enemy 0.6 s pulse",
+    "title": "The pulse is a single GLOBAL phase shared by every pulsar, ~9 frames on / ~31 off (0.32 s of a 1.41 s cycle) — not a per-enemy 0.6 s pulse",
     "source": {
       "file": "ALWELG.MAC",
       "line": 1539,
@@ -472,8 +472,8 @@
       "line": 26,
       "verbatim": "    e.pulseTimer = e.pulsing ? PULSE_DURATION : params.pulseInterval"
     },
-    "claim": "MOVINV updates the pulse ONCE per frame, outside the invader loop (1536-1570): PULSON += PULTIM; a sign change of PULSON is the on/off transition (PULSON >= 0 = pulsing); PULSON bounces between +15 and -63 (1558-1568), with PULTIM = 4 for waves 1-48, 6 for 49-64, 8 for 65+ (WPULTIM, 610-613). With PULTIM = 4 the full cycle is ~40 frames (0.67 s), of which only ~9 frames (~0.15 s) are ON. Every pulsar on the board pulses in unison off this one counter. We give each pulsar its OWN pulseTimer, ON for PULSE_DURATION = 0.6 s (36 frames) and OFF for pulseInterval = max(1.2, 3.0/ramp) s.",
-    "reasoning": "Our pulse is 4x too long, 2x too infrequent, and out of phase between pulsars. The arcade's synchronised, short, fast strobe is what makes a pulsar level readable — you learn the beat and move on the gap. Independent per-enemy phases make the board unlearnable.",
+    "claim": "MOVINV updates the pulse ONCE per frame, outside the invader loop (1536-1570): PULSON += PULTIM; a sign change of PULSON is the on/off transition (PULSON >= 0 = pulsing); PULSON bounces between +15 and -63 (1558-1568), with PULTIM = 4 for waves 1-48, 6 for 49-64, 8 for 65+ (WPULTIM, 610-613). With PULTIM = 4 the full cycle is ~40 GAME frames, which at the ROM's 28.44 fps (FR-001) is 1.41 s, of which only ~9 frames (~0.32 s) are ON. Every pulsar on the board pulses in unison off this one counter. We give each pulsar its OWN pulseTimer, ON for PULSE_DURATION = 0.6 s and OFF for pulseInterval = max(1.2, 3.0/ramp) s — a 3.6 s cycle at level 1, bottoming out at 1.8 s once the ramp reaches the 1.2 s floor.",
+    "reasoning": "Our pulse is ~1.9x too long (0.6 s vs 0.32 s), our cycle is ~1.3x too slow even at its floor (1.8 s vs 1.41 s) and 2.6x too slow at level 1, and the phases are independent between pulsars. The arcade's synchronised, short, fast strobe is what makes a pulsar level readable — you learn the beat and move on the gap; independent per-enemy phases make the board unlearnable. Corrected for the 28.444 fps rebase (see FR-001 and FR-012 in pair-11-framerate-adjudication.json): the original magnitudes ('4x too long, 2x too infrequent') converted the ROM's frame counts at 60 Hz — the shape of the divergence is unchanged, but it is roughly half the size that was filed.",
     "recommendation": "fix",
     "size": "m"
   },
@@ -498,8 +498,8 @@
   },
   {
     "id": "W-028",
-    "class": "CONFIRMED",
-    "title": "Pulsar dual climb speed: flipper speed while below the potency height, spd_pulsar above it",
+    "class": "DIVERGENCE",
+    "title": "Pulsar dual climb speed: the STRUCTURE (flipper speed below the potency height, spd_pulsar above) is right, but BOTH speeds are 2.11x too fast",
     "source": {
       "file": "ALWELG.MAC",
       "line": 1786,
@@ -510,8 +510,10 @@
       "line": 19,
       "verbatim": "  const climbSpeed = e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed"
     },
-    "claim": "JPULMO (1780-1788) selects the speed index: ZABPUL by default, but if the pulsar is going up and INVAY >= PULPOT (i.e. it is still deeper than the potency height) it swaps to ZABFLI — 'NO. GO FASTER'. WINVIL+ZABPUL / WINVIN+ZABPUL are hard-set to $A0/$FE (547-550) = -1.375 along-units/frame = 82.5/60 per frame = 0.368 depth/s, level-independent. Our PULSAR_CLIMB_SPEED = 82.5/224 = 0.368 depth/s and PULSAR_NEAR_FAR_DEPTH = (0xf0-0xa0)/224 = 0.357, used exactly this way.",
-    "reasoning": "Both the threshold and the two speeds are right, including the fact that the pulsar's own speed is a hardcoded constant rather than a per-wave table entry."
+    "claim": "JPULMO (1780-1788) selects the speed index: ZABPUL by default, but if the pulsar is going up and INVAY >= PULPOT (i.e. it is still deeper than the potency height) it swaps to ZABFLI — 'NO. GO FASTER'. WINVIL+ZABPUL / WINVIN+ZABPUL are hard-set to $A0/$FE (547-550) = -1.375 along-units per GAME frame, level-independent — the same byte as the wave-1 flipper. At the ROM's real 28.44 fps (FR-001) that is 1.375 * (256/9) / 224 = 0.175 depth/s. We ship PULSAR_CLIMB_SPEED = 82.5/224 = 0.368 depth/s, and 82.5 is literally 1.375 * 60: the constant carries the invented frame rate on its face. PULSAR_NEAR_FAR_DEPTH = (0xf0-0xa0)/224 = 0.357 is a pure position ratio and IS correct, and the finding's structural half (dual speed, selected exactly this way) stands. The pulsar's other speed — params.flipperSpeed — is 2.11x fast for the same reason (FR-008).",
+    "reasoning": "Originally CONFIRMED on the grounds that 'both the threshold and the two speeds are right'. The threshold is right; the two speeds are both 2.11x the arcade's. Corrected for the 28.444 fps rebase (see FR-009 in pair-11-framerate-adjudication.json): reclassed CONFIRMED → DIVERGENCE, keeping the structural half intact — PULSAR_CLIMB_SPEED must become 1.375 * ROM_FPS / 224 = 0.175 depth/s, and because it IS the L1 flipper byte it has to be rebased in the same edit as the flipper table (FR-008) or the two desynchronise.",
+    "recommendation": "fix",
+    "size": "s"
   },
   {
     "id": "W-029",
@@ -805,8 +807,8 @@
   },
   {
     "id": "W-045",
-    "class": "CONFIRMED",
-    "title": "Player charge speed is PCVELO = 9 along-units/frame",
+    "class": "DIVERGENCE",
+    "title": "Player charge speed is PCVELO = 9 along-units/frame = 1.143 depth/s; our BULLET_SPEED 2.4 is 2.10x too fast",
     "source": {
       "file": "ALCOMN.MAC",
       "line": 890,
@@ -817,8 +819,10 @@
       "line": 7,
       "verbatim": "export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev-3 frees the slot at ~25 frames / ~0.42s"
     },
-    "claim": "MOVCHA adds PCVELO to a player charge's Y every frame (2540) and retires it when it reaches ILINDDY = $F0 (2549-2554). The well is 224 units deep, so a charge crosses it in 224/9 = 24.9 frames = 0.415 s. Our BULLET_SPEED = 2.4 depth/s = 2.4 * 224/60 = 8.96 along-units/frame, and a bullet crosses depth 1 -> 0 in 0.417 s.",
-    "reasoning": "Within 0.5% of the ROM. A textbook case of the unit trap resolving to a match: 2.4 depth/s and 9 along-units/frame are the same number."
+    "claim": "MOVCHA adds PCVELO to a player charge's Y every GAME frame (2540) and retires it when it reaches ILINDDY = $F0 (2549-2554). The well is 224 units deep, so a charge crosses it in 224/9 = 24.9 frames — the frame COUNT is right — but a game frame is nine ~256 Hz IRQ ticks = 35.16 ms (256/9 = 28.44 fps, FR-001), so the crossing takes 0.875 s, not the 0.415 s originally computed. In depth units the ROM's charge speed is 9 * (256/9) / 224 = 256/224 = 1.143 depth/s. Our BULLET_SPEED = 2.4 depth/s is exactly 9 * 60/224 — the same arithmetic with the invented base — so our bullets are 2.10x too fast and cross the well in 0.417 s. The code comment's '~25 frames / ~0.42s' has the frames right and the seconds wrong.",
+    "reasoning": "Originally filed CONFIRMED as 'a textbook case of the unit trap resolving to a match: 2.4 depth/s and 9 along-units/frame are the same number' — but they are only the same number if a frame is 1/60 s, so the match was manufactured by the wrong base. This is a FALSE CONFIRMED, the most dangerous defect class in the audit: the refutation pass only challenges DIVERGENCE and BOOK_WAS_WRONG findings, so this would have been printed as proof we match the arcade. Corrected for the 28.444 fps rebase (see FR-007, and FR-001, in pair-11-framerate-adjudication.json): reclassed CONFIRMED → DIVERGENCE, correct value 1.143 depth/s (= 256/224 = 8/7), true crossing time 0.875 s.",
+    "recommendation": "fix",
+    "size": "s"
   },
   {
     "id": "W-046",
@@ -861,7 +865,7 @@
   {
     "id": "W-048",
     "class": "STRUCTURAL",
-    "title": "Enemy position is an 8.8 fixed-point integer stepped once per 60 Hz IRQ; ours is a float stepped by dt",
+    "title": "Enemy position is an 8.8 fixed-point integer stepped once per LOGIC frame (28.4 Hz = nine ~256 Hz IRQs); ours is a float stepped by dt",
     "source": {
       "file": "ALWELG.MAC",
       "line": 1739,
@@ -872,8 +876,8 @@
       "line": 16,
       "verbatim": "  e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)"
     },
-    "claim": "JSMOVE (1731-1777) keeps each invader's position as a 16-bit fixed-point pair — INVAYL (fraction) and INVAY (integer, 0 = rim end, $F0 = far end) — and adds the per-type WINVIL/WINVIN increment once per frame with a carry between the bytes. Every threshold in the game ($20, $30, PULPOT, CURSY) is an integer comparison on INVAY. We carry `depth` as a float in [0,1] and integrate it as depth += speed * dt.",
-    "reasoning": "Acceptable, and required by our frame-rate-independent core. The mapping is exact and already established in rules.ts: depth = ($F0 - INVAY)/224 and one along-unit/frame = 60/224 depth/s. Recorded so that the numeric findings above are not re-litigated as unit confusion: every value quoted in this audit was converted through that mapping before being compared.",
+    "claim": "JSMOVE (1731-1777) keeps each invader's position as a 16-bit fixed-point pair — INVAYL (fraction) and INVAY (integer, 0 = rim end, $F0 = far end) — and adds the per-type WINVIL/WINVIN increment once per GAME frame with a carry between the bytes. A game frame is one FRTIMR-gated MAINLN pass (ALEXEC.MAC:49-57), i.e. NINE IRQ ticks of a ~256 Hz interrupt (ALHARD.MAC:149-151) = 35.16 ms: 256/9 = 28.44 frames/second. It is NOT one IRQ, and it is not 60 Hz. Every threshold in the game ($20, $30, PULPOT, CURSY) is an integer comparison on INVAY. We carry `depth` as a float in [0,1] and integrate it as depth += speed * dt.",
+    "reasoning": "The float integration itself is acceptable and is required by our frame-rate-independent core — that half of the verdict stands, and the 'accept' covers the REPRESENTATION only (8.8 fixed point vs float+dt). Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json, which calls this finding the audit's linchpin): the mapping declared here was wrong twice. The position mapping depth = ($F0 - INVAY)/224 is right, but one along-unit/frame is (256/9)/224 = 0.127 depth/s — NOT the '60/224' (0.268) asserted here and hard-coded in rules.ts — and the increment is applied once per LOGIC frame, not 'once per 60 Hz IRQ'. This finding's closing reassurance, that 'every value quoted in this audit was converted through that mapping before being compared', is therefore an indictment rather than a defence: every seconds-valued figure in the audit was 2.11x off, and each has been rebased (FR-006 through FR-017). The numeric fix belongs to FR-001/FR-008/FR-012, not here.",
     "recommendation": "accept"
   }
 ]

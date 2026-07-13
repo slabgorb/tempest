@@ -1,0 +1,172 @@
+[
+  {
+    "id": "F-001",
+    "class": "STRUCTURAL",
+    "title": "The shipped glyph data is carried by ALVROM.MAC's own assembly (via an unconditional .INCLUDE), not by any citable module's own source text",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 26,
+      "verbatim": "\t.INCLUDE ANVGAN\t;<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "ANVGAN.MAC (\"ALPHA-NUMERIC VECTOR SUBROUTINES\", Ed Logg, DATE INITIATED 6-JUNE-79) defines all 37 VGMSGA entries (CHAR.A-CHAR.Z, CHAR.0-CHAR.9 with CHAR.0=CHAR.O, and CHAR. for space) plus the VGMSGA jump table itself (ANVGAN.MAC:316, .GLOBL'd at :315). None of that is inside a false conditional the way ALVROM's dead ENEMY PICTURES block is (SPACG=0 gate, ALVROM.MAC:14/1360): ALVROM.MAC unconditionally sets .SIZE=2/.BRITE=6/.ASECT/.RADIX 16/.=3000 (ALVROM.MAC:20-25) and then unconditionally pulls ANVGAN's text in with `.INCLUDE ANVGAN` at line 26 - no .IF, no SPACG. The result genuinely links: ALEXEC.MAP's Global Symbol Summary resolves VGMSGA=31E4 and HALF=325C, both inside the ABS,OVR low bank (0000-A8B0) that every linked module (including ALVROM) shares - proof the alphabet is real, shipped ROM content, not orphaned source. The audit's citable-module allowlist previously excluded ANVGAN.MAC by name on the mistaken premise that it is not its own linked OBJ in ALEXEC.MAP's link string, only textually absorbed into ALVROM's; that exclusion has since been corrected on exactly the .INCLUDE-ships-as-source reasoning laid out above, and ANVGAN.MAC, ASCVG.MAC, VGMC.MAC and COIN65.MAC are now accepted citable modules. Every letter/digit finding below now cites the real CHAR.x line in ANVGAN.MAC directly, rather than anchoring to this .INCLUDE line as a proxy.",
+    "reasoning": "This is why the prior audit (pair-2, finding V-024) could confirm only the DASH glyph and explicitly declined the other 36 - not because those 36 are unverifiable in fact (they are not: ANVGAN.MAC is readable and its content demonstrably reaches the ROM), but because the strict citation rule, read literally, left no per-letter byte-matched anchor once ANVGAN.MAC itself was off the table. Recording this once up front avoided re-litigating the same constraint in every subsequent finding and gave an honest answer to 'which shipped module carries the data': ALVROM.MAC, in the object-code sense, even though its own source text never re-types the letter shapes. This finding's own citation remains ALVROM.MAC:26, since its claim is specifically about the .INCLUDE mechanism and the ALEXEC.MAP linkage proof rather than any individual glyph's shape; now that the allowlist has been corrected, the per-glyph findings below have been re-anchored from this .INCLUDE proxy to the real CHAR.x source lines they actually describe.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "F-002",
+    "class": "CONFIRMED",
+    "title": "Letters A-Z: all 26 match the ROM vector-for-vector, delta-for-delta, in the same stroke order",
+    "source": {
+      "file": "ANVGAN.MAC",
+      "line": 35,
+      "verbatim": "CHAR.A:\tVCTR 0,16,.BRITE"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "Every one of CHAR.A through CHAR.Z in ANVGAN.MAC (lines 35-239, cited here at CHAR.A's own first line as the representative anchor for the full group) has the identical (dx,dy,intensity) sequence, in the identical order and count, as the `ROM` table entries in @arcade/shared/font (dist/font.js:32-58) that this module re-exports. Spot examples: A = (0,16,B)(8,8,B)(8,-8,B)(0,-16,B)(-16,8,0)(16,0,B)(8,-8,0) vs ours `A: [[0,16,1],[8,8,1],[8,-8,1],[0,-16,1],[-16,8,0],[16,0,1],[8,-8,0]]`; R = (0,24,B)(16,0,B)(0,-12,B)(-16,0,B)(4,0,0)(12,-12,B)(8,0,0) vs ours identical; Q, the most complex letter at 8 vectors, = (0,24,B)(16,0,B)(0,-16,B)(-8,-8,B)(-8,0,B)(8,8,0)(8,-8,B)(8,0,0) vs ours identical. This holds for all 26: A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z - every vertex, every blank-vs-lit flag, every trailing advance. (One letter, B, has a narrower intensity nuance covered separately in F-003; its geometry is still exact.)",
+    "reasoning": "Earlier project history (story 10-13, book-derived) claimed only 4 of the 37 glyphs (A, T, R, I) were verbatim and the rest were suspect inventions. That concern predates the later ROM-accurate extraction: the alphabet actually shipped in @arcade/shared/font is a full, disassembly-sourced, byte-exact transcription of all 26 letters. This corrects the earlier, more pessimistic assumption with direct evidence rather than repeating it. The formal citation has been re-anchored from the ALVROM.MAC:26 `.INCLUDE` proxy to ANVGAN.MAC's own CHAR.A line now that the module allowlist has been corrected to accept ANVGAN.MAC directly."
+  },
+  {
+    "id": "F-003",
+    "class": "DIVERGENCE",
+    "title": "CHAR.B's two dimmer cross-strokes (.BRITE-1) are flattened to the same uniform brightness as the rest of the glyph",
+    "source": {
+      "file": "ANVGAN.MAC",
+      "line": 46,
+      "verbatim": "\tVCTR 4,-4,.BRITE-1\t\t;THESE VECTORS ARE BRIGHTER THAN THE OTHERS"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "ALVROM.MAC:22 fixes .BRITE=6 before the alphabet include, so every VCTR ...,.BRITE op in the included alphabet draws at intensity 6 - except CHAR.B's two 3-vector diagonal runs, each written as .BRITE-1 (=5): `VCTR 4,-4,.BRITE-1` / `VCTR 0,-4,.BRITE-1` / `VCTR -4,-4,.BRITE-1`, repeated for the letter's lower bowl. (The inline comment reads 'THESE VECTORS ARE BRIGHTER THAN THE OTHERS', which is backwards given 5<6 - likely an authoring-era mislabel - but the byte value is unambiguous: one point dimmer.) This BRITE-1 pattern is unique to B; no other letter, digit, DASH, HALF or COPYR routine uses it. Our `ROM.B` entry (dist/font.js:33-34) stores those same six vectors with intensity flattened to the uniform lit flag `1`, identical to every other lit vector in the glyph - the geometry is exact but the one-step brightness distinction is lost.",
+    "reasoning": "This is a real, narrow encoding gap - not an invented shape - and it is easy to miss precisely because it affects only 2 of B's 12 vectors and only B among all 37 glyphs. It is also effectively unfixable without new plumbing: the shared VecStroke/VecGlyph types (font.d.ts) carry no per-vertex intensity field at all, and render.ts's vecText() strokes an entire glyph's ink in one ctx.strokeStyle pass (src/shell/render.ts:582-587) - there is no per-stroke brightness channel anywhere in the pipeline to hang a single letter's single-level dimming off of, and at HUD/message text sizes a 5-vs-6 intensity step is unlikely to read as different at all. The formal citation has been re-anchored from ALVROM.MAC:22's `.BRITE=6` default (a workaround under the old allowlist) to CHAR.B's own `.BRITE-1` line in ANVGAN.MAC, the actual source of the divergence, now that ANVGAN.MAC is an accepted citable module.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "F-004",
+    "class": "CONFIRMED",
+    "title": "Digits 0-9 match the ROM vector-for-vector, including the 0=O alias",
+    "source": {
+      "file": "ANVGAN.MAC",
+      "line": 244,
+      "verbatim": "CHAR.0\t=CHAR.O"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "ANVGAN.MAC:244 aliases the digit zero directly to the letter O (`CHAR.0 = CHAR.O`, no separate routine), and CHAR.1 through CHAR.9 (ANVGAN.MAC:246-313) each match our `ROM` table digit-for-digit: e.g. '2' = (0,24,0)(16,0,B)(0,-12,B)(-16,0,B)(0,-12,B)(16,0,B)(8,0,0) vs ours `'2': [[0,24,0],[16,0,1],[0,-12,1],[-16,0,1],[0,-12,1],[16,0,1],[8,0,0]]`; '6' = (0,12,0)(16,0,B)(0,-12,B)(-16,0,B)(0,24,B)(24,-24,0) vs ours identical; '9' = (16,0,0)(0,24,B)(-16,0,B)(0,-12,B)(16,0,B)(8,-12,0) vs ours identical. Our code reproduces the alias behaviour too, not just the coincidental shape match: `GLYPHS['0'] = GLYPHS.O` (dist/font.js:113) mirrors `CHAR.0 = CHAR.O` exactly, rather than independently drawing a zero.",
+    "reasoning": "All ten digits, plus the specific implementation detail that '0' is not its own glyph but a pointer to 'O', are faithfully carried over. This is a clean, fully-verified group with no caveats. The formal citation has been re-anchored from the ALVROM.MAC:26 `.INCLUDE` proxy to ANVGAN.MAC's own CHAR.0=CHAR.O alias line - the single most representative real line for this digit group - now that the module allowlist has been corrected to accept ANVGAN.MAC directly."
+  },
+  {
+    "id": "F-005",
+    "class": "CONFIRMED",
+    "title": "Space (CHAR.) and DASH ('-') - the two message glyphs whose own source text lives directly in the shipped modules - match exactly",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 33,
+      "verbatim": "DASH:\tVCTR 0,12,0"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "Space is CHAR.: a single blank move, `VCTR 24,0,0` (ANVGAN.MAC:241), i.e. no ink at all, just a 24-unit advance; ours is `' ': [[24, 0, 0]]` (dist/font.js:30) - identical. DASH, which (unlike the alphabet) is written directly in ALVROM.MAC itself and needs no ANVGAN reference at all, is the cited 3-op chain: blank `VCTR 0,12,0`, lit `VCTR 16,0,.BRITE`, blank `VCTR 8,-12,0`, RTSL (ALVROM.MAC:33-36) - a mid-height horizontal bar. Ours: `'-': [[0, 12, 0], [16, 0, 1], [8, -12, 0]]` (dist/font.js:31) - the same three ops, same order, same blank/lit/blank pattern.",
+    "reasoning": "DASH is the one glyph the previous auditor (pair-2, V-024) was able to fully verify, since it is the only alphanumeric-adjacent glyph whose own text sits in a citable module; this independently re-confirms it and adds the space glyph, which is equally simple and equally exact."
+  },
+  {
+    "id": "F-006",
+    "class": "CONFIRMED",
+    "title": "Cell geometry - 16 wide x 24 tall, baseline at y=0, +y up, 24-unit standard advance - matches across every glyph",
+    "source": {
+      "file": "ANVGAN.MAC",
+      "line": 150,
+      "verbatim": "CHAR.O:\tVCTR 0,24,.BRITE"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "ALVROM.MAC sets `.SIZE=2` and `.BRITE=6` (lines 21-22) immediately before including the alphanumerics; summing the vector chains ANVGAN.MAC actually contains under that setting shows every letter/digit's ink stays within x in [0,16] and y in [0,24] (e.g. O = 0,24 / 16,0 / 0,-24 / -16,0 - a 16x24 box, cited here as the cleanest single-glyph example of the envelope; H's crossbar reaches x=16 at half-height; X's diagonals run the full 16x24 span). The near-universal trailing blank move nets +24 in x (the 16-unit glyph plus an 8-unit gap) and resets y to the baseline - e.g. O's `VCTR 24,0,0`, B's `VCTR 24,0,0`, most letters' final `8,0,0`/`24,0,0` moves. Our code hard-codes exactly this: `export const CELL_W = 16` and `export const CELL_H = 24` (dist/font.d.ts:1-2), and `layoutText`'s cursor advance is each glyph's own trailing x total (dist/font.js:145), reproducing the ROM's per-glyph kerning instead of a fixed pitch.",
+    "reasoning": "The cell size and inter-glyph advance are not stated as a single named ROM constant anywhere citable - they are an emergent property of every CHAR.x routine agreeing on the same envelope - but that agreement is total, and our code encodes the same two numbers and the same per-glyph-advance kerning model rather than a fixed monospace pitch. The formal citation has been re-anchored from ALVROM.MAC:21's `.SIZE=2` scale setting (a workaround under the old allowlist, since the envelope itself is emergent per-glyph fact, not a named constant) to CHAR.O's own line in ANVGAN.MAC, now that ANVGAN.MAC is an accepted citable module."
+  },
+  {
+    "id": "F-007",
+    "class": "NO_COUNTERPART",
+    "title": "HALF (1/2) and COPYR (circle-C) - the two composite message glyphs the ROM defines beyond plain alphanumerics - have no counterpart in ours",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 30,
+      "verbatim": "\tJSRL HALF\t\t;1/2 (USE QUOTES)"
+    },
+    "ours": null,
+    "claim": "Beyond the alphabet, space and DASH, ALVROM.MAC defines exactly two more message glyphs, both natively (no ANVGAN needed): COPYR (ALVROM.MAC:37-52), an outer circle of 8 lit vectors plus an inner 'C' of 3 more, reached by typing '#'; and HALF (ALVROM.MAC:53-60), a slash (`VCTR 16,24,.BRITE`) followed by a scaled-down JSRL CHAR.1 and JSRL CHAR.2 to draw a fraction '1/2', reached by typing a quote character. @arcade/shared/font's entire character set is `GLYPH_CHARS = ' 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-,/_'` (dist/font.js:118) - neither glyph appears; any attempt to render '#' or a quote falls through `charGlyph`'s `hasGlyph` check to the blank space glyph (dist/font.js:120-126).",
+    "reasoning": "The only ROM string that needs either glyph is the attract-mode copyright line '^ MCMLXXX ATARI' (COPYR via '^'), which a clone must not reproduce verbatim anyway (see pair-2 V-037); HALF (a fraction glyph) has no use anywhere else in the message table. The gap is real but consequence-free.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "F-008",
+    "class": "DIVERGENCE",
+    "title": "Our comma, slash and underscore glyphs are drawn with zero ROM basis - they are new, disclosed additions for other games in the shared font",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 31,
+      "verbatim": "\tJSRL COPYR\t\t;CIRCLE C (USE #)"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "ALVROM.MAC:28-31 is the complete, four-entry list of every message-glyph entry point the module calls beyond the plain 37-character VGMSGA alphabet - CHAR. (space), DASH, HALF, COPYR - and nothing else; ANVGAN.MAC's own VGMSGA table (line 316 onward) likewise enumerates only space/digits/A-Z. There is no ROM routine, in any citable or read module, for a comma, a forward slash, or an underscore. Yet @arcade/shared/font's `ROM` table includes `',': [[8,4,0],[-4,-8,1],[20,4,0]]`, `'/': [[16,24,1],[8,-24,0]]`, and `'_': [[16,0,1],[8,0,0]]` (dist/font.js:79-81), each with an inline comment naming the consuming game (star-wars for the comma, battlezone for the slash, asteroids for the underscore) and explicitly stating 'These are NOT verbatim ROM data' (dist/font.js:68-70).",
+    "reasoning": "This is the one part of the shared font that is honestly invented rather than transcribed, and it is disclosed as such in the source comments rather than silently blended in - unlike the book-derived, undisclosed guesses story 10-13 originally worried about. The three glyphs exist to serve other games in the shared package (per-game punctuation needs) and were deliberately drawn to match the ROM's monoline 16x24 style rather than to depict a real Tempest character, so there is nothing here to correct against the ROM.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "F-009",
+    "class": "CONFIRMED",
+    "title": "Neither the ROM nor ours has lowercase - both alphabets are caps-only",
+    "source": {
+      "file": "ANVGAN.MAC",
+      "line": 316,
+      "verbatim": "VGMSGA:\tJSRL\tCHAR.\t\t;ADDRESS OF LETTER ROUTINES"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "The module ALVROM.MAC includes at this section (ANVGAN.MAC) defines exactly 37 VGMSGA table entries - space, '0'-'9', 'A'-'Z' - and not one additional CHAR.a-CHAR.z routine for lowercase; the VGMSGA JSRL table (ANVGAN.MAC:316-352, cited here at its head) lists CHAR. then CHAR.0-CHAR.9 then CHAR.A-CHAR.Z and stops. Our `GLYPH_CHARS` (dist/font.js:118) contains no lowercase letters either, and `vecText` in render.ts explicitly uppercases all dynamic text before layout - `layoutText(text.toUpperCase())` (src/shell/render.ts:566) - so no lowercase character can reach the glyph table even as an unsupported-character blank.",
+    "reasoning": "This is a case where the honest answer is 'match, not gap': the 1981 cabinet's vector alphabet was never more than caps + digits + a handful of punctuation marks, and the port both knows this (the render.ts comment: 'The font is caps-only, so text is uppercased here (matches the ROM...)') and enforces it at the call site rather than merely omitting lowercase glyphs by accident. The formal citation has been re-anchored from ALVROM.MAC:20's `.SBTTL` section header (a workaround under the old allowlist) to the VGMSGA jump table's own head line in ANVGAN.MAC, the real line enumerating the closed 37-entry set, now that ANVGAN.MAC is an accepted citable module."
+  },
+  {
+    "id": "F-010",
+    "class": "CONFIRMED",
+    "title": "The stroke-encoding model (blank move = pen-up / new stroke, lit move = pen-down / extend, trailing blank = advance) is faithfully reproduced",
+    "source": {
+      "file": "ANVGAN.MAC",
+      "line": 74,
+      "verbatim": "CHAR.E:\tVCTR 0,24,.BRITE"
+    },
+    "ours": {
+      "file": "src/shell/font.ts",
+      "line": 14,
+      "verbatim": "export * from '@arcade/shared/font'"
+    },
+    "claim": "Every glyph routine in the alphabet follows the same three-state pattern, visible clearly in CHAR.E (ANVGAN.MAC:74-81, cited here as a representative multi-stroke example: two consecutive lit draws - up 24 then right 16 - forming one continuous open stroke, a blank move of (-4,-12) that closes it and repositions the beam, a lit draw of (-12,0) forming a second, separate stroke, a second blank move of (0,-12) that closes that stroke and repositions again, a third lit draw of (16,0) forming a third separate stroke, and a final blank move of (8,0) that is pure advance, never ink): a `VCTR dx,dy,0` lifts the beam and, if a stroke was open, closes it (starting a fresh one only when a further lit vector follows); a `VCTR dx,dy,.BRITE` draws and extends the current open stroke; the final blank move of a routine is never ink, only the advance. Our `build()` accumulator (dist/font.js:84-107) implements exactly this state machine: on `lit` it either opens a new points array (`cur === null`) or pushes onto the current one; on a non-lit vector it closes and pushes the finished stroke (`else if (cur !== null)`); the function returns `{ strokes, advance: x }` where `x` is the running total after the last vector - i.e. the trailing blank's endpoint - matching the ROM's use of the final blank as the next glyph's origin.",
+    "reasoning": "This is a structural, not per-character, fact, and it is what makes every one of F-002/F-004/F-005's byte-for-byte matches actually render as the right multi-stroke letterforms (e.g. E's two pen-lifts producing three separate bars) rather than one continuous connect-the-dots scribble; confirming the encoder itself, not just the coordinate tables, closes out the 'stroke encoding' half of the audit brief. The formal citation has been re-anchored from DASH's line in ALVROM.MAC (chosen only because it was the minimal in-bounds, non-ANVGAN example under the old allowlist) to CHAR.E's own opening line in ANVGAN.MAC - a clearer multi-stroke illustration of the same pattern - now that ANVGAN.MAC is an accepted citable module."
+  }
+]

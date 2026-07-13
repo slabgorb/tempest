@@ -192,7 +192,7 @@
   },
   {
     "id": "S-012",
-    "class": "CONFIRMED",
+    "class": "DIVERGENCE",
     "title": "Superzapper's per-frame kill cadence already mirrors KILENE's timing",
     "source": {
       "file": "ALWELG.MAC",
@@ -204,8 +204,10 @@
       "line": 487,
       "verbatim": "//     non-tanker per active frame (KILENE) until none remain. Charge → used-once."
     },
-    "claim": "KILENE (TIMAX-gated) eliminates one invader every CSUINT+1=2 IRQ ticks until the board is clear, spread across the SUZTIM window (long for a full first-press zap, short for the weak second-press zap per the TIMAX table). Our stepZap/runZapFrame/zapKillAt (src/core/sim.ts:473-531) already model this: sim.ts:487's own comment states play \"vaporises one non-tanker per active frame (KILENE) until none remain\", with a longer ZAP_WINDOW_FIRST and shorter ZAP_WINDOW_SECOND, pushing one 'enemy-death' event per elimination frame via zapKillAt.",
-    "reasoning": "This means the authentic \"burst\" character of a superzapper kill is already structurally faithful at the core-sim level, independent of the kzap.wav critique in S-011 — worth recording separately so a future fix to S-011 (dropping the invented zap tone) doesn't have to re-derive this timing; it's already correct."
+    "claim": "KILENE (ALWELG.MAC:3542-3546) gates its kill on `CMP I,CSUSTA` (SUZTIM must first reach CSUSTA=3) then `AND I,CSUINT` (the result must be even) — so it eliminates one invader on a GATED cadence, roughly every OTHER active frame (every CSUINT+1=2 IRQ ticks), not on every frame. Our stepZap/runZapFrame/zapKillAt (src/core/sim.ts:473-531) instead vaporises one non-tanker on EVERY active frame of the zap window — sim.ts:487's own comment claims this 'mirrors KILENE', but it kills at up to double the ROM's authentic rate.",
+    "reasoning": "This means the authentic \"burst\" character of a superzapper kill is already structurally faithful at the core-sim level, independent of the kzap.wav critique in S-011 — worth recording separately so a future fix to S-011 (dropping the invented zap tone) doesn't have to re-derive this timing; it's already correct. CORRECTION (coverage review): this finding was originally filed as a self-refuting CONFIRMED — its own claim already described the ROM's gated every-other-frame cadence while asserting that our every-frame kill 'already models this.' Reclassed to DIVERGENCE. See W-043 (pair-1-alwelg-sim-enemies.json) and B-019 (pair-8-book-reconciliation.json), which independently document this same CSUSTA/CSUINT kill-cadence gap.",
+    "recommendation": "fix",
+    "size": "s"
   },
   {
     "id": "S-013",

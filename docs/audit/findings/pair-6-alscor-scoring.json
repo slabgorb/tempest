@@ -35,7 +35,7 @@
   {
     "id": "SC-003",
     "class": "DIVERGENCE",
-    "title": "Initials-entry screen has no auto-abort timer",
+    "title": "Initials-entry screen has no auto-abort timer (the ROM's runs ~108 s, not the ~32 s first reported)",
     "source": {
       "file": "ALSCOR.MAC",
       "line": 36,
@@ -46,8 +46,8 @@
       "line": 106,
       "verbatim": "export interface HighScoreEntryState {"
     },
-    "claim": "ITIMHI=60 seeds TIMHIS (INTLDR, ALSCOR.MAC:745-746), which GETINI decrements once per 32 frames (`LDA QFRAME / AND I,1F / IFEQ ... DEC TIMHIS`, ALSCOR.MAC:768-772) and aborts entry (CNOTFOU) at zero — roughly 32 seconds of real time before an idle player's initials entry is auto-cancelled. `HighScoreEntryState` (src/core/state.ts:106-108) carries only `{ initials: string }` — no countdown field anywhere in state.ts or sim.ts — so our entry screen waits indefinitely for input.",
-    "reasoning": "On a coin-op cabinet this timeout exists to free the machine for the next paying customer; a single-player browser tab has no such contention, so waiting forever costs nothing. Worth recording because it is a real, load-bearing piece of ALSCOR.MAC's state machine with no trace in the port, not because it needs porting.",
+    "claim": "ITIMHI=60 (ALSCOR.MAC:36) is HEX in this assembler — decimal literals carry a trailing period ('SECOND\t=20.', ALCOMN.MAC:87; 'CMP I,10.', ALWELG.MAC:571), cf. B-021 — so ITIMHI = 0x60 = 96, not 60. It seeds TIMHIS (INTLDR, ALSCOR.MAC:745-746), which GETINI decrements once per 32 GAME frames (`LDA QFRAME / AND I,1F / IFEQ ... DEC TIMHIS`, ALSCOR.MAC:768-772) and aborts entry (CNOTFOU) at zero: 96 * 32 = 3072 game frames, which at the ROM's 256/9 = 28.44 fps (FR-001) is ~108 seconds before an idle player's initials entry is auto-cancelled. `HighScoreEntryState` (src/core/state.ts:106-108) carries only `{ initials: string }` — no countdown field anywhere in state.ts or sim.ts — so our entry screen waits indefinitely for input.",
+    "reasoning": "On a coin-op cabinet this timeout exists to free the machine for the next paying customer; a single-player browser tab has no such contention, so waiting forever costs nothing — the verdict (no counterpart, wont_fix) is unaffected. Corrected for the 28.444 fps rebase (see FR-016 in pair-11-framerate-adjudication.json): the '~32 seconds' originally stated was TWO compounding unit errors — reading ITIMHI as decimal 60 (it is hex, = 96) and then dividing the frame count by 60 Hz — which cancelled into a number that sounds exactly like an arcade initials timeout. The ROM's real timeout is ~108 s.",
     "recommendation": "wont_fix"
   },
   {

@@ -18,7 +18,7 @@
   },
   {
     "id": "DA-002",
-    "class": "CONFIRMED",
+    "class": "DIVERGENCE",
     "title": "Enemy bolt cap: NICHARG=4 matches MAX_ENEMY_BULLETS=4",
     "source": {
       "file": "ALCOMN.MAC",
@@ -30,8 +30,10 @@
       "line": 62,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
-    "claim": "The ROM's charge array reserves exactly 4 slots (NICHARG) for enemy shots, on top of the 8 player slots. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is the identical number.",
-    "reasoning": "A second confirmed hard cap, and it is the one that makes the whole enemy-fire rate feel authentically sparse rather than a bullet-hell."
+    "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
+    "reasoning": "A second confirmed hard cap, and it is the one that makes the whole enemy-fire rate feel authentically sparse rather than a bullet-hell. CORRECTION (coverage review): this finding was originally filed as a false CONFIRMED — NICHARG is only the array's physical slot count, not the live per-wave cap — and has been reclassed to DIVERGENCE. See W-019 (pair-1-alwelg-sim-enemies.json), which states the correct per-wave WCHAMX+1 cap.",
+    "recommendation": "fix",
+    "size": "s"
   },
   {
     "id": "DA-003",
@@ -167,7 +169,7 @@
   {
     "id": "DA-010",
     "class": "DIVERGENCE",
-    "title": "Player-death splat runs ~20 frames (0.33s) in the ROM; ours holds for 0.9s, nearly 3x longer",
+    "title": "Player-death splat runs ~20 frames in the ROM = 0.70 s; ours holds for 0.9 s, ~1.3x longer",
     "source": {
       "file": "ALDISP.MAC",
       "line": 1022,
@@ -178,8 +180,8 @@
       "line": 89,
       "verbatim": "const SPLAT_LIFE = 0.9"
     },
-    "claim": "The special-explosion frame-timer table (TSPTIM, ALDISP.MAC:1022-1030) sums to 20 frames total for the charge-player splat's full START-through-FINISH sequence (2+2+2+2+2+4+3+2+1 = 20 frames) before the (separate, pulsar-specific) 20-frame tail begins. At 60Hz that is 20/60 ≈ 0.33 seconds. Our `SPLAT_LIFE` constant holds the effect for 0.9 seconds — converting units first (this is a frame count, not already-seconds), 0.9s is ≈54 frames, roughly 2.7x the authentic duration.",
-    "reasoning": "A quantifiable, frame-verified timing divergence (checked against the unit trap: 20 ROM frames genuinely is ~0.33s, not close to 0.9s under any frame-rate reading) — the death beat lingers on screen far longer than the arcade did.",
+    "claim": "The special-explosion frame-timer table (TSPTIM, ALDISP.MAC:1022-1030) sums to 20 frames total for the charge-player splat's full START-through-FINISH sequence (2+2+2+2+2+4+3+2+1 = 20 frames) before the (separate, pulsar-specific) 20-frame tail begins. Those are GAME frames of 35.16 ms (256/9 = 28.44 fps, FR-001), so the sequence runs 20/28.44 = 0.703 s — not the 0.33 s a 60 Hz reading gives. Our `SPLAT_LIFE` constant holds the effect for 0.9 s: 1.28x the authentic duration, ~0.2 s of overhang, not the ~2.7x originally reported.",
+    "reasoning": "A real but minor timing divergence: the death beat lingers about a fifth of a second too long, and SPLAT_LIFE should be 0.70. Corrected for the 28.444 fps rebase (see FR-015 in pair-11-framerate-adjudication.json): this finding's own inoculation — 'checked against the unit trap: 20 ROM frames genuinely is ~0.33s, not close to 0.9s under any frame-rate reading' — is precisely what the rebase refutes, because under the ROM's actual frame rate 20 frames IS close to 0.9 s. That assertion is withdrawn; the finding survives, at a quarter of its filed magnitude.",
     "recommendation": "fix",
     "size": "s"
   },
@@ -307,7 +309,7 @@
   {
     "id": "DA-018",
     "class": "DIVERGENCE",
-    "title": "Enemy bolt spin frame: ROM ties it to the global frame counter (synchronized, continuously cycling); ours ties it to the bolt's own depth (desynchronized, single-pass)",
+    "title": "Enemy bolt spin frame: ROM ties it to the global frame counter (synchronized, ~7 Hz, continuously cycling); ours ties it to the bolt's own depth (desynchronized, single-pass)",
     "source": {
       "file": "ALDISP.MAC",
       "line": 910,
@@ -318,8 +320,8 @@
       "line": 297,
       "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
     },
-    "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-display-frame counter — so every enemy bolt on screen cycles through its 4 pictures in lockstep, once every 4 frames (~15Hz), regardless of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
-    "reasoning": "The authentic pinwheel spin is a fast, globally-synchronized flicker independent of each bolt's travel; ours instead ties the spin rate to travel speed (which varies by level via ENEMY_BOLT_SPEED_OFFSET) and desyncs simultaneous bolts from one another.",
+    "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
+    "reasoning": "The authentic pinwheel spin is a globally-synchronized flicker independent of each bolt's travel; ours instead ties the spin rate to travel speed (which varies by level via ENEMY_BOLT_SPEED_OFFSET) and desyncs simultaneous bolts from one another. Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json): the divergence is unchanged, but the target cadence is ~7.1 Hz, not the ~15 Hz stated here — a fix that reproduces QFRAME's cadence must step at ROM_FPS/4, so the 60 Hz reading would have made the pinwheel spin twice as fast as the arcade's.",
     "recommendation": "fix",
     "size": "s"
   },
@@ -364,7 +366,7 @@
   {
     "id": "DA-021",
     "class": "STRUCTURAL",
-    "title": "Flip/jump path: ROM's 16-step lookup table vs. our continuous parametric arc",
+    "title": "Flip/jump path: ROM's 16-step lookup table (stepped once per 28.4 Hz logic frame) vs. our continuous parametric arc",
     "source": {
       "file": "ALDISP.MAC",
       "line": 720,
@@ -375,8 +377,8 @@
       "line": 53,
       "verbatim": "function arcAbout("
     },
-    "claim": "The ROM indexes its 16-entry JUMPX/JUMPZ circle (DA-013) with a 4-bit integer step counter (`INVAL2 AND 0F`, line 720) that advances one discrete step at a time — 16 fixed positions per full loop, updated on the game's 60Hz cadence. `arcAbout()` instead evaluates `cos`/`sin`/`hypot` continuously for an arbitrary float `t` each frame, with no 16-step quantization.",
-    "reasoning": "Differs only because the ROM is integer-stepped on a 60Hz IRQ and we are continuous/dt-driven float math — the underlying circular path is identical (DA-013). Not worth reproducing the quantization; the continuous version is strictly smoother for the same trajectory.",
+    "claim": "The ROM indexes its 16-entry JUMPX/JUMPZ circle (DA-013) with a 4-bit integer step counter (`INVAL2 AND 0F`, line 720) that advances one discrete step at a time — 16 fixed positions per full loop, updated once per GAME frame, i.e. on the FRTIMR-gated 256/9 = 28.44 Hz logic cadence (FR-001), not on a 60 Hz one and not on the ~256 Hz IRQ. `arcAbout()` instead evaluates `cos`/`sin`/`hypot` continuously for an arbitrary float `t` each frame, with no 16-step quantization.",
+    "reasoning": "Differs only because the ROM is integer-stepped on its logic frame and we are continuous/dt-driven float math — the underlying circular path is identical (DA-013). Not worth reproducing the quantization; the continuous version is strictly smoother for the same trajectory, so the accept stands. Corrected for the 28.444 fps rebase (see FR-001 and FR-012 in pair-11-framerate-adjudication.json): the '60Hz IRQ' cadence asserted here was wrong in both halves — the IRQ runs at ~256 Hz and the step counter advances once per logic frame (28.44/s) — so anything that reproduces the flip's RATE (as opposed to its path) must be driven from ROM_FPS, not 60.",
     "recommendation": "accept"
   },
   {

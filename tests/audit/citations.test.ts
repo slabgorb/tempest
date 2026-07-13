@@ -23,6 +23,18 @@ describe('checkFindings', () => {
     expect(errors.join('\n')).toMatch(/ALDIS2\.MAC.*never shipped/)
   })
 
+  it('accepts a citation to a module that shipped only via .INCLUDE (ANVGAN)', () => {
+    const errors = checkFindings(
+      [{
+        id: 'X-007', class: 'NO_COUNTERPART', title: 't', ours: null,
+        source: { file: 'ANVGAN.MAC', line: 1, verbatim: 'anything' },
+        claim: 'c', reasoning: 'r', recommendation: 'accept',
+      }],
+      { repoRoot, sourceDir: null },
+    )
+    expect(errors).toEqual([])
+  })
+
   it('rejects a finding whose `ours` verbatim does not match the real line', () => {
     const errors = checkFindings(
       [{
