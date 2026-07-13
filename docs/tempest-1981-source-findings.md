@@ -1,3 +1,10 @@
+> **Superseded.** This document was extracted from the *Tempest vs Tempest* book — a secondary
+> source that reproduces hand-typed 6502 listings as images. The primary source (Theurer's original
+> Atari assembler source) has since been audited directly: see
+> [`2026-07-12-tempest-primary-source-audit.md`](./2026-07-12-tempest-primary-source-audit.md),
+> which records every place this document was wrong. Kept for its narrative and historical
+> chapters; **do not take a constant from it.**
+
 # Tempest (1981) — source-code findings from *Tempest vs Tempest*
 
 **Source:** `docs/TempestVsTempest_release.pdf` — *"Tempest vs Tempest: Notes on the
