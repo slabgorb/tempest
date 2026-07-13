@@ -126,6 +126,17 @@ const phosphor = createPhosphor()
 // Warp-dive starfield (Story 10-4): the lifecycle lives in the pure ./starfield
 // model; render strokes its live planes as blue dots rushing out from centre.
 const starfield = createStarfield()
+
+/**
+ * Advance the warp starfield by `dt` seconds of SIM time (FR-017).
+ *
+ * Wired to createLoop's onStep in main.ts, so it ticks on the game's clock — not on
+ * requestAnimationFrame — and freezes with the rest of the sim when paused. Only the
+ * dive uses it; every other mode resets the field (see render()).
+ */
+export function advanceStarfield(dt: number): void {
+  starfield.step(dt)
+}
 const STAR_COLOR = '#7fc3ff' // blue star dots
 // The 4 reused star "pictures": fixed unit directions from screen centre. Each
 // plane scatters its picture's dots outward as it dives, so 8 planes share 4
@@ -141,7 +152,10 @@ const STAR_PICTURE_DOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>>
 // a radial reach: far (Z≈STAR_SPAWN_Z) sits near centre, near (Z≈STAR_RETIRE_Z)
 // flings its dots to the edges — the "flying down the tube" rush. Warp-only.
 function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): void {
-  starfield.step()
+  // NOTE: this no longer STEPS the starfield — it only strokes it. Advancing state
+  // inside a draw call was the whole defect (FR-017): draw runs once per rendered
+  // frame, so the dive's speed tracked the monitor and kept running while paused.
+  // advanceStarfield() below is driven from the sim's per-step hook instead.
   const cx = W / 2
   const cy = H / 2
   const reach = Math.hypot(W, H) * 0.6
@@ -902,7 +916,12 @@ export function render(
   dpr: number,
   dt: number,
 ): void {
-  renderTime += 1 / 60
+  // tp1-1: was `renderTime += 1 / 60` — a hard-coded frame rate inside a function
+  // that is HANDED the real dt. It drives every glyph animation phase, so on a 144 Hz
+  // display the whole game's animation ran at the wrong speed too. Render-side phases
+  // legitimately track the DISPLAY's clock (they are decoration, not simulation), so
+  // this takes the true frame dt rather than the sim's step.
+  renderTime += dt
   // Background (work in CSS pixels; the DPR scale makes it crisp).
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.fillStyle = '#000'

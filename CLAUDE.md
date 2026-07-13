@@ -12,6 +12,10 @@ core** wrapped by a thin input/render/audio shell.
 
 North-star design doc: `docs/superpowers/specs/2026-06-24-tempest-clone-design.md`.
 
+Fidelity reference: `docs/2026-07-12-tempest-primary-source-audit.md` — our implementation
+audited against Theurer's original 1981 source. Take arcade constants from there, not from the
+book-derived findings doc. **The ROM runs at 28.44 fps, not 60.**
+
 - **Type:** Single-repo browser game (client-only, no backend)
 - **Language:** TypeScript (ES modules, strict)
 - **Build tool:** Vite · **Testing:** Vitest (TDD on the pure core)
@@ -92,7 +96,7 @@ Built in "waves," each a self-contained slice:
   arcade orchestrator); every push to `main` auto-deploys to R2 — never push it
   by hand.
 - **Branches:** `feat/{description}`, `fix/{description}`, `chore/{description}`.
-- Don't commit/push unless asked.
+- Just commit; no need to ask first (`develop` is the working branch).
 
 ## Important Notes
 

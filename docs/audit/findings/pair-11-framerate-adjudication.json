@@ -1,0 +1,337 @@
+[
+  {
+    "id": "FR-001",
+    "class": "DIVERGENCE",
+    "title": "The ROM's game-logic frame rate is 256/9 ~= 28.4 fps, not 60 - every frames->seconds conversion in the clone (and in this audit) is 2.11x off",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 51,
+      "verbatim": "\tCMP I,9"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 46,
+      "verbatim": "export const WARP_INITIAL_SPEED = (2.0 * 60) / WARP_ALONG_SPAN"
+    },
+    "claim": "The frame rate is fixed by three lines of primary source, none of which is a comment. (1) The IRQ handler bumps FRTIMR once per interrupt: 'INC FRTIMR\t\t;UPDATE FRAME TIMER' (ALHARD.MAC:149). (2) The same handler bumps the single-byte $INTCT ('INC $INTCT\t\t;INTERRUPT COUNTER', ALHARD.MAC:150) and treats its 8-bit wrap as one second ('IFEQ\t\t\t;ANOTHER SECOND?', ALHARD.MAC:151, feeding 'INC SECOUL\t\t;YES. UPDATE UP TIMER', line 152) - so by the ROM's own arithmetic the IRQ runs at 256 Hz. (3) MAINLN spins until FRTIMR reaches 9 before it runs a single logic frame: 'BEGIN' / 'LDA FRTIMR' / 'CMP I,9' / 'CSEND' (ALEXEC.MAC:49-52), then 'LDA I,0\t\t\t;RESTART FRAME TIMER' / 'STA FRTIMR' (53-54) and exactly one 'JSR EXSTAT' / 'JSR NONSTA' / 'JSR DISPLA' pass (55-57). CSEND is defined as 'DEFEND\tCSEND,BCC,BCS' (HLL65.MAC:93) - it branches BACK while carry is CLEAR - and CMP sets carry when FRTIMR >= 9, so the loop waits for 9 IRQ ticks per logic frame. 9 ticks at 256 Hz = 35.16 ms => 256/9 = 28.44 game frames per second. Every per-frame quantity in the ROM (invader speed, charge speed, refire holdoff, zap window, QFRAME) is counted in THESE frames. Our code instead multiplies ROM per-frame values by 60 (rules.ts:46, 52, 154) and divides ROM frame counts by 60 (sim.ts:113, 223; flipper.ts:27, 39), making the whole simulation 60/28.44 = 2.11x too fast in wall-clock.",
+    "reasoning": "60 is refuted from the hardware side as well: for 60 logic frames/sec the IRQ would have to run at 9*60 = 540 Hz, which would make the ROM's own up-time/play-time counters (SECOUL/SECOPL, incremented once per 256 IRQs and banked to the EAROM for the operator) run at 2.1x wall clock - Atari would not have shipped bookkeeping that wrong. The hardware timing chain agrees with 256: ALCOMN.MAC:251 defines 'M3KHTI\t=80\t\t\t;3 KHZ TIMER' as a bit of IN1, and Atari's standard 3 kHz-derived interrupt (3000/12 = 250 Hz) gives 250/9 = 27.8 fps. So the true rate is 27.3-28.4 fps depending on the exact divider; the ROM's own model (256/9 = 28.44) is the right number to convert with, and the residual +/-4% is negligible beside the 2.11x error it replaces. This single constant silently underwrites W-045, B-005, W-028, W-020, W-014, W-026, DA-010, WD-008, WD-009, B-001 and W-048's declared 'one along-unit/frame = 60/224 depth/s' mapping - which is itself wrong twice over, since it also asserts the enemy is 'stepped once per 60 Hz IRQ' when JSMOVE runs once per LOGIC frame, i.e. once per NINE IRQs. [REFUTATION] Re-opened all three citations verbatim: ALHARD.MAC:149-152 (INC FRTIMR, INC $INTCT, IFEQ/INC SECOUL — the 256-tick-per-second wraparound), ALEXEC.MAC:49-57 (BEGIN/LDA FRTIMR/CMP I,9 at line 51 exactly as cited/CSEND/LDA I,0/STA FRTIMR/JSR EXSTAT/JSR NONSTA/JSR DISPLA), and HLL65.MAC:93 (DEFEND CSEND,BCC,BCS, confirming CSEND branches back while carry clear, so the loop truly spins until FRTIMR>=9). 256Hz/9 = 28.444 fps is airtight and matches the ground-truth this audit already established — this finding is essentially the canonical derivation of that ground truth, cited with exact line numbers that all check out. Checked our side's citations too: rules.ts:46 (WARP_INITIAL_SPEED uses *60), sim.ts:113 and ~223 (both /60), flipper.ts:27 and 39 (both /60 for flipTimer reload) — all verbatim, confirming the pervasive 60fps-base error the finding describes. The secondary M3KHTI/3kHz aside (ALCOMN.MAC:251, confirmed verbatim, and correctly decoded as a hex bitmask bit $80 in IN1, not a frequency literal) is explicitly hedged by the finding itself ('+/-4% ... negligible') and does not carry any weight the core IRQ-chain proof doesn't already carry on its own — it's supplementary, not load-bearing, and does not weaken the finding. This is the load-bearing constant of the whole audit and it is fully substantiated.",
+    "recommendation": "fix",
+    "size": "l",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-002",
+    "class": "CONFIRMED",
+    "title": "The IRQ really does run at ~256 Hz - and our POKEY bake tool is the one place in the codebase that already uses the right timebase",
+    "source": {
+      "file": "ALHARD.MAC",
+      "line": 150,
+      "verbatim": "\tINC $INTCT\t\t;INTERRUPT COUNTER"
+    },
+    "ours": {
+      "file": "tools/pokey-bake/sfx-data.mjs",
+      "line": 16,
+      "verbatim": "// The engine ticks at the ~246-250 Hz sound interrupt (NOT the 60 Hz game frame),"
+    },
+    "claim": "ALHARD.MAC's IRQ handler calls MODSND unconditionally on every interrupt ('JSR MODSND\t\t;PROCESS SOUNDS', line 148), then increments $INTCT (line 150) and treats the byte's wrap as a second ('IFEQ\t\t\t;ANOTHER SECOND?', line 151). A single-byte counter wraps every 256 increments, so one second = 256 interrupts: the IRQ is ~256 Hz by the ROM's own reckoning, and ~246-250 Hz on the real 3 kHz-derived divider chain (ALCOMN.MAC:251, 'M3KHTI\t=80\t\t\t;3 KHZ TIMER'). sfx-data.mjs:16 documents exactly that: the sound engine ticks at the ~246-250 Hz sound interrupt, not at 60 Hz.",
+    "reasoning": "Recorded as the positive control for this adjudication, and as the counter-example that proves the 60 Hz base was never a considered decision: when the audio work needed a timebase it went and found the real one (S-019 reaches the same conclusion independently). Only the game core kept the invented 60. Note the corollary: ALSOUN's 'FRAMES' and ALWELG's 'frames' are DIFFERENT units - sound frames are IRQ ticks (~256/s), game frames are MAINLN passes (~28.4/s, i.e. 9 IRQ ticks each). Anything counted in QFRAME/FRTIMR-gated logic frames must never be converted with the sound tick, and vice versa."
+  },
+  {
+    "id": "FR-003",
+    "class": "STRUCTURAL",
+    "title": "The ROM's frame rate is a self-paced CEILING, not a fixed clock: 28.4 fps when the frame fits in 9 IRQ ticks, slower when the vector list is busy",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 49,
+      "verbatim": "\tBEGIN\t\t\t;LOOP UNTIL CURRENT FRAME HAS BEEN UP X MS."
+    },
+    "ours": {
+      "file": "src/shell/loop.ts",
+      "line": 9,
+      "verbatim": "const STEP = 1 / 60"
+    },
+    "claim": "MAINLN's inner BEGIN/CSEND spin ('BEGIN\t\t\t;LOOP UNTIL CURRENT FRAME HAS BEEN UP X MS.', ALEXEC.MAC:49) is a MINIMUM frame period, not a synchronising wait: it only guarantees FRTIMR >= 9 before the next pass. EXSTAT+NONSTA+DISPLA (ALEXEC.MAC:55-57) then run inline, and DISPLA builds the whole vector display list, so a busy scene makes the loop iteration itself longer than 9 ticks and the next pass exits the spin immediately - the classic vector-arcade slowdown-under-load. The only upper bound is the watchdog: the IRQ resets the machine when FRTIMR goes negative ('LDA FRTIMR' / 'BPL SOFTOK\t\t;OVERRUN TIME LIMIT (BR IF OK)', ALHARD.MAC:48-49), i.e. at 128 ticks (0.5 s, ~2 fps). ALDISP.MAC:573-574 ('LDA I,7A' / 'STA FRTIMR') exploits exactly this as an anti-tamper trap. So the rate is a band: 28.4 fps ceiling, degrading under load. Our loop.ts hard-codes STEP = 1/60 and advances the sim by exactly 1/60 s per step regardless of render cost.",
+    "reasoning": "Accept the fixed timestep - reproducing load-dependent slowdown in a browser port would be a regression, and CLAUDE.md's frame-rate-independent core is a deliberate architectural choice (P7-001 reaches the same conclusion and is correct on this point). But P7-001's 'accept' must NOT be read as accepting the 60: the BASE and the VARIABILITY are separate questions. Pick the ceiling (28.44 fps) as the fixed base, because that is the rate the ROM hits whenever it is not overloaded, and it is the rate Theurer himself quotes next to the enemy tables (FR-005). Pauses, attract screens and the warp dive - the lightest frames in the game - sit at the ceiling essentially always.",
+    "recommendation": "accept",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-004",
+    "class": "DIVERGENCE",
+    "title": "SECOND=20 is a PAUSE-TIMER unit, not the frame rate - the '~20 fps' reading (WD-008) is refuted, but so is 60",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 87,
+      "verbatim": "SECOND\t=20.\t\t\t;FRAMES/SECOND"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 136,
+      "verbatim": "export const WARP_AVOID_SPIKES_SECONDS = 0.5"
+    },
+    "claim": "'SECOND\t=20.\t\t\t;FRAMES/SECOND' (ALCOMN.MAC:87, redeclared identically at ALEXEC.MAC:312) sits under the header ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85) and is used in exactly one role: as the reload unit for countdown timers. Every use is a pause load - 'LDA I,4*SECOND\t\t;LONGER PAUSE' (ALEXEC.MAC:330), 2*SECOND (333, 402), 1*SECOND (355), 0*SECOND (387), 'LDA I,SECOND\t\t;RESTART FRACTIONAL SECONDS TIMER' (ALWELG.MAC:219) - plus QUASEC = SECOND/4 (ALCOMN.MAC:88), used once, at 'LDA I,6*QUASEC\t\t;WARNING DELAY' (ALWELG.MAC:3164). It appears NOWHERE in MAINLN, ALHARD's IRQ, or any speed table: it never gates the loop and cannot set the frame rate. It is the author's ASSUMED frames-per-second for authoring pause durations, and it is inconsistent with his own ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581) and with the machine (FR-001). The one place it reaches our code is WARP_AVOID_SPIKES_SECONDS: 6*QUASEC = 30 frames, which at the real 28.44 fps is 1.055 s - not the 1.5 s WD-009 derived from SECOND=20, and not the 0.5 s we ship (which is 30/60).",
+    "reasoning": "Both prior claims are half right. WD-008 is right that the base is not 60 and wrong that it is 20: 20 is a constant the author wrote down, 28.44 is what the hardware does, and where they disagree the hardware wins - a countdown reloaded with 20 frames simply expires in 0.70 s, not 1.0 s. (Whether Theurer knew is unknowable from the source; the ROM contradicts itself, stating 20 frames/sec in ALCOMN and 28 per second in ALWELG.) The practical consequence is narrow: SECOND/QUASEC govern only pause and attract-screen countdowns, and the only one we implement is the AVOID SPIKES hold. Set it to 30 frames / 28.44 = 1.055 s. Do not adopt 20 as the project's frames-per-second base. [REFUTATION] Re-opened ALCOMN.MAC:87 verbatim ('SECOND =20. ;FRAMES/SECOND') under the ';TIMING FOR PAUSE STATE' header, and QUASEC=SECOND/4 at :88. Verified every cited usage site: ALEXEC.MAC:330/333/355/387/402 (4*SECOND, 2*SECOND, 1*SECOND, 0*SECOND, 2*SECOND — all pause-state QSTATE loads), ALWELG.MAC:219 ('LDA I,SECOND ;RESTART FRACTIONAL SECONDS TIMER'), and ALWELG.MAC:3164 ('LDA I,6*QUASEC ;WARNING DELAY') — all exact matches. Confirmed by search that SECOND/QUASEC appear nowhere in MAINLN, the IRQ handler, or any speed table — they gate nothing but countdown reloads, exactly as claimed. This matches the ground truth given for this audit verbatim ('SECOND = 20. in ALCOMN.MAC is a pause-state timer unit, not the frame rate. Do not be fooled by it') — the finding correctly refutes a prior 20fps reading while also correctly declining to adopt SECOND=20 as any kind of base rate, deferring instead to the 256/9 fps established in FR-001. Arithmetic verified: 6*QUASEC = 6*5 = 30 frames; at 28.444 fps that's 30/28.444=1.0546s (claim's '1.055s'); at the wrong SECOND=20 basis it would be 30/20=1.5s (matches the WD-009 comparison cited); our shipped WARP_AVOID_SPIKES_SECONDS=0.5 (rules.ts:57, verbatim) is consistent with 30/60=0.5, the invented-60fps pattern this whole audit is rebasing. All arithmetic and citations hold.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "FR-005",
+    "class": "CONFIRMED",
+    "title": "Theurer's own comment says 28 frames per second - directly above the enemy-refire table we ship byte-for-byte",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 581,
+      "verbatim": "\t\t\t\t;FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 182,
+      "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
+    },
+    "claim": "The skill-contour table header reads ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581), immediately above TCHARFR (582) whose first record is '\t.BYTE TA,1,20.,80.,-3' (583). 28 per second is 256/9 = 28.44 rounded - an independent, in-source corroboration of the loop cadence derived in FR-001, written by the author beside the very numbers he was tuning. Our enemyFireHoldoffFrames (rules.ts:97-102) reproduces that table exactly: 80 at wave 1, -3/wave to 23 at wave 20, 20 for 21-64, 10 for 65+.",
+    "reasoning": "This is the fact that settles the adjudication. The 20-vs-28 conflict inside the ROM is not symmetric: 28 is written against a table of GAME-FRAME counters (the same counters our speeds and cooldowns are made of) and matches the machine, while 20 is written against pause countdowns and matches nothing. The frame COUNTS in our table are correct and must not be touched by the rebase - only the /60 at the call site (see FR-006). W-016's verdict therefore stands, but its stated grounds ('a positive control on the unit conversion (frames -> seconds) used throughout this audit') are refuted: the table is a positive control on the frame COUNTS and a negative control on the 60 Hz base sitting two lines above it in our own file."
+  },
+  {
+    "id": "FR-006",
+    "class": "DIVERGENCE",
+    "title": "Enemy refire holdoff is converted at 60 Hz: 1.33 s where the arcade waits 2.81 s",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 583,
+      "verbatim": "\t.BYTE TA,1,20.,80.,-3"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 223,
+      "verbatim": "  const holdoffSeconds = enemyFireHoldoffFrames(s.level) / 60"
+    },
+    "claim": "TCHARFR's wave-1 record ('\t.BYTE TA,1,20.,80.,-3', ALWELG.MAC:583) is 80 GAME frames, and the ROM's own header two lines up says those frames run at 28 per second (ALWELG.MAC:581) - so an invader's post-shot holdoff at wave 1 is 80/28.44 = 2.81 s, falling to 23/28.44 = 0.81 s by wave 20. sim.ts:223 computes holdoffSeconds = enemyFireHoldoffFrames(level) / 60 = 1.33 s at level 1: enemies refire 2.11x more often than the arcade's, at every level.",
+    "reasoning": "The frame counts are right (FR-005); only the divisor is wrong. This is the cleanest single demonstration that the 60 Hz base is a real gameplay defect and not a bookkeeping nicety - the audit's most-cited 'CONFIRMED' table produces double the arcade's enemy fire pressure once it is turned into seconds. Fix by dividing by ROM_FPS (256/9) rather than 60. rules.ts:95's comment ('in 60 Hz frames') must be corrected in the same edit. [REFUTATION] Re-opened ALWELG.MAC:582-585: TCHARFR wave1-20 record is '.BYTE TA,1,20.,80.,-3' — TA decodes via DOTA (ALWELG.MAC:834-847) as byte3 + (curwave-startwave)*byte4, so at wave1 (offset 0) value=80, at wave20 (offset 19) value=80+19*(-3)=23 — exactly matching enemyFireHoldoffFrames(1)=80 and (20)=23 in rules.ts:97-102. Traced WCHARFR's actual runtime role through FIREIC (ALWELG.MAC:2687-2736), which is the real governing code, not just the WTABLE loader: DEC X,INVACT once per invader per PLAY-mainline call (one call per game frame, confirmed by PLAY: at ALWELG.MAC:868-878 running once per ALEXEC main-loop iteration = 28.444 Hz); only once that per-invader countdown clamps at 0 does the RANDOM-vs-CHANCE[ESHCOU] reroll happen, and on a successful fire 'LDA WCHARFR; STA X,INVACT' reloads the countdown to WCHARFR frames. This confirms WCHARFR genuinely is a GAME-frame countdown (matching ALWELG.MAC:581's own header comment and the WTABLE line 731 'INVADER'S FIRE TIMER (FRAMES)'), not a raw probability threshold as an oddly-placed ALCOMN.MAC:784 comment fragment might suggest in isolation — the FIREIC code proves the actual comparison is RANDOM vs CHANCE[ESHCOU] (a separate table, which matches ENEMY_FIRE_CHANCE in rules.ts almost exactly: CHANCE bytes 0,E0,F0,FA,FF give fire probabilities 1.0, 0.125, 0.0625, 0.0234, 0.0039 vs our [1.0,0.125,0.0625,0.023,0.004]). So the 80-frame/23-frame figures are correct GAME frame counts, the ROM_FPS=256/9 conversion is the right one, sim.ts:223 dividing by 60 is confirmed wrong, and rules.ts:95's 'in 60 Hz frames' comment is confirmed to need correction. 80/(256/9)=2.8125s and 23/(256/9)=0.8086s both match the finding's 2.81s/0.81s. Ratio 2.8125/1.3333=2.109 matches the established 2.11x base error. Holds.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-007",
+    "class": "DIVERGENCE",
+    "title": "BULLET_SPEED 2.4 is 2.1x the ROM's charge speed - W-045 and B-005 are FALSE CONFIRMATIONS produced by the 60 Hz base",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 890,
+      "verbatim": "PCVELO\t=9\t\t\t;PLAYER SHOT VELOCITY (I)"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 7,
+      "verbatim": "export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev-3 frees the slot at ~25 frames / ~0.42s"
+    },
+    "claim": "PCVELO = 9 along-units per GAME frame (ALCOMN.MAC:890), added to a charge's Y once per MOVCHA pass, which runs once per MAINLN iteration. The well is 224 along-units (0x10..0xF0), so a charge crosses it in 224/9 = 24.9 frames - correct - but those frames are 35.16 ms each, so the crossing takes 0.875 s, not the '~0.42s' our comment claims. In depth units: 9 * (256/9) / 224 = 256/224 = 1.143 depth/s. We ship BULLET_SPEED = 2.4, which is exactly 9 * 60/224 - the same arithmetic with the wrong base. Our bullets are 2.10x too fast.",
+    "reasoning": "W-045 ('A textbook case of the unit trap resolving to a match: 2.4 depth/s and 9 along-units/frame are the same number') and B-005 ('correctly NOT a contradiction') both CONFIRMED this constant by converting with 60. They are the audit's most dangerous findings: a false CONFIRMED is never revisited by the refutation pass and would have been printed as proof we match the arcade. Both must be reclassed to DIVERGENCE. The correct value is 1.143 depth/s (= 256/224 = 8/7), and the code comment's '~25 frames / ~0.42s' should read '~25 frames / ~0.88s'. [REFUTATION] Re-opened ALCOMN.MAC:890 'PCVELO=9' and MOVCHA (ALWELG.MAC:2530-2546): for a player charge (X<NPCHAR) it does 'ADC I,PCVELO; STA X,CHARY' once per MOVCHA call, and MOVCHA is invoked once per PLAY-mainline pass (one call/game frame, 28.444 Hz) — so 9 along-units/frame is right and it is genuinely a per-GAME-frame increment, not a per-IRQ one. Confirmed the well span: ILINDDY=0xF0, ILINLIY=0x10 (ALCOMN.MAC:819-820), and FIREPC (ALWELG.MAC:2629-2684) starts a charge at 'LDA CURSY' (the player's own along-position, near the 0x10 rim) — so a charge's full traversal is genuinely ~224 along-units, giving 224/9=24.9 frames=0.875s at 28.444 fps, and 256/224=1.142857 (=8/7) depth/s. sim.ts:104 confirms BULLET_SPEED is used directly as 'b.depth -= BULLET_SPEED*dt' with no hidden secondary scaling. Attacked the finding's 'exactly' claim on unit-conversion grounds: 9*60/224 = 2.410714, not precisely 2.4 as shipped — a small (~0.45%) overstatement, so the ratio to the correct value is exactly 2.1x, not 2.109x. This does not change the substance: BULLET_SPEED is still roughly double the ROM's real speed and the corrected constant (256/224=1.142857 depth/s, ~0.875s crossing) is right. Holds, with the numeric imprecision noted below. [CORRECTION] 2.4 is not algebraically 'exactly' 9*60/224 (that product is 2.4107); the shipped constant is a rounder hand-tuned number close to it. The resulting speed-up ratio is therefore 2.4/1.142857 = 2.1x, not the 2.109x implied elsewhere in the audit — a negligible but real discrepancy that should not be repeated as an exact identity.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-008",
+    "class": "DIVERGENCE",
+    "title": "Every enemy climb speed carries the 60: flippers, tankers and fuseballs climb 2.11x too fast in wall-clock",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 592,
+      "verbatim": "\t.BYTE TA,1,8,-44.,-5"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 154,
+      "verbatim": "  return (alongPerFrame * 60) / WARP_ALONG_SPAN"
+    },
+    "claim": "TINVIN's wave-1 record ('\t.BYTE TA,1,8,-44.,-5', ALWELG.MAC:592) scales through TIMES8 into an 8.8 fixed-point per-GAME-frame increment: 44*8/256 = 1.375 along-units/frame (and 108*8/256 = 3.375 at wave 33). flipperSpeedForLevel converts that with '(alongPerFrame * 60) / WARP_ALONG_SPAN' (rules.ts:154), giving 0.368 depth/s at L1 and 0.904 at L33. With the real base the ROM's flipper climbs at 1.375 * (256/9) / 224 = 0.1746 depth/s at L1 and 0.4286 at L33 - a 5.7 s climb up the tube at level 1, where ours does it in 2.7 s. Tankers (tankerSpeed = flipperSpeed) and fuseballs (2x flipperSpeed) inherit the same 2.11x error.",
+    "reasoning": "The per-frame ANCHORS are right - W-013's CONFIRMED survives, because it is stated purely in along-units/frame and never touches seconds - but the depth/s the code derives from them is not. This is the largest single behavioural consequence of FR-001: the entire enemy roster moves at more than twice the arcade's pace, which is why so many of our hand-tuned seconds constants (spawnInterval, flipInterval, RESPAWN_DELAY) had to be short to feel balanced. The fix belongs in the same edit as W-012 (replacing the linear ramp with the TINVIN table), and W-012's own numbers - being in along-units/frame - are unaffected by the rebase. [REFUTATION] Re-opened ALWELG.MAC:591-596 (TINVIN table) and the TIMES8 subroutine (ALWELG.MAC:555-578) plus its call sites (line 530-536, once per wave-setup, not per frame — but that's fine, this is a level-parameter table, not a per-frame op). TIMES8 sign-extends the raw signed byte into a 16-bit value and shifts left 3 (×8): for wave1's raw byte -44 (0xD4), extending with TEMP0=0xFF and shifting left 3 gives 16-bit -352 = 0xFEA0 (high byte 0xFE=-2, low byte 0xA0=160), i.e. -2+160/256=-1.375 along-units/frame — exactly the '1.375' the finding asserts. For wave 33 the TINVIN record is '.BYTE TA,33.,39.,-108.,-3' (ALWELG.MAC:596); decoded through DOTA (offset=0 at the start of a range) this yields raw byte3=-108 directly, ×8/256=3.375 — exactly the finding's second figure. Verified rules.ts:150-154 flipperSpeedForLevel ramps FLIPPER_ALONG_PER_FRAME_L1=1.375 to L33=3.375 via '(alongPerFrame*60)/WARP_ALONG_SPAN', confirming the 60 Hz base is really there (rules.ts:145's own comment says '60 Hz'). Converted with ROM_FPS=256/9: 1.375*(256/9)/224=0.1746, 3.375*(256/9)/224=0.4286 — both match the finding. Ratio 0.3683/0.1746=2.109, consistent with the established base error. Verified rules.ts:190-191 that tankerSpeed=flipperSpeed and fuseballSpeed=2*flipperSpeed, confirming those two also inherit the error as claimed. Holds exactly.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-009",
+    "class": "DIVERGENCE",
+    "title": "PULSAR_CLIMB_SPEED's 82.5 is literally 1.375 x 60 - W-028's CONFIRMED collapses on the speed half",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 547,
+      "verbatim": "\tLDA I,0A0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 120,
+      "verbatim": "export const PULSAR_CLIMB_SPEED = 82.5 / WARP_ALONG_SPAN  // ≈ 0.368 depth/s"
+    },
+    "claim": "The pulsar's own climb increment is hard-set, level-independent: 'LDA I,0A0' / 'STA WINVIL+ZABPUL' (ALWELG.MAC:547-548) with 'LDA I,0FE' / 'STA WINVIN+ZABPUL' (549-550) = 0xFEA0 = -1.375 along-units per GAME frame - the same byte as the wave-1 flipper. Our PULSAR_CLIMB_SPEED = 82.5/224 = 0.368 depth/s, and 82.5 is exactly 1.375 * 60. At the real base it is 1.375 * (256/9) = 39.11 -> 39.11/224 = 0.1746 depth/s.",
+    "reasoning": "W-028 CONFIRMED this as 'both the threshold and the two speeds are right'. The threshold (PULSAR_NEAR_FAR_DEPTH = (0xf0-0xa0)/224) is a pure position ratio and IS right; the two SPEEDS are both 2.11x too fast. Reclass W-028 to DIVERGENCE, keeping its structural half (dual climb speed, flipper speed while below the potency height) intact. Note the pulsar speed is not independent - it is the L1 flipper byte - so it must be rebased in the same edit as FR-008 or the two will desynchronise. [REFUTATION] Re-opened ALWELG.MAC:539-550: 'LDA WINVIL; ASL... FUSE INC' precedes the pulsar block, which is 'LDA I,0A0; STA WINVIL+ZABPUL' then 'LDA I,0FE; STA WINVIN+ZABPUL' — this hardcodes the 16-bit value 0xFEA0 directly, with no per-wave table lookup and no TIMES8 call, confirming it is level-independent as claimed. Independently derived 0xFEA0 above for FR-008 as the TIMES8 output of the wave-1 flipper's raw byte -44 — it is bit-for-bit the identical 16-bit constant, so 'the same byte as the wave-1 flipper' is literally true, not just numerically coincidental. -352/256=-1.375 along/frame magnitude, matching the finding. rules.ts:120 PULSAR_CLIMB_SPEED=82.5/WARP_ALONG_SPAN, and 82.5=1.375*60 exactly (unlike FR-007's BULLET_SPEED, this one IS an exact identity) — confirms the 60 Hz base is really baked in here. At ROM_FPS: 1.375*(256/9)=39.111, /224=0.1746 depth/s, matching the finding's corrected value. Ratio 0.368/0.1746=2.108, consistent. Holds exactly.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-010",
+    "class": "DIVERGENCE",
+    "title": "Enemy bolt speed: the ROM's +2.0 along/frame offset is 0.254 depth/s, not the 0.536 W-020 prescribes (that fix is 60-based too)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 601,
+      "verbatim": "\t.BYTE TB,1,99.,-64."
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 151,
+      "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
+    },
+    "claim": "TCHARIN is one TB record for every wave ('\t.BYTE TB,1,99.,-64.', ALWELG.MAC:601), and TB means 'byte + WINVIL', so an enemy charge is always exactly 64*8/256 = 2.0 along-units/frame faster than the invader that fired it. At the real base that offset is 2.0 * (256/9) / 224 = 0.254 depth/s, and the wave-1 bolt's absolute speed is 3.375 along/frame = 0.4286 depth/s. We ship ENEMY_BOLT_SPEED_OFFSET = 0.72 depth/s - 2.83x the ROM's offset - and W-020's proposed replacement, 0.536, is itself the same number computed with 60 (2.0 * 60/224).",
+    "reasoning": "W-020's CLASS is right (our offset is wrong and the '+0xc0 flipper-relative' comment is unfounded) but its prescribed constant would bake the 60 Hz error permanently into the fix. Anyone applying W-020 as written lands 2.11x fast and will then 'confirm' it against this audit. The correct constant is 0.254 depth/s. This is the general shape of the danger: the rebase must land BEFORE the numeric fixes, or each fix re-introduces it. [REFUTATION] Re-opened ALWELG.MAC:600-601 'TCHARIN: .BYTE TB,1,99.,-64.' — a single record spanning all waves, so the offset is genuinely level-invariant as claimed. Decoded TB via the DOTB handler (ALWELG.MAC:829-832): 'LDA NY,TEMP3; CLC; ADC WINVIL; RTS' — adds byte3 (-64) to the CURRENT WINVIL. Confirmed via the WTABLE processing order (ALWELG.MAC:426-469, INDEX1 walks from WTABEND back toward WTABLE, i.e. table entries are processed in REVERSE listing order) that TINVIN (listed after TCHARIN at line 754) is processed BEFORE TCHARIN (listed at line 753), so WINVIL already holds the wave's base flipper value when DOTB runs for TCHARIN — meaning the enemy-shot raw value is (wave's WINVIL raw byte) + (-64), and after the shared TIMES8 scaling (ALWELG.MAC:525-529, 'JSR TIMES8 ;ENEMY SHOT') the OFFSET between bolt speed and flipper speed collapses to exactly 64*8/256=2.0 along/frame regardless of wave, because ×8 is linear and distributes over the sum. This exactly matches the claim's mechanism and arithmetic. At ROM_FPS: 2.0*(256/9)/224=0.254 depth/s. Confirmed rules.ts:72 ENEMY_BOLT_SPEED_OFFSET=0.72, and sim.ts:207 'levelParams(level).flipperSpeed + ENEMY_BOLT_SPEED_OFFSET' shows the offset is genuinely used as an additive term over flipper speed, matching the semantics of the ROM's DOTB computation. W-020's alternate value 2.0*60/224=0.5357 also checks out arithmetically as '60-based'. Holds exactly.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "FR-011",
+    "class": "DIVERGENCE",
+    "title": "The warp dive is 2.2x too fast: ~0.73 s where the ROM takes ~1.62 s (and WD-008's 2.35 s is the 20 fps error in the other direction)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3148,
+      "verbatim": "\tLDA I,2"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 52,
+      "verbatim": "  return (perFrame8_8 / 256) * (60 * 60) / WARP_ALONG_SPAN"
+    },
+    "claim": "INDROP seeds the dive velocity at 'LDA I,2' / 'STA CURSVH' (ALWELG.MAC:3148-3149) with a zeroed fraction = 2.0 along-units/GAME frame, and MOVCUD adds min(CURWAV*4, 0x30) + 0x20 (in 1/256 along-units per frame squared) to it each frame. At displayed level 1 (CURWAV = 0, per WD-010) that is a = 0.125 along/frame^2, so 224 = 2t + 0.0625t^2 gives t = 46.0 frames -> 46 * 35.16 ms = 1.62 s. Our WARP_INITIAL_SPEED = (2.0 * 60)/224 and warpAccel's '(perFrame8_8 / 256) * (60 * 60) / WARP_ALONG_SPAN' (rules.ts:46, 52) produce a ~0.73 s dive.",
+    "reasoning": "WD-008 filed this correctly as the root cause but computed the target from SECOND=20, landing on 2.35 s - 45% too long. The correct target is ~1.62 s at level 1 (the ratio is what matters: 60^2/28.44^2 = 4.45x on the acceleration term, 2.11x on the velocity term). Note the acceleration carries the base SQUARED, so warpAccel is the single most base-sensitive expression in the codebase: it must become (perFrame8_8 / 256) * ROM_FPS^2 / WARP_ALONG_SPAN. WD-002 and WD-003 (the per-frame magnitudes 2.0, 0x20, 0x30, 224) remain CONFIRMED - they never touch seconds. [REFUTATION] Re-opened INDROP (ALWELG.MAC:3137-3149): 'LDA I,0; STA CURSVL' zeroes the fractional velocity, then 'LDA I,2; STA CURSVH' sets the integer part to 2 — confirming the 2.0 along/frame initial dive velocity. Re-opened MOVCUD (ALWELG.MAC:1010-1078): position update (CURSYL/CURSY += CURSVL/CURSVH) happens first, then acceleration update 'LDA CURWAV; ASL; ASL' (×4); capped via CMP I,30/IFCS to 0x30; 'ADC I,20' (base 0x20) added to CURSVL/CURSVH — exactly matching 'min(CURWAV*4,0x30)+0x20' claimed, and this routine is called once per game frame (JSR MOVCUD from PLDROP, ALWELG.MAC:889, PLDROP being PLAY's sibling per-frame mainline for drop/warp mode). At CURWAV=0 (displayed level 1) this gives a=0x20/256=0.125 along/frame². Solving 224=2t+0.0625t² gives t≈45.97≈46 frames, independently verified via the quadratic formula (discriminant=60, sqrt≈7.746) — matches the finding's 46.0. 46*(9/256)=1.617s ≈ the claimed 1.62s. Reproduced the current (60 Hz-based) code's actual output using rules.ts:46 WARP_INITIAL_SPEED=2*60/224=0.5357 and rules.ts:50-52 warpAccel(perFrame8_8=36 for our code's level=1 input, using (36/256)*3600/224=2.259 depth/s²): solving 1=0.5357t+1.1295t² gives t≈0.733s, matching the finding's '~0.73s' almost exactly, confirming the finding correctly reproduced our current code's behavior. Note our code's level parameter (level=1) is not identical to the ROM's CURWAV=0 convention referenced in the finding's own derivation (giving perFrame8_8=36 vs the ROM's 32 at CURWAV=0), but this is a separate, orthogonal level-offset question the finding does not make any claim about — it does not affect the correctness of the core assertion under review, which is purely the 60 Hz vs 28.444 fps conversion in warpAccel and WARP_INITIAL_SPEED. 60²/28.444²=4.449, matching the claimed '4.45x on the acceleration term.' Holds.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-012",
+    "class": "DIVERGENCE",
+    "title": "Frame-COUNTED timers are also 2.11x fast: our sim ticks them at 60/s because the fixed timestep is 1/60, not 9/256",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 55,
+      "verbatim": "\tJSR EXSTAT\t\t;EXECUTE APPROPRIATE GAME STATE"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 113,
+      "verbatim": "    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipPattern.moveFrames / 60 }"
+    },
+    "claim": "The ROM advances every frame-counted timer exactly once per gated MAINLN pass ('JSR EXSTAT\t\t;EXECUTE APPROPRIATE GAME STATE', ALEXEC.MAC:55, reached only after FRTIMR >= 9) - i.e. 28.44 ticks per second. Our sim ticks once per stepGame call at STEP = 1/60 (loop.ts:9), so every ROM frame count we ship runs at 60 ticks/second: the flip cadence (sim.ts:113 and flipper.ts:27/39, 'moveFrames / 60'), the refire holdoff (sim.ts:223), the superzapper windows (ZAP_WINDOW_FIRST/SECOND, decremented once per runZapFrame), the explosion stage counters in fx.ts, and the starfield (FR-017). Rebasing only the depth/s constants would fix the speeds and leave every one of these timers 2.11x short.",
+    "reasoning": "This is the answer to 'is it one constant?': the 60 lives in TWO families. (a) The explicit '* 60' / '/ 60' conversions - rules.ts:46, 52, 154, PULSAR_CLIMB_SPEED's 82.5, BULLET_SPEED's 2.4, sim.ts:113, sim.ts:223, flipper.ts:27, 39 - which a single exported ROM_FPS = 256/9 fixes mechanically. (b) Everything counted in OUR frames, which is 60/s because loop.ts says so. Family (b) has two possible fixes: set the sim's fixed timestep to 9/256 s (28.44 Hz, which makes every ROM frame count wall-correct for free but changes the sim's temporal resolution), or keep 1/60 and convert each frame count through ROM_FPS. Either way it is a deliberate decision, not a find-and-replace - and it must be made once, globally, before the individual numeric fixes land. [REFUTATION] Re-opened ALEXEC.MAC:45-59 — MAINLN spins on FRTIMR>=9 before JSR EXSTAT, confirming the 28.444fps gate per the brief. Confirmed loop.ts:9 'const STEP = 1 / 60' verbatim — the sim's fixed timestep really is hardcoded to 1/60s, independent of any ROM constant. Verified every cited 'family (a)' site actually contains an explicit '* 60' or '/ 60': rules.ts:46 (WARP_INITIAL_SPEED = (2.0*60)/WARP_ALONG_SPAN), rules.ts:52 (warpAccel, *60*60), rules.ts:154 (flipperSpeedForLevel, *60), sim.ts:223 (holdoffSeconds = enemyFireHoldoffFrames(s.level)/60), and flipper.ts:27 and 38 (both 'moveFrames / 60' — off by one line from the cited '39' but the same two assignments, both present). sim.ts:113 verbatim matches exactly. This is not a single reused constant — grep confirms scattered literal 60s, exactly as claimed. The 2.11x figure (60/28.444) is internally consistent with the established ground truth. No unit trap, no dead code, no self-refutation found. [CORRECTION] None — the family (a)/(b) split and the 'decision, not find-and-replace' framing both hold up.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "FR-013",
+    "class": "DIVERGENCE",
+    "title": "Spiker speed: the rebase REVERSES W-014's direction - ours is ~26% faster than the arcade, not 40% slower",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 602,
+      "verbatim": "TSPIIN:\t.BYTE TB,1,20.,0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 289,
+      "verbatim": "    spikerSpeed: 0.22 * ramp,"
+    },
+    "claim": "TSPIIN's first record ('TSPIIN:\t.BYTE TB,1,20.,0', ALWELG.MAC:602) is type TB (byte + WINVIL) with byte 0, so for waves 1-20 the spiker's climb speed IS the flipper's: 1.375 along-units/frame at wave 1 = 0.1746 depth/s at the real base. We ship spikerSpeed = 0.22 * ramp = 0.22 depth/s at level 1 - 26% FASTER than the arcade's spiker, not the '40% slower' W-014 reports (a figure obtained by comparing 0.22 against the 60-based 0.368).",
+    "reasoning": "This is the class of error the brief warned about: a divergence misjudged in the OTHER direction. W-014's verdict (DIVERGENCE - wrong curve, and the spiker should be pinned to the flipper's speed rather than carry its own) still stands and its FIX is still right, but its stated consequence - 'at 0.22 vs 0.368 depth/s our spikers take 67% longer to lay the same spike' - is backwards: at the correct base our spikers lay spikes FASTER than the arcade's, and pinning them to the (rebased) flipper speed will SLOW them, not speed them up. Any reader who applies W-014's reasoning without the rebase will tune the spiker in the wrong direction. [REFUTATION] Fully hand-traced the mechanism. ALWELG.MAC:602 TSPIIN's TB record (param=0) dispatches to DOTB (line 829: 'LDA NY,TEMP3 / CLC / ADC WINVIL' — adds the param byte to WINVIL[0]) and stores the result at the WTABLE-declared destination WINVIL+ZABTRA (line 752's '.WORD TSPIIN,WINVIL+ZABTRA'; ZABTRA=3='TRALER' per ALCOMN.MAC:848, the spiker/trailer slot per JSTRAI at ALWELG.MAC:2205). Critically verified the WTABLE loop's iteration ORDER is reverse (CONTOUR at ALWELG.MAC:424-469, INDEX1 starts at the last entry and decrements): TINVIN (writes WINVIL[0], the flipper's raw contour byte, -44 for wave1 per ALWELG.MAC:591-592's TA record) is processed BEFORE TSPIIN in this reverse pass, so by the time TSPIIN's DOTB runs, WINVIL[0] already holds the flipper's -44. With param=0, spiker inherits flipper's raw value exactly for waves 1-20. Then hand-decoded TIMES8 (ALWELG.MAC:560-578): raw -44 (0xFFD4 sign-extended) times 8 = -352 = 0xFEA0, giving fixed-point magnitude 2 + 160/256 = 1.375 along-units/frame — this EXACT value (1.375) is independently present in our own code as FLIPPER_ALONG_PER_FRAME_L1 (rules.ts:148), corroborating the ROM-side derivation. Converted at the true 28.444fps: 1.375*28.444/224 = 0.1746 depth/s (WARP_ALONG_SPAN=224 confirmed rules.ts:44, same along-unit coordinate system used by INVAY/ILINDDY=0xF0). Our shipped spikerSpeed at level 1 = 0.22*1 = 0.22 (rules.ts:188, ramp=1 at level1 per line 179). 0.22/0.1746 = 1.26 → 26% faster, exactly as claimed. Also confirms the OLD 60-based comparison (0.368 = 1.375*60/224, matching flipperSpeedForLevel(1) which still literally uses '*60') would have made W-014's original '40% slower' claim internally consistent — showing precisely how the direction flips under the rebase. No refutation found on macro, order, or unit grounds. [CORRECTION] None.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "FR-014",
+    "class": "DIVERGENCE",
+    "title": "Superzapper window: 19 ROM frames is 0.67 s, not the '~0.317s at 60Hz' B-001 states; ours runs 0.22 s",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3539,
+      "verbatim": "TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 108,
+      "verbatim": "export const ZAP_WINDOW_FIRST = 13"
+    },
+    "claim": "TIMAX ('TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0', ALWELG.MAC:3539) resolves with CSUSTA=3, CSUINT=1 to {0, 19, 5, 0, 0}: the first zap window is 19 GAME frames = 19/28.44 = 0.668 s and the second is 5 frames = 0.176 s. We ship ZAP_WINDOW_FIRST = 13 and ZAP_WINDOW_SECOND = 5, ticked at 60/s (FR-012), so our windows last 0.217 s and 0.083 s - the first is 3.1x short in wall time, the second 2.1x.",
+    "reasoning": "B-001 (BOOK_WAS_WRONG, 19 not 13) and B-019/W-043 (the every-other-frame KILENE cadence) all hold - they compare frame counts and are base-independent. Only B-001's parenthetical '~0.317s at 60Hz' and B-002's implicit endorsement of the 5-frame window as a matching DURATION are wrong. Recorded because the superzapper is the clearest case where the fix is BOTH a frame count (13 -> 19, plus the every-other-frame kill gate) AND the timebase: applying only the frame-count fix would still leave the zap a third of its arcade length. [REFUTATION] ALWELG.MAC:3539 verbatim matches exactly. Confirmed CSUSTA=3 (line 3492) and CSUINT=1 (line 3491), both shipped (INISUZ/PROSUZ/KILENE, all in ALWELG.MAC, not a decoy module). Computed TIMAX by hand: byte[1]=CSUSTA+8*(CSUINT+1)=3+16=19, byte[2]=CSUSTA+1*(CSUINT+1)=3+2=5 — matches the claimed {0,19,5,0,0} exactly. Traced PROSUZ (lines 3499-3537): SUZCNT increments 0->1 on first press (indexing TIMAX[1]=19) and 1->2 on second press (indexing TIMAX[2]=5), confirmed via 'CMP X,TIMAX' indexed addressing consistent with this file's addressing idiom used throughout (e.g. 'LDA X,INVAY'). PROSUZ is called once per game frame via PLAY's mainline, itself gated at 28.444fps — so 19 frames = 19/28.444 = 0.668s and 5 frames = 5/28.444 = 0.176s, both match the claim precisely. Verified our code: ZAP_WINDOW_FIRST=13, ZAP_WINDOW_SECOND=5 (rules.ts:35-36), and runZapFrame/stepZap (sim.ts:473-531) are called exactly once per stepGame call, itself ticked at the fixed STEP=1/60 (loop.ts:9) — so ours run 13/60=0.217s and 5/60=0.083s. Ratios 0.668/0.217=3.08x and 0.176/0.083=2.12x match the claimed '3.1x' and '2.1x' almost exactly. [CORRECTION] None.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "FR-015",
+    "class": "DIVERGENCE",
+    "title": "Player-death splat: 20 ROM frames is 0.70 s, not 0.33 s - DA-010's 'nearly 3x longer' collapses to 1.3x",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1022,
+      "verbatim": "TSPTIM:\t.BYTE 2\t\t\t;SPLAT6;CHARGE PLAYER EXPLOSION START"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 89,
+      "verbatim": "const SPLAT_LIFE = 0.9"
+    },
+    "claim": "TSPTIM ('TSPTIM:\t.BYTE 2\t\t\t;SPLAT6;CHARGE PLAYER EXPLOSION START', ALDISP.MAC:1022) begins the per-stage frame-timer table whose charge-player sequence sums to 20 GAME frames. At the real base that is 20/28.44 = 0.703 s. Our SPLAT_LIFE = 0.9 s is therefore 1.28x the arcade's, not the '~2.7x' DA-010 reports from 20/60 = 0.33 s.",
+    "reasoning": "DA-010 explicitly inoculated itself against this ('checked against the unit trap: 20 ROM frames genuinely is ~0.33s, not close to 0.9s under any frame-rate reading') - and that inoculation is exactly what is refuted here: under the ROM's actual frame rate, 20 frames IS close to 0.9 s. The finding survives as a minor divergence (0.9 -> 0.70) rather than the near-3x timing bug it was filed as. This is the second finding that moves in our favour once the base is corrected (see FR-013), and it is why the rebase must be applied to the WHOLE audit before any of its timing fixes are actioned. [REFUTATION] ALDISP.MAC:1022 verbatim matches. Read the full TSPTIM 'charge-player' sequence (lines 1022-1030): entries 2,2,2,2,2,4,3,2,1 (the last '1' at PPSTART, explicitly commented 'CHARGE PLAYER EXPLOSION FINISH' — i.e. still part of this sequence, not the next one). Sum = 20 frames exactly, matching the claim. Confirmed CHPLKI (which reads TSPTIM) is invoked from DSPEXP in the shipped ALDISP.MAC (not the ALDIS2.MAC decoy — verified the same code exists in both, but only ALDISP is linked per the brief), itself part of DISPLA, called once per gated 28.444fps game frame. 20/28.444 = 0.703s, matching the claim exactly (not the naive 20/60=0.333s DA-010 used). Verified SPLAT_LIFE = 0.9 in fx.ts:89. 0.9/0.703 = 1.28x, matching the claimed correction precisely, versus 0.9/0.333=2.7x under the wrong (60Hz) basis. The finding correctly identifies and corrects its own predecessor's unit error rather than compounding it. [CORRECTION] None — the finding already downgrades DA-010's overstated 'nearly 3x' to the correct 1.28x and shows its work.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "FR-016",
+    "class": "NO_COUNTERPART",
+    "title": "Initials-entry auto-abort is ~108 s, not the '~32 seconds' SC-003 states (hex radix + 60 Hz, two errors compounding)",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 36,
+      "verbatim": "ITIMHI=60"
+    },
+    "ours": null,
+    "claim": "'ITIMHI=60' (ALSCOR.MAC:36) is HEX in this assembler - decimal literals carry a trailing period ('SECOND\t=20.', ALCOMN.MAC:87; 'CMP I,10.', ALWELG.MAC:571) - so ITIMHI = 0x60 = 96. It seeds TIMHIS ('LDA I,ITIMHI', ALSCOR.MAC:745), which GETINI decrements once every 32 GAME frames ('LDA QFRAME\t\t;' / 'AND I,1F' / 'IFEQ\t\t\t;TIME TO UPDATE TIMER?' / 'DEC TIMHIS\t\t;YES', ALSCOR.MAC:768-771). Total = 96 * 32 = 3072 game frames = 3072/28.44 = 108 s. SC-003 reports 'roughly 32 seconds', which is 60 (decimal) * 32 frames / 60 Hz - the radix error and the frame-rate error cancelling into a plausible-looking number. We have no such timer at all.",
+    "reasoning": "SC-003's VERDICT (no counterpart, wont_fix - a browser tab has no queue of paying customers) is unaffected; only its duration is. Recorded because it is the audit's clearest example of two independent unit errors producing a number nobody questions: '32 seconds' sounds exactly like an arcade initials timeout, and 108 s does not - yet 108 s is what the ROM does. B-021 already established this assembler's hex default radix; that finding and this one should be cross-read before any future numeric claim is trusted.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "FR-017",
+    "class": "DIVERGENCE",
+    "title": "The warp starfield steps once per RENDERED frame, so it is 2.11x fast at 60 Hz and 5x fast on a 144 Hz display",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3442,
+      "verbatim": "\tSBC I,07\t\t;UPDATE PLANE POSITION"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 144,
+      "verbatim": "  starfield.step()"
+    },
+    "claim": "PRSTAR decrements each plane's Z by 7 per GAME frame ('SBC I,07\t\t;UPDATE PLANE POSITION', ALWELG.MAC:3442), i.e. 7 * 28.44 = 199 along-units/second. Our starfield.step() is called from drawStarfield (render.ts:144), which runs once per RENDERED frame - not once per sim step - so the planes rush in at 7 * 60 = 420 units/s on a 60 Hz display, and at 7 * 144 = 1008 units/s on a 144 Hz one. The per-frame constants B-003 confirmed (STAR_SPAWN_Z 0xf0, STAR_STEP 7, STAR_RETIRE_Z 0x10, STAR_SPAWN_NEXT_Z 0xd5, NPLANE 8) are all correct; the CADENCE they are stepped at is not.",
+    "reasoning": "B-003's CONFIRMED survives as a statement about the five constants and must be read no further than that. The starfield is the one frame-counted subsystem that is not even tied to the sim's fixed timestep - it rides the render clock, so it is the only piece of the game whose speed changes with the player's monitor (render.ts:905's 'renderTime += 1 / 60' has the same defect for the glyph animation clock, as V-038 notes in passing). Fixing FR-012 by rebasing the sim's timestep would NOT fix this one; the starfield must be driven from the sim, or from a ROM_FPS accumulator. [REFUTATION] ALWELG.MAC:3442 verbatim matches, inside PRSTAR (line 3431), which is JSR'd directly from EXSTAT (ALEXEC.MAC:71 — 'JSR PRSTAR ;PROCESS STAR FIELD'), itself gated by the 28.444fps FRTIMR>=9 loop. So the ROM's plane update genuinely runs at 28.444/s, i.e. 7*28.444=199 along-units/s, matching the claim. Traced our side end-to-end: starfield.ts's step() takes no dt and decrements every plane's z by the fixed STAR_STEP=7 unconditionally per call; drawStarfield (render.ts:143-144) calls starfield.step() once, and drawStarfield is invoked from render() (render.ts:949), which is called once per requestAnimationFrame callback in loop.ts (line 118: 'runGuarded(\"draw\", () => draw(state, frameEvents))', OUTSIDE the advanceFixedSteps fixed-substep closure that runs stepGame). This is architecturally decoupled from the sim's 1/60 fixed timestep — confirming the claim's central point that fixing FR-012 (rebasing the sim's STEP) would NOT touch this bug, since the starfield never enters core/ at all. 7*60=420 units/s and 7*144=1008 units/s follow directly from calling step() once per rAF on 60Hz/144Hz displays respectively. Also spot-checked the passing citation 'render.ts:905' — render.ts:905 does literally read 'renderTime += 1 / 60', ignoring the dt parameter passed in at line 903, corroborating that aside. [CORRECTION] None.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  }
+]

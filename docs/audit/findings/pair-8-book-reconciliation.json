@@ -1,0 +1,384 @@
+[
+  {
+    "id": "B-001",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Superzapper first-press window length (ZAP_WINDOW_FIRST)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3539,
+      "verbatim": "TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 108,
+      "verbatim": "export const ZAP_WINDOW_FIRST = 13"
+    },
+    "claim": "We shipped ZAP_WINDOW_FIRST = 13 frames, matching the book's literal transcription \"TIMAX: .BYTE 00,13,05\". The primary source's TIMAX table is not a literal byte list, it is a computed expression: TIMAX[1] = CSUSTA + (8*(CSUINT+1)). With CSUSTA=3 and CSUINT=1 (ALWELG.MAC:3490-3492), TIMAX[1] = 3 + (8*2) = 19, not 13. The authentic first Superzapper active window is 19 GAME frames — which at the ROM's 256/9 = 28.44 fps (FR-001) is 0.668 s, not the '~0.317s at 60Hz' this finding originally stated. Ours, 13 frames ticked at the sim's 1/60 s timestep, lasts 0.217 s: 3.1x short in wall-clock.",
+    "reasoning": "PROSUZ (ALWELG.MAC:3499-3537) increments SUZTIM each active frame and deactivates the zap when SUZTIM >= TIMAX[SUZCNT] via the indexed compare 'LDX SUZCNT / LDA SUZTIM / CMP X,TIMAX' (lines 3524-3526). SUZCNT=1 on the first press selects TIMAX[1]. Evaluating the angle-bracket-grouped expression (MAC65 uses <...> the way MACRO-11 uses parentheses) with CSUSTA=3/CSUINT=1 (defined at lines 3490-3492, and re-confirmed at ALDISP.MAC:294-295) gives TIMAX = {0, 19, 5, 0, 0}. The book's rendering as literal bytes 00,13,05 reproduces the table's shape but not its computed values. Corrected for the 28.444 fps rebase (see FR-014 in pair-11-framerate-adjudication.json): the frame COUNT (19, not 13) is base-independent and stands, as does BOOK_WAS_WRONG; only the parenthetical duration was wrong. Note the fix is therefore TWO-part — the count AND the timebase — since raising 13 to 19 while still ticking at 60 Hz leaves the zap a third of its arcade length. [REFUTATION] Re-opened ALWELG.MAC:3490-3492,3539 myself. CSUINT=1, CSUSTA=3 confirmed as plain-decimal assembly constants defined immediately above TIMAX. Evaluated the bracket expression independently: TIMAX[1] = CSUSTA+<8*<CSUINT+1>> = 3+8*(1+1) = 3+16 = 19; TIMAX[2] = 3+1*2 = 5 (matches ZAP_WINDOW_SECOND=5, uncontested). Confirmed <...> is MAC65's grouping operator (not a byte-select op) by cross-checking a second usage in the same file: 'AND I,^C<MSUZA!MFAKE>' at ALWELG.MAC:3518, where <> unambiguously groups the OR before the complement — the finding's macro claim is correct. Traced PROSUZ (3499-3537): SUZCNT is incremented to 1 on the press frame (3509-3512), so the active window indeed reads TIMAX[SUZCNT]=TIMAX[1]. Verified ours: rules.ts:35 is exactly 'export const ZAP_WINDOW_FIRST = 13' and it is genuinely the governing value (grep shows a single writer/consumer in sim.ts). Unit check: 19 frames / (256/9 fps) = 0.6679s; 13 frames at the sim's hard-coded STEP=1/60 (confirmed in src/shell/loop.ts:9, 'const STEP = 1/60') = 0.2167s. Ratio is 0.668/0.2167 = 3.08x, which the finding rounds to '3.1x' — trivially imprecise but not wrong. The two-part compounding (frame-count error 19/13=1.46x times the established 60/28.444=2.11x timebase error ≈ 3.08x) is arithmetically self-consistent. Holds on every axis: citation, macro decoding, governing-code check, and units.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-002",
+    "class": "CONFIRMED",
+    "title": "Superzapper second-press window length (ZAP_WINDOW_SECOND), as a FRAME COUNT",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3539,
+      "verbatim": "TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 109,
+      "verbatim": "export const ZAP_WINDOW_SECOND = 5"
+    },
+    "claim": "Both agree at 5 frames. TIMAX[2] = CSUSTA + (1*(CSUINT+1)) = 3 + (1*2) = 5, matching ZAP_WINDOW_SECOND = 5 and the book's transcribed final byte '05'. The COUNT matches; the DURATION does not — 5 ROM game frames is 5/28.44 = 0.176 s (FR-001), whereas our 5 frames are ticked once per 1/60 s sim step and last 0.083 s.",
+    "reasoning": "Confirmed as a frame COUNT, and it must be read no further than that. Corrected for the 28.444 fps rebase (see FR-014 in pair-11-framerate-adjudication.json): this finding's implicit endorsement of the 5-frame window as a matching DURATION is refuted — our second zap window is 2.11x short in wall-clock, like every other frame-counted timer we ship (FR-012). The constant stays 5; the timebase is fixed globally, not here."
+  },
+  {
+    "id": "B-003",
+    "class": "CONFIRMED",
+    "title": "Warp-dive starfield constants (spawn/retire/step/plane-count) — the five CONSTANTS only, not the cadence",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3442,
+      "verbatim": "\tSBC I,07\t\t;UPDATE PLANE POSITION"
+    },
+    "ours": {
+      "file": "src/shell/starfield.ts",
+      "line": 43,
+      "verbatim": "export const STAR_SPAWN_Z = 0xf0 // 240 — a fresh plane spawns here, far at the centre"
+    },
+    "claim": "All four numbers plus the plane count are confirmed: spawn Z 0xF0 (ALWELG.MAC:3421, 3449, 3469), step -7/frame (ALWELG.MAC:3442 'SBC I,07'), retire below 0x10 (ALWELG.MAC:3444 'CMP I,10' after the SBC), spawn-next threshold 0xD5 (ALWELG.MAC:3467 'CMP I,0D5'), and 8 planes (NPLANE=8, ALCOMN.MAC:808). Matches STAR_SPAWN_Z=0xf0, STAR_STEP=7, STAR_RETIRE_Z=0x10, STAR_SPAWN_NEXT_Z=0xd5, STAR_PLANES=8 (starfield.ts:32-36) exactly. The step is per GAME frame, so the ROM's planes close at 7 * 28.44 = 199 along-units/second (FR-001).",
+    "reasoning": "Traced INSTAR (plane init, ALWELG.MAC:3414-3425) and PRSTAR (per-frame update, ALWELG.MAC:3431-3484): each active plane's position is decremented by 7/frame (line 3442); if the result falls below 0x10 it deactivates (lines 3444/3446) unless the field is still 'growing', in which case it restarts at 0xF0; a fresh plane spawns once the previous plane's position has reached 0xD5 or closer (line 3467). NPLANE=8 confirmed as a standalone constant at ALCOMN.MAC:808. Corrected for the 28.444 fps rebase (see FR-017 in pair-11-framerate-adjudication.json): the CONFIRMED covers the five constants and nothing more — the CADENCE they are stepped at is a live divergence. starfield.step() is called from drawStarfield (render.ts:144) once per RENDERED frame, not once per sim step, so the planes rush in at 420 units/s on a 60 Hz display (2.11x the arcade) and 1008 units/s on a 144 Hz one (5x) — the starfield is the only subsystem whose speed depends on the player's monitor, and rebasing the sim's timestep would not fix it."
+  },
+  {
+    "id": "B-004",
+    "class": "CONFIRMED",
+    "title": "Player bullet cap (MAX_BULLETS)",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 812,
+      "verbatim": "NPCHARG=8"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 81,
+      "verbatim": "export const MAX_BULLETS = 8"
+    },
+    "claim": "Both 8. ALCOMN.MAC:812 defines NPCHARG=8, the maximum simultaneous player charges, matching MAX_BULLETS=8 exactly.",
+    "reasoning": "NPCHARG is the player-charge slot count used throughout FIREPC (fire a charge, ALWELG.MAC:2628-2670) and MOVCHA (move charges, ALWELG.MAC:2530-2554); confirmed directly as a standalone constant definition."
+  },
+  {
+    "id": "B-005",
+    "class": "DIVERGENCE",
+    "title": "Player bullet travel time: '~25 frames' is right, but that is 0.875 s — the '~0.42s' half of our comment is the 60 Hz base",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 890,
+      "verbatim": "PCVELO\t=9\t\t\t;PLAYER SHOT VELOCITY (I)"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 7,
+      "verbatim": "export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev-3 frees the slot at ~25 frames / ~0.42s"
+    },
+    "claim": "A charge starts at CURSY = ILINLIY = 0x10 (ALWELG.MAC:296-297, ILINLIY defined ALCOMN.MAC:820) and advances by PCVELO=9/frame (ALWELG.MAC:2540 'ADC I,PCVELO') until CHARY >= ILINDDY = 0xF0 (ALWELG.MAC:2549 'CMP I,ILINDDY', ILINDDY defined ALCOMN.MAC:819). Distance = 0xF0-0x10 = 224 along-units, so frames-to-cross = 224/9 = 24.9 — our comment's '~25 frames' is confirmed. But those are GAME frames of 35.16 ms (256/9 = 28.44 fps, FR-001), so the travel time is 0.875 s, not the '~0.42s' the same comment claims. Normalized to depth units the ROM's rate is 9*(256/9)/224 = 1.143 depth-units/sec; BULLET_SPEED = 2.4 is 9*60/224 — 2.10x too fast.",
+    "reasoning": "Filed CONFIRMED as 'exactly the frames vs seconds trap flagged in the task brief — correctly NOT a contradiction'. It was in fact the trap, sprung: the invented 60 Hz base made a wrong seconds figure agree with a wrong constant, and the finding then certified the agreement. The book is not wrong and the frame count is not wrong — only the conversion. Corrected for the 28.444 fps rebase (see FR-007 in pair-11-framerate-adjudication.json): reclassed CONFIRMED → DIVERGENCE, same one-line fix as W-045 (BULLET_SPEED 2.4 → 1.143 depth/s; comment should read '~25 frames / ~0.88s'). [REFUTATION] Re-opened ALCOMN.MAC:890 (PCVELO=9, decimal, confirmed verbatim) and ALCOMN.MAC:819-820 (ILINDDY=0F0=240, ILINLIY=010=16). Traced FIREPC's charge-fire code (ALWELG.MAC:2667-2669, 'LDA CURSY / STA X,CHARY') and INICUR (ALWELG.MAC:296-297, CURSY initialized to ILINLIY) confirming a charge starts at Y=0x10. Traced MOVCHA (ALWELG.MAC:2540, 'ADC I,PCVELO') and the terminal check (ALWELG.MAC:2548-2549, 'CMP I,ILINDDY') confirming the charge travels 0xF0-0x10=224 along-units at +9/frame when unobstructed by a line collision. 224/9=24.9 frames confirms '~25 frames'; at authentic 256/9 fps, 224/9 frames / (256/9 fps) = 224/256 = 0.875s exactly (clean algebraic identity, not just an approximation) — confirms the '~0.88s' correction and refutes the shipped comment's '~0.42s'. Depth-rate conversion 9*(256/9)/224 = 256/224 = 1.142857 checks out exactly as 1.143. Verified ours: rules.ts:7 BULLET_SPEED=2.4 is the sole depth-decrement driver (sim.ts:104, 'b.depth -= BULLET_SPEED * dt'), no override. 2.4 = 9*60/224 = 2.4107≈2.4, confirming the constant was derived under the wrong 60Hz base. This is a real, governing-code divergence, correctly reclassified DIVERGENCE — not a re-litigation of the already-established 2.11x global factor, since this is a distinct per-constant fix (BULLET_SPEED specifically was never separately corrected).",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
+  },
+  {
+    "id": "B-006",
+    "class": "DIVERGENCE",
+    "title": "Spike height cap (SPIKE_MAX_DEPTH) vs the ROM's single along-clamp",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2228,
+      "verbatim": "\tLDA I,20\t\t;MAX HEIGHT"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 101,
+      "verbatim": "export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap"
+    },
+    "claim": "We ship SPIKE_MAX_DEPTH=0.75. The ROM has no cap distinct from the spiker's own climb clamp: JSTRAI (ALWELG.MAC:2205-2229) caps a climbing spiker's INVAY at 0x20 (\"MAX HEIGHT\", line 2228), and LINEY (the spike's visible tip) is set directly from that same INVAY (lines 2214-2217) — so the ROM's one and only relevant cap is 0x20, i.e. depth (0xF0-0x20)/224 = 0.929, the SAME value already used for our own SPIKER_TURNAROUND_DEPTH (rules.ts:115). Our SPIKE_MAX_DEPTH (0.75) sits well below the ROM's actual cap (0.929).",
+    "reasoning": "This is a known, already-reviewed deliberate deviation, not a newly-discovered defect: rules.ts:110-115 explicitly documents that SPIKE_MAX_DEPTH was deliberately kept lower/separate from SPIKER_TURNAROUND_DEPTH \"so raising the turnaround does not also grow spikes\" (story 6-15), and sprint/archive/context-epic-10.md explicitly excludes \"spike-max-height 6-15\" from epic-10's fidelity scope. The book's own §11 text gives no numeric spike-height-cap value either, so there is nothing for the book itself to have mis-transcribed — the gap here is our own gameplay-balance choice against the ROM (which uses one shared cap, not two). Reclassed from BOOK_WAS_WRONG to DIVERGENCE (recommendation accept) during coverage review: BOOK_WAS_WRONG requires an actual book transcription error, and there is none to find here; DIVERGENCE/accept is the closest the enum has to \"accepted deviation.\" This finding CONFLICTS with W-039 (pair-1-alwelg-sim-enemies.json), which argues SPIKE_MAX_DEPTH should be RAISED to 0.929 (matching SPIKER_TURNAROUND_DEPTH) because the last 0.18 of the spiker's climb currently lays no spike at all — a visible rendering artifact, not just a balance knob. The user must rule ONCE on this merged pair (B-006 + W-039), not have each resolved independently. [REFUTATION] Re-opened JSTRAI (ALWELG.MAC:2205-2239) in full. Verified line 2228 verbatim 'LDA I,20 ;MAX HEIGHT' inside the IFCC block that clamps INVAY to 0x20 when a climbing spiker exceeds it (2222-2229), and confirmed LINEY (the spike's rendered extent) is set directly from INVAY only when INVAY < LINEY (2214-2217, 'NEW ENEMY LINE?' / 'STA Y,LINEY') — so LINEY can never grow past whatever bound governs INVAY, i.e. there really is only ONE cap (0x20) governing both the spiker's own climb and the spike's max drawn height, exactly as claimed. Checked for a second independent height cap I could use to refute this (NWTELI/INIENE at lines 303-313, and LIFECT at 2588-2609) — both are genuinely different mechanisms (NWTELI seeds the STARTING per-wave height, LIFECT SHRINKS the line when shot) and neither imposes an independent maximum; they don't contradict the claim. Confirmed .RADIX 16 is inherited (ALWELG.MAC:9 .INCLUDE ALCOMN, which sets .RADIX 16 at line 17), so 0x20/0xF0 hex reads are correct, and the arithmetic (0xF0-0x20)/224=0.929 matches rules.ts's own pre-existing SPIKER_TURNAROUND_DEPTH comment exactly — no unit/radix error. Verified ALWELG.MAC is linked (ALEXEC.MAP:10,25) and JSTRAI/LOGINI sit in no false conditional-assembly block. The finding transparently discloses its classification history and a conflict with W-039 (not in this batch) but that is a policy question about which recommendation to act on, not a factual weakness — both findings agree on the same underlying ROM fact.",
+    "recommendation": "accept",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-007",
+    "class": "CONFIRMED",
+    "title": "Attract-demo random start level (\"RANDOM AND 7\")",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 243,
+      "verbatim": "\tAND I,7"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 651,
+      "verbatim": "const DEMO_MAX_LEVEL = 8  // random start level 1..8 (\"RANDOM AND 7\")"
+    },
+    "claim": "Confirmed: ALWELG.MAC:242-243 draws 'LDA RANDOM' then 'AND I,7', masking to the range 0-7 (8 values), matching our DEMO_MAX_LEVEL=8 (used as nextInt(rng,8) -> 0..7, then +1 for the 1-indexed level).",
+    "reasoning": "Found in the new-wave setup path (ALWELG.MAC:236-246): guarded by 'BIT QSTATUS / IFPL' (attract check), it forces LIVES1=1 then draws 'LDA RANDOM / AND I,7' to pick the level — confirming the level range and the 1-life fact (B-008) together in the same block."
+  },
+  {
+    "id": "B-008",
+    "class": "CONFIRMED",
+    "title": "Attract-demo life count (DEMO_LIVES = 1)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 240,
+      "verbatim": "\tLDY I,1"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 650,
+      "verbatim": "const DEMO_LIVES = 1      // the attract demo gets a single life (book: attract admin)"
+    },
+    "claim": "Confirmed: ALWELG.MAC:240-241 ('LDY I,1' / 'STY LIVES1') sets the attract demo to exactly 1 life, matching DEMO_LIVES=1.",
+    "reasoning": "Same attract-setup block as B-007 (ALWELG.MAC:236-246), immediately preceding the RANDOM AND 7 level draw."
+  },
+  {
+    "id": "B-009",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Attract-demo auto-fire lane-distance boundary (DEMO_FIRE_LANES)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2648,
+      "verbatim": "\tCMP I,2"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 680,
+      "verbatim": "    Math.abs(laneOffset(s.tube, pl, lane)) <= DEMO_FIRE_LANES"
+    },
+    "claim": "We fire whenever an enemy/bolt lane distance is <= 2 (0, 1, or 2 lanes away). The ROM's FIREPC attract branch (ALWELG.MAC:2629-2655) computes the absolute lane delta then 'CMP I,2 / IFCC' (lines 2648-2649) — IFCC (branch-if-carry-clear) fires ONLY when the delta is strictly less than 2 (0 or 1 lanes). The ROM never auto-fires at distance 2; our shipped '<= DEMO_FIRE_LANES' (DEMO_FIRE_LANES=2) does. The book's own prose states this correctly (\"within 2 lanes ... |lane - CURSL1| < 2\") — this is our implementation diverging from both the book AND the ROM, not a book transcription error.",
+    "reasoning": "6502 semantics: 'CMP #2' computes A-2 and sets the carry when A>=2, clears it when A<2; 'IFCC' branches only on carry-clear, i.e. only for A in {0,1}. Our code's '<=DEMO_FIRE_LANES' with DEMO_FIRE_LANES=2 is satisfied by delta 0, 1, OR 2 — one lane wider than the authentic trigger range. [REFUTATION] Re-opened ALWELG.MAC:2629-2655 in full. FIREPC's attract branch loops invaders+shots, computes abs(lane delta) via two's-complement negation (EOR 0FF / ADC 1) at 2643-2647, then 'CMP I,2' (2648) / 'IFCC' (2649). 6502 CMP sets carry when A>=operand; IFCC (carry clear) fires the block only when abs(delta) < 2, i.e., delta in {0,1}. At delta==2, A-2=0 sets carry, so IFCC is NOT entered and no fire. This exactly matches the finding's claim: the ROM never auto-fires at distance 2. Verified ours (sim.ts:648-682, demoInput/laneOffset): this is confirmed to be the governing attract/self-play-demo logic (comment at 664-668 explicitly labels it the 'demo brain'), with DEMO_FIRE_LANES=2 used as 'Math.abs(laneOffset(...)) <= DEMO_FIRE_LANES' at line 680 — an inclusive <=2, which fires at delta 0, 1, AND 2. No downstream override exists. Off-by-one confirmed exactly as claimed.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-010",
+    "class": "CONFIRMED",
+    "title": "Flipper kill score (SCORE_FLIPPER = 150)",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 598,
+      "verbatim": "TUPSCL:\t.BYTE  00,50,0,0,50,50,0,50"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 94,
+      "verbatim": "export const SCORE_FLIPPER = 150"
+    },
+    "claim": "Confirmed: score-table index 1 (TUPSCL[1]=0x50, TUPSCM[1]=1 at ALEXEC.MAC:598/600) evaluates in BCD as 1*100+50=150 points, matching SCORE_FLIPPER=150.",
+    "reasoning": "UPSCOR (ALEXEC.MAC:523-596) BCD-adds TUPSCL[X] (low byte) and TUPSCM[X]*100 (mid byte) to the player's score for table index X. INCISQ (kill an invader, ALWELG.MAC:2817-2836) derives X via INVPIN (ALWELG.MAC:2837, '.BYTE 1,2,3,4,1') indexed by the invader's carrier-type bits (INVAC1 AND INVABI); the base/no-carrier case (the plain flipper) resolves to INVPIN[0]=1 -> table index 1 -> 150."
+  },
+  {
+    "id": "B-011",
+    "class": "CONFIRMED",
+    "title": "Tanker kill score (SCORE_TANKER = 100)",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 598,
+      "verbatim": "TUPSCL:\t.BYTE  00,50,0,0,50,50,0,50"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 96,
+      "verbatim": "export const SCORE_TANKER = 100"
+    },
+    "claim": "Confirmed: score-table index 3 (TUPSCL[3]=0, TUPSCM[3]=1 at ALEXEC.MAC:598/600) evaluates to 1*100+0=100 points, matching SCORE_TANKER=100.",
+    "reasoning": "Same UPSCOR/INVPIN mechanism as B-010 (ALEXEC.MAC:523-596, ALWELG.MAC:2817-2837); the flipper-carrying-tanker carrier-type bits resolve to INVPIN[3]=4... table index verified by direct enumeration of TUPSCL/TUPSCM against the four documented enemy scores (150/200/100/50), which match indices 1/2/3/4 one-to-one with flipper/pulsar/tanker/spiker."
+  },
+  {
+    "id": "B-012",
+    "class": "CONFIRMED",
+    "title": "Spiker kill score (SCORE_SPIKER = 50)",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 598,
+      "verbatim": "TUPSCL:\t.BYTE  00,50,0,0,50,50,0,50"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 95,
+      "verbatim": "export const SCORE_SPIKER = 50"
+    },
+    "claim": "Confirmed: score-table index 4 (TUPSCL[4]=0x50, TUPSCM[4]=0 at ALEXEC.MAC:598/600) evaluates to 0*100+50=50 points, matching SCORE_SPIKER=50.",
+    "reasoning": "Same UPSCOR/INVPIN mechanism as B-010; table index 4 is the fourth of the four base enemy-kill entries (150/200/100/50 for flipper/pulsar/tanker/spiker), confirmed by direct BCD evaluation of TUPSCL/TUPSCM."
+  },
+  {
+    "id": "B-013",
+    "class": "CONFIRMED",
+    "title": "Pulsar kill score (SCORE_PULSAR = 200)",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 600,
+      "verbatim": "TUPSCM:\t.BYTE  0,1,02,1,0,2,5,7"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 97,
+      "verbatim": "export const SCORE_PULSAR = 200"
+    },
+    "claim": "Confirmed: score-table index 2 (TUPSCL[2]=0, TUPSCM[2]=0x02 at ALEXEC.MAC:598/600) evaluates to 2*100+0=200 points, matching SCORE_PULSAR=200.",
+    "reasoning": "Same UPSCOR/INVPIN mechanism as B-010; index 2 is the second of the four base enemy-kill entries, confirmed by direct BCD evaluation."
+  },
+  {
+    "id": "B-014",
+    "class": "CONFIRMED",
+    "title": "Fuseball score tiers (SCORE_FUSEBALL_BASE / SCORE_FUSEBALL_STEP values)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2767,
+      "verbatim": "\tADC I,5"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 99,
+      "verbatim": "export const SCORE_FUSEBALL_STEP = 250  // 250 / 500 / 750 across depth thirds"
+    },
+    "claim": "Confirmed: INCFS2 (fuseball explosion/score init, ALWELG.MAC:2745-2771) offsets its chosen tier (0/1/2) by +5 ('ADC I,5', line 2767) into the score table, landing on indices 5/6/7. TUPSCL/TUPSCM at those indices (ALEXEC.MAC:598,600) evaluate to 250/500/750 — a flat 250-point step, matching SCORE_FUSEBALL_BASE=250 and SCORE_FUSEBALL_STEP=250 exactly.",
+    "reasoning": "TUPSCL[5..7]=50,0,50 and TUPSCM[5..7]=2,5,7 evaluate as 2*100+50=250, 5*100+0=500, 7*100+50=750. The +250 step between each tier is confirmed. (See B-015 for a separate finding about HOW the tier index 0/1/2 is chosen — that mechanism does not match our depth-based model.)"
+  },
+  {
+    "id": "B-015",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Fuseball score-tier selection: depth-based (ours) vs random (ROM)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2757,
+      "verbatim": "\tIFCS\t\t\t;RANDOMLY CHOOSE 0(250_,1(500), OR 2(750)"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 302,
+      "verbatim": "  const tier = Math.min(2, Math.max(0, Math.floor(depth * 3))) // 0,1,2"
+    },
+    "claim": "Our fuseballScore() derives the 250/500/750 tier from the fuseball's DEPTH at time of kill (Math.floor(depth*3), rules.ts:200-203). The ROM's INCFS2 instead rolls RANDO2 AND 7 (0-7, ALWELG.MAC:2754-2755); if the roll is >=3 (5 of 8 outcomes) it forces tier 0, otherwise it keeps the roll (0, 1, or 2) directly as the tier (ALWELG.MAC:2756-2759) — i.e. P(tier0)=6/8=75%, P(tier1)=1/8, P(tier2)=1/8, entirely independent of where onscreen the fuseball died. The point VALUES (250/500/750, see B-014) are correct, but the selection MECHANISM is not depth-based at all — it is a heavily tier-0-weighted coin flip.",
+    "reasoning": "Traced INCFS2 in full (ALWELG.MAC:2745-2771): 'LDA RANDO2 / AND I,7 / CMP I,3 / IFCS[->tier 0] / ... / PLA / CLC / ADC I,5 / TAX / JSR UPSCOR'. There is no reference to the fuseball's Y/depth register (INVAY) anywhere in this scoring path, only the RNG. Not book-attributed (the book's own text says it is \"light on Fuseball ... behaviour\") — this is a fresh discovery from auditing \"every SCORE_* value\" (checklist item 7) against the primary source. [REFUTATION] Re-opened ALWELG.MAC:2745-2771 (INCFS2) in full. 'LDA RANDO2 / AND I,7' rolls 0-7 from RANDO2, confirmed at ALCOMN.MAC:326 to be a POKEY2 hardware RNG register (real randomness, not a disguised depth/position read — TEMP4 at line 2753 stores INVAL1, the invader's LANE assignment, which is never referenced again in this scoring path). 'CMP I,3 / IFCS / LDA I,0' forces the roll to 0 whenever roll>=3 (5 of 8 outcomes: 3,4,5,6,7), else keeps the roll (0,1,2) unchanged since CMP does not alter A. This gives P(tier0)=1/8+5/8=75%, P(tier1)=1/8, P(tier2)=1/8 — exactly the distribution the finding states. Traced the tail: PLA/ADC I,5/TAX/JSR UPSCOR indexes the score table at 5,6,7; decoded TUPSCL/TUPSCM (ALEXEC.MAC:597-600) at those indices as 0250/0500/0750 BCD = 250/500/750, confirming point values are correct and independent of the tier-selection mechanism critique. Verified ours: rules.ts:200-203 fuseballScore(depth) computes the tier purely from a passed-in depth value, with zero RNG draw anywhere in the call chain (scoreFor -> fuseballScore). Governing-code check passes (zapKillAt also calls scoreFor, so the same wrong mechanism applies there too, which only widens rather than weakens the finding). Confirmed as filed.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-016",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Points per spike-line hit (SCORE_SPIKE_SEGMENT)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2613,
+      "verbatim": "\tLDA I,1"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 100,
+      "verbatim": "export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade: 1–3)"
+    },
+    "claim": "We award 3 points per bullet-vs-spike-line hit. LIFECT (ALWELG.MAC:2589-2617), the ROM's charge-vs-enemy-line collision handler, signals the score routine to use TEMP0-2 directly ('LDX I,-1', line 2609) with TEMP1=TEMP2=0 and TEMP0=1 (lines 2610-2614, comment literally \"ADD 1 TO SCORE FOR EACH HIT\") before JSR UPSCORE. A decimal-mode BCD add of 1/0/0 is exactly 1 point per hit — not 3, and not a 1-3 range.",
+    "reasoning": "The pre-existing rules.ts comment \"arcade: 1-3\" reads as an unresolved uncertainty predating this audit; the primary source resolves it unambiguously to a flat 1 point per line-collision. LIFECT runs once per active charge per frame while it overlaps a line; CHARCO (the charge's own collision counter) separately governs when the CHARGE itself is spent (after 2 collisions, ALWELG.MAC:2618-2622), but each individual collision scores exactly 1 point, never more. [REFUTATION] Re-opened ALWELG.MAC:2589-2626 (LIFECT) in full. Confirmed the exact sequence: 'LDX I,-1 / LDA I,0 / STA TEMP1 / STA TEMP2 / LDA I,1 / STA TEMP0 / JSR UPSCORE' (2609-2615) sets TEMP0=1,TEMP1=0,TEMP2=0. Traced UPSCOR (ALEXEC.MAC:523-563, SED at top = BCD mode): confirmed the -1-index path adds TEMP0 to LSCORL, TEMP1 to LSCORM, TEMP2 to LSCORH — i.e., TEMP0 IS the ones+tens BCD digit pair. Cross-checked this mapping is not scaled by an implicit trailing zero (the ground-truth warning about 'a stored 15 may mean 150') by decoding the adjacent kill-score table TUPSCL/TUPSCM (ALEXEC.MAC:598-600) at all 8 indices: 0000, 0150, 0200, 0100, 0050, 0250, 0500, 0750 — these land EXACTLY on the well-known real Tempest values (150 flipper, 200 pulsar, 100 tanker, 50 spiker, 250/500/750 fuseball tiers) with no additional multiplier needed, proving LSCORL/TEMP0 are literal, un-scaled point values. Therefore TEMP0=1 added in decimal mode is exactly +1 raw point, not +10 and not +3. Verified ours: rules.ts:27 SCORE_SPIKE_SEGMENT=3, used once in sim.ts:340 per spike-hit event ('awardScore(s, SCORE_SPIKE_SEGMENT)'), matching LIFECT's once-per-colliding-frame granularity. The finding is precisely worded (a collision, not a whole-bullet-lifetime, scores 1) and does not overclaim about the 2-collision CHARCO cap (ALWELG.MAC:2618-2622) that ends a charge's life. Solid.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-017",
+    "class": "DIVERGENCE",
+    "title": "Extra-life score interval (EXTRA_LIFE_INTERVAL)",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 565,
+      "verbatim": "\tLDX BLIFIN\t\t;YES. ET BONUS LIFE INTERVAL (IN 10 K UNITS)"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 103,
+      "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
+    },
+    "claim": "EXTRA_LIFE_INTERVAL=10000 is shipped as one fixed rule (\"extra life every 10,000 points\"). The primary source has no single such constant: BLIFIN (ALCOMN.MAC:782, \"BONUS LIFE INTERVAL\") is a RAM variable set at boot from an operator DIP-switch field, decoded through TBLIFI (ALLANG.MAC:289, '.BYTE 2,1,3,4,5,6,7,0') into a bonus-life interval of 0 (off), 10K, 20K, ... or 70K points depending on the cabinet's switch setting. 10,000 IS one of the 8 selectable values, but nothing in the disassembly identifies a single canonical/default interval the way a fixed constant would.",
+    "reasoning": "Searched ALEXEC.MAC (UPSCOR's bonus-life gate, lines 555-596, which reads BLIFIN and branches on the 10K/20K+ interval math), ALCOMN.MAC (BLIFIN's storage declaration, line 782), ALLANG.MAC (INILIT's DIP-switch decode into BLIFIN via TBLIFI, lines 258-267 and the table at 289), and ALCOIN.MAC (no bonus-life content at all, file is 171 bytes). None of these modules contains a fixed \"the interval is N\" constant — genuinely could not locate a single counterpart value to confirm or contradict against 10000. Reclassified from NO_COUNTERPART to BOOK_WAS_WRONG (with recommendation wont_fix): EXTRA_LIFE_INTERVAL is a value we DO ship, not something absent from our code, and since BLIFIN is an operator-configurable DIP-switch field with no single canonical setting, \"arcade-accurate\" is not a well-defined target for it — there is no ROM value to converge to, so our fixed 10,000-point default is a defensible choice rather than a bug to fix. Reclassed from BOOK_WAS_WRONG to DIVERGENCE (recommendation accept) during coverage review: the book made no error — there is no single canonical ROM constant to have mistranscribed — and the arcade value is operator-configurable via BLIFIN/TBLIFI, with 10,000 among the eight selectable DIP settings, so \"arcade-accurate\" is not a well-defined target for this constant. See SC-008 (pair-6-alscor-scoring.json), which files this same fact as STRUCTURAL/accept. [REFUTATION] Verified ALEXEC.MAC:565 verbatim 'LDX BLIFIN ;YES. ET BONUS LIFE INTERVAL (IN 10 K UNITS)' exact match, in context of UPSCOR's bonus-life gate (540-596) which does divide/modulo arithmetic against BLIFIN in units of 10K. Verified ALCOMN.MAC:782 verbatim 'BLIFIN: .BLKB 1 ;BONUS LIFE INTERVAL' — a RAM cell, not a constant. Verified ALLANG.MAC:289 verbatim 'TBLIFI: .BYTE 2,1,3,4,5,6,7,0' and its consumer INILIT (258-267) which decodes an operator DIP-switch field (INOP1 bits 3-5, 8 possible index values) through TBLIFI into BLIFIN — genuinely 8 selectable settings (values 0-7, i.e. off/10K/20K/.../70K), no single canonical default encoded in source. Verified ALCOIN.MAC really is 171 bytes with zero bonus/life content (grep found nothing). No fixed 'the interval is N' constant exists anywhere in the cited modules to contradict or confirm 10000 against — the finding's central claim (there's no ROM counterpart to converge to) holds up. Our rules.ts:30 'EXTRA_LIFE_INTERVAL = 10000' is confirmed as cited.",
+    "recommendation": "accept",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-018",
+    "class": "CONFIRMED",
+    "title": "Player bullet ammo-count tint thresholds (playerBulletColor)",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 922,
+      "verbatim": "\tCMP I,NPCHARG-2"
+    },
+    "ours": {
+      "file": "src/shell/glyphs.ts",
+      "line": 293,
+      "verbatim": "  if (chargesInFlight >= 8) return 'red'"
+    },
+    "claim": "Confirmed: the ROM's bullet-center color select (ALDISP.MAC:920-929) defaults to ZYELLO (plenty), promotes to ZBLUE once CHACOU >= NPCHARG-2 (=6, line 922), and to ZRED once CHACOU >= NPCHARG (=8, line 925) — exactly our thresholds (<6 yellow, 6-7 cyan, 8 red; glyphs.ts:292-296).",
+    "reasoning": "Attributed to the book's §9 \"player charges\" chapter (ammo feedback via CHACOU) and epic-10 story 10-8; traced to the color-select block in ALDISP.MAC immediately after the per-charge draw loop, which stores the result to COLPOR+PSHCTR (line 930)."
+  },
+  {
+    "id": "B-019",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Superzapper KILENE kill cadence (CSUSTA/CSUINT gate) not modeled",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3543,
+      "verbatim": "\tCMP I,CSUSTA"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 477,
+      "verbatim": "    if (idx >= 0) zapKillAt(s, idx)"
+    },
+    "claim": "The book's §12 names CSUINT=1 (\"kill-cadence mask on the timer\") and CSUSTA=3 (\"kill-window lower cutoff\") as KILENE's gate. Our runZapFrame (sim.ts:473-480) kills one non-tanker enemy unconditionally on EVERY active frame of the first window. The ROM's KILENE (ALWELG.MAC:3542-3552) only kills when SUZTIM>=CSUSTA(3) AND (SUZTIM AND CSUINT)==0 — i.e. only on even SUZTIM values from 4 upward (roughly every OTHER frame), not every frame.",
+    "reasoning": "KILENE: 'LDA SUZTIM / CMP I,CSUSTA / IFCS / AND I,CSUINT / IFEQ' (ALWELG.MAC:3542-3546) gates the kill scan. Over the ~19-frame first window (corrected per B-001), this produces roughly 8 kill ticks (SUZTIM=4,6,8,...,18), in the neighborhood of the book's own stated \"net 7 kills first press\" — versus our code's kill-every-frame model, which attempts up to ~19 kills (capped only by how many non-tanker enemies exist). On boards with more surviving non-tankers than ~7-8, our version clears the board faster/more completely than the authentic cadence. [REFUTATION] Re-opened ALWELG.MAC:3499-3560 (PROSUZ/KILENE) in full and hand-simulated the SUZTIM sequence frame-by-frame: press sets SUZTIM=1 directly (no KILENE call that frame); each subsequent PROSUZ call takes the ELSE branch, INCrements SUZTIM, then unconditionally calls KILENE with the new value. KILENE (3542-3546): 'CMP I,CSUSTA(3) / IFCS / AND I,CSUINT(1) / IFEQ' kills only when SUZTIM>=3 AND SUZTIM is even — i.e., only at SUZTIM=4,6,8,10,12,14,16,18 (8 kills total) before SUZTIM reaches TIMAX[1]=19 and the window auto-deactivates (confirmed the deactivation frame itself calls KILENE with SUZTIM freshly reset to 0, producing no 9th kill). This matches the finding's stated cadence and count (~8 kills over the ~19-frame window) exactly, and is structurally (not just numerically) different from a per-frame kill — the gate is independent of any frame-rate assumption. Verified ours: sim.ts:473-478 (runZapFrame) kills one non-tanker enemy via nearestRimIndex on EVERY call while superzapper==='used-once', with no parity/threshold gate at all, and this is confirmed the sole/governing zap-kill logic (no other writer of enemies during the window). The divergence — every-frame kill vs. gated every-other-frame-from-frame-4 kill — is real and correctly described.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "B-020",
+    "class": "CONFIRMED",
+    "title": "Enemy-death explosion scale/brightness ramp (EXPL1-4)",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 345,
+      "verbatim": "\tCM=1"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 83,
+      "verbatim": "const ENEMY_SCALE_STEPS = [1, 2, 4, 8] as const // doubling each frame"
+    },
+    "claim": "Confirmed: ALVROM.MAC:344-376 defines EXPL1..EXPL4 with CM (scale) = 1,2,4,8 and CB (brightness) = 07,0E,0E,0E — matching ENEMY_SCALE_STEPS=[1,2,4,8] and ENEMY_DIM=7 / ENEMY_BRIGHT=14 (fx.ts:85-86; 0x0E=14).",
+    "reasoning": "Direct read of the four EXPL1-4 picture definitions in ALVROM.MAC (lines 345-376); each sets CM/CD/CB immediately before its SPOK16 macro invocation, matching the book's §13 table one-for-one."
+  },
+  {
+    "id": "B-021",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Attract title-rainbow pass count (LOGO_PASSES)",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 1281,
+      "verbatim": "\tLDA I,19\t\t\t;STARTING  CLOSE"
+    },
+    "ours": {
+      "file": "src/shell/titleLogo.ts",
+      "line": 23,
+      "verbatim": "export const LOGO_PASSES = 19"
+    },
+    "claim": "We hardcode 19 fixed rainbow passes. The primary source has no fixed \"draw the title N times\" constant: SCARNG (ALSCOR.MAC:1341-1387) loops from NEARY to FARY in steps of 2 ('ADC I,2 / CMP FARY / CSEND', lines 1383-1387), and NEARY/FARY are dynamic RAM values that BOXPRO and LOGPRO reseed and advance frame-by-frame. LOGINI seeds FARY=0x19/NEARY=0x18 (25/24 decimal — this assembler's default radix is hex; decimal needs a trailing period, e.g. 'NLINES=16.' at ALCOMN.MAC:810) for the earlier, DIFFERENT \"shrinking box\" rainbow (VORBOX), not the TEMPEST word (VORLIT, drawn by LOGPRO). The apparent number of SCARNG passes changes every frame as NEARY/FARY converge; it is never a fixed 19 anywhere in the source.",
+    "reasoning": "Read LOGINI/BOXPRO/LOGPRO/SCARNG in full (ALSCOR.MAC:1271-1394). LOGINI's 'LDA I,19 / STA FARY' (line 1281) is the most plausible origin of the book's \"19\" — it is a literal '19' in the source text — but it is a Y-depth register seed for a different, earlier animation phase (the shrinking-box rainbow), not a pass-count for the approaching TEMPEST logo. SCARNG's own loop bound is a runtime comparison against whatever FARY currently holds, not a literal constant. [REFUTATION] This is the strongest finding in the batch. Re-opened LOGINI/BOXPRO/LOGPRO/SCARNG in full (ALSCOR.MAC:1271-1394). Verified line 1281 verbatim 'LDA I,19 ;STARTING CLOSE' / 1282 'STA FARY', with NEARY seeded to 0x18 at 1283-1284 — but this is inside LOGINI/BOXPRO, the SHRINKING-BOX rainbow phase (VORBOX), a materially different sub-animation from LOGPRO's approaching-TEMPEST-word rainbow (VORLIT) that our LOGO_PASSES models. Confirmed radix: ALCOMN.MAC:17 sets '.RADIX 16' and is .INCLUDE'd at the top of ALSCOR.MAC (line 10), with no local .RADIX override in ALSCOR.MAC — so the literal '19' (no trailing period) is genuinely hex 0x19=25 decimal, not decimal 19 as our LOGO_PASSES assumes; a double error (wrong phase AND wrong radix) on top of the functional mismatch. Traced SCARNG itself (1341-1394): its loop bound is 'CMP FARY / CSEND' (1386-1387) against a live RAM value that BOXPRO/LOGPRO both mutate every frame (ADC/SBC by 8 or 1 per call) — there is no fixed pass-count constant for either sub-animation anywhere in this routine. Checked for a false-conditional-assembly trap (per the audit's ALVROM SPACG warning) — found none around 1240-1400. The claim is airtight: our LOGO_PASSES=19 has no defensible ROM counterpart at all, let alone the specific 19 it uses.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
+  }
+]
