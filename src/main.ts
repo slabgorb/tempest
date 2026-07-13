@@ -116,12 +116,18 @@ const loop = createLoop(
   },
   // SH2-14: the loop polls this each sub-step; a paused sub-step freezes the sim.
   () => paused,
-  // tp1-1 (FR-017): the warp starfield advances on the SIM's clock, one ROM frame per
-  // sub-step. It used to be stepped from inside the draw call, which made the dive's
-  // speed a function of the player's monitor (2.11x fast at 60 Hz, 5.1x at 144 Hz)
-  // and kept it flying while the game was paused. Only the dive uses it; every other
-  // mode resets the field inside render().
+  // tp1-1: everything that must run on the GAME's clock rather than the display's
+  // hangs off this hook. It fires once per sub-step that actually advanced the sim,
+  // with the sim's own dt — so a paused or stalled game advances none of it.
   (dt, s) => {
+    // The held-arrow spinner. It banks angular displacement over sim time, never over
+    // wall time: reading performance.now() here would let a 10-second pause buy 90
+    // lanes of rotation in the frame after Esc. See shell/input.ts, "WHOSE clock?".
+    input.tick(dt)
+    // FR-017: the warp starfield. It used to be stepped from inside the draw call,
+    // which made the dive's speed a function of the player's monitor (2.11x fast at
+    // 60 Hz, 5.1x at 144 Hz) and kept it flying while the game was paused. Only the
+    // dive uses it; every other mode resets the field inside render().
     if (s.mode === 'warp') advanceStarfield(dt)
   },
 )

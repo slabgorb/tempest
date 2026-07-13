@@ -183,3 +183,27 @@ describe('the core purity boundary — what FR-017 must not break (rule guard)',
     expect(offenders, `src/core must not import from src/shell:\n${offenders.join('\n')}`).toEqual([])
   })
 })
+
+// tp1-1 rework (Reviewer, round 2) — the held-arrow spinner banks displacement over SIM
+// time, via the loop's onStep hook, and must never read the wall clock. That is a wiring
+// claim about main.ts, which boots a canvas and cannot be imported here (see
+// tests/shell/audio.test.ts for the same constraint), so it is held as a source rule.
+// The behaviour is pinned in tests/shell/input.spinner.test.ts; what THIS guards is that
+// the tick is actually connected — delete the one line in main.ts and every behavioural
+// test still passes while the shipped keyboard silently stops turning.
+describe('the keyboard spinner is wired to the sim clock, not the wall clock', () => {
+  it('main.ts feeds input.tick(dt) from the loop step hook', () => {
+    const main = stripComments(read('src/main.ts'))
+    expect(main, 'input.tick(dt) must be called with the sim dt').toMatch(
+      /input\.tick\(\s*dt\s*\)/,
+    )
+  })
+
+  it('shell/input.ts reads no wall clock', () => {
+    // The round-2 defect in one line: a keyboard that reads performance.now() banks the
+    // time the sim discarded on pause and on a stall. It has no business knowing the hour.
+    const input = stripComments(read('src/shell/input.ts'))
+    expect(input).not.toMatch(/\bperformance\.now\b/)
+    expect(input).not.toMatch(/\bDate\.now\b/)
+  })
+})
