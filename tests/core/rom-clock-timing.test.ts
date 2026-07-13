@@ -152,10 +152,18 @@ describe('the enemy refire holdoff — ROM frames converted at the real rate', (
 })
 
 describe('the warp dive — the squared error, felt as time (AC5, AC6)', () => {
-  it('takes ~1.55 s at level 1, not the ~0.73 s we ship', () => {
+  it('takes ~1.62 s at level 1, not the ~0.73 s we ship', () => {
     // warpAccel carries ROM_FPS SQUARED, so the dive is the most base-sensitive
     // thing in the game: 4.45x too fast today. Solving 1 = v0.t + a.t^2/2 with the
-    // ROM's v0 = 16/63 and a = 32/63 gives t = 1.55 s. The 60 Hz values give 0.73 s.
+    // ROM's v0 = 16/63 and a = 256/567 gives t = 1.62 s (46 ROM frames — the figure
+    // pair-11 derives). The 60 Hz values give 0.73 s.
+    //
+    // NOTE (story tp1-23): this said 1.55 s, because `a` was read as 32/63 — the
+    // acceleration for CURWAV 1. Level 1 is CURWAV *0* (WD-010), so the real level-1
+    // accel is 256/567 and the real dive is 1.62 s. The band below is wide enough to
+    // have swallowed both answers, which is exactly why WD-010 survived this suite;
+    // the tight pin now lives in tp1-23.warp-curwav.test.ts. The band is deliberately
+    // left alone: it guards tp1-1's 4.45x rebase, not the wave index.
     //
     // This is also the AC6 playability check: the dive is the one place a 2x speed
     // error is instantly, physically obvious to a player.

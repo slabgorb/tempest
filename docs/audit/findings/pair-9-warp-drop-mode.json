@@ -46,8 +46,8 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 130,
-      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+      "line": 140,
+      "verbatim": "  const perFrame8_8 = Math.min(wave * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
     },
     "claim": "MOVCUD's 'CONSTANT ACCELERATION FOR VELOCITY' block (ALWELG.MAC:1063-1078) is: LDA CURWAV / ASL / ASL (wave*4) / CMP I,30 / IFCS / LDA I,30 (cap at 0x30) / CLC / ADC I,20 (base 0x20) / CLC / ADC CURSVL / STA CURSVL / LDA CURSVH / ADC I,0 / STA CURSVH. The accel byte is added to the velocity's LOW byte, i.e. it is in units of 1/256 along-units per frame squared. Our perFrame8_8 = Math.min(level * 4, 0x30) + 0x20, divided by 256, is the identical expression - including the *4, the 0x30 cap and the 0x20 base, and including the 8.8 scaling.",
     "reasoning": "Every literal in this formula survives contact with the primary source. The dive is a constant-acceleration ramp with a per-wave accel that saturates - exactly as we model it. (The level BASE fed into it is off by one - WD-010 - and the seconds conversion is wrong - WD-008 - but the formula itself is correct and should not be touched.)"
@@ -80,7 +80,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 137,
+      "line": 147,
       "verbatim": "export const WARP_AVOID_SPIKES_MAX_LEVEL = 7"
     },
     "claim": "INDROP warns only when 'LDA CURWAV / CMP I,7 / IFCC ;WARN PLAYER?' (ALWELG.MAC:3160-3162) - carry-clear means CURWAV < 7, i.e. CURWAV in 0..6. CURWAV is 0-based: ALSCOR.MAC:296-299 draws the level number as 'LDA CURWAV / CLC / ADC I,1 / JSR DSP1HX', and the start-level table is commented 'TABLE OF LEVEL #S(-1)' (ALWELG.MAC:280). So the ROM warns on DISPLAYED levels 1..7. Our gate is `s.level <= WARP_AVOID_SPIKES_MAX_LEVEL` with s.level 1-based and the constant 7 - levels 1..7. Identical.",
@@ -151,7 +151,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 136,
+      "line": 146,
       "verbatim": "export const WARP_AVOID_SPIKES_SECONDS = 0.5"
     },
     "claim": "INDROP loads the pause timer with 'LDA I,6*QUASEC\t\t;WARNING DELAY' (ALWELG.MAC:3164) into QTMPAUS (3165). QUASEC is defined as 'QUASEC\t=SECOND/4\t\t;QUARTER SECOND FACTOR' (ALCOMN.MAC:88) with SECOND = 20 (ALCOMN.MAC:87), so 6*QUASEC = 30 FRAMES — the multiplier 6 is six quarter-seconds by the author's assumed rate. QTMPAUS is decremented once per frame here: the PAUSE handler gates on 'LDA QFRAME / AND PSCALE / IFEQ' (ALEXEC.MAC:115-117) and PSCALE is reset to 0 at the end of every pause (ALEXEC.MAC:125-126, 'RESET STANDARD TIMER SCALE'), and INDROP never sets it — so the mask is 0 and every frame ticks. The frame COUNT is 30 and is certain; the SECONDS are not 1.5 (which would require SECOND=20 to be the real frame rate — it is a pause-timer unit, not the machine's rate, FR-004) but 30/28.44 = 1.055 s. We ship WARP_AVOID_SPIKES_SECONDS = 0.5 — exactly the correct 30 frames divided by the wrong 60 Hz — less than half the arcade's warning.",
@@ -178,7 +178,8 @@
     "reasoning": "The error is small at high levels (both saturate) but largest exactly where it is felt - level 1, where the dive is the slowest and the AVOID SPIKES window matters most. One-character fix: pass level - 1. [REFUTATION] Re-opened ALWELG.MAC:1064-1078 (MOVCUD's acceleration block): 'LDA CURWAV / ASL / ASL / CMP I,30 / IFCS / LDA I,30 / ENDIF / CLC / ADC I,20' — this is literally min(CURWAV*4, 0x30)+0x20 added to CURSVL every frame, and it operates on CURWAV directly, not CURWAV+1. Verified CURWAV is 0-based: INIRAT sets 'LDA I,0 / STA CURWAV' (ALWELG.MAC:192-193) and ALSCOR.MAC:296-298 displays 'CURWAV+1' via 'LDA CURWAV / CLC / ADC I,1'. Checked our side is the governing code: sim.ts:603 calls 'warpAccel(s.level) * dt' inside stepWarp, and state.ts/sim.ts initialize 'level: 1' (1-based) and increment via 's.level += 1' in advanceLevel — so warpAccel does receive the displayed (1-based) level unmodified, exactly as the finding says, and rules.ts:51 is verified verbatim ('Math.min(level * 4, 0x30) + 0x20'). Recomputed the arithmetic independently: at displayed level 1 (CURWAV=0) ROM gives min(0,0x30)+0x20=0x20=32; ours gives min(4,0x30)+0x20=0x24=36 → 36/32=1.125, a 12.5% overshoot, matching the claim exactly. Saturation-point claim also checks out: ROM saturates once CURWAV>=12 (displayed 13), ours saturates once level>=12 (displayed 12) — off by one level, consistent with the whole-ramp-one-level-early framing. No unit trap here (this is a level-index question, not a frame-rate one), no dead module cited, not self-refuting. Holds.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-23"
   },
   {
     "id": "WD-011",
@@ -191,8 +192,8 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 130,
-      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+      "line": 140,
+      "verbatim": "  const perFrame8_8 = Math.min(wave * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
     },
     "claim": "'LDA CURWAV / ASL / ASL' (ALWELG.MAC:1064-1066) is two 8-bit shifts with no carry capture, so for CURWAV >= 0x40 (displayed level 65) the product wraps: CURWAV=0x40 -> 0x00, giving accel = 0x00 + 0x20 = 0x20 - the same acceleration as level 1 - and it climbs from there again (displayed levels 65..76 before re-saturating). Our Math.min(level * 4, 0x30) is arbitrary-precision and never wraps, so from level 65 up our dive is faster than the arcade's.",
     "reasoning": "A genuine 8-bit artefact of the shipped ROM rather than a design choice, and it only bites past displayed level 65 - deeper than the project's own ratchet rule cares about (compare PULSAR_NEAR_FAR_DEPTH, where the L65+ tier was deliberately not modelled). Recording it so the next person who reads 'min(level*4, 0x30)' against the source does not think we missed it. [REFUTATION] Re-opened ALWELG.MAC:1064-1066 exactly: 'LDA CURWAV / ASL / ASL / CMP I,30 / IFCS / LDA I,30 / ENDIF / CLC / ADC I,20'. ALWELG.MAC has no own .RADIX directive but .INCLUDEs ALCOMN.MAC at its top, whose line 17 sets .RADIX 16 and is never reset afterward — so 'I,30' and 'I,20' are hex 0x30/0x20, matching our own 0x30/0x20 constants in rules.ts:51 exactly (agreement, not a radix trap). CURWAV is confirmed 0-indexed relative to displayed level: ALEXEC.MAC:366-367 increments WAVEN1 ('# OF ENEMY WAVE WHICH PLAYER IS BATTLING -1') and CURWAV together each level-clear, and ALWELG.MAC:3160 uses 'CMP CURWAV,I,7' as the warp-warning gate, which corresponds 1:1 to our WARP_AVOID_SPIKES_MAX_LEVEL=7 only if CURWAV = level-1 -- confirms the indexing the finding relies on. LDA/ASL/ASL is genuinely an 8-bit accumulator-only shift (no ROL into a second byte anywhere nearby) -- CURWAV*4 truly wraps mod 256. Did the arithmetic myself: CURWAV=0x40 (level 65) -> 0x40*4=0x100 mod 256=0x00, which is < 0x30 so the IFCS cap does NOT fire, giving 0x00+0x20=0x20 -- identical to level 1's accel. Continuing the arithmetic: the pre-cap value climbs again and re-saturates when CURWAV*4 mod 256 hits 0x30, which happens at CURWAV=0x4C=76 decimal (level 77): 76*4=304, mod256=48=0x30, IFCS true (CMP sets carry on >=). So the climbing window is exactly displayed levels 65..76 as claimed, re-saturating at level 77. Our warpAccel(level) uses a plain JS number with Math.min -- verified in src/core/rules.ts:50-52, it never wraps, so at level 65 our code computes min(260,0x30)+0x20=0x50 (80) vs the ROM's wrapped 0x20 (32) -- a real, correctly-computed divergence past level 65. Checked self-consistency: no contradiction between claim text and title. Holds. [CORRECTION] None needed -- the finding's numeric window (levels 65..76 climbing, level 77 re-saturating) is exactly right down to the boundary.",
@@ -250,7 +251,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 763,
+      "line": 767,
       "verbatim": "      stepPlayer(s, input) // the Claw may still rotate during the warp; firing is disabled"
     },
     "claim": "The drop-mode mainline PLDROP (ALWELG.MAC:884-897) calls, every frame: MOVCUR (rotate), MOVCUD (descend), PROEXP (explosions), FIREPC ('JSR FIREPC\t\t;FIRE PLAYER CHARGES', 891) and MOVCHA ('JSR MOVCHA', 892). FIREPC in a real game reads the fire button ('LDA SWSTAT / AND I,MFIRE', ALWELG.MAC:2657-2658) and launches a charge from CURSY - the Claw's CURRENT depth - (ALWELG.MAC:2667-2668), so you can shoot all the way down the tube. Our warp branch runs only stepPlayer + stepWarp, with firing explicitly disabled, and checkLevelClear wipes any in-flight bullets on entry ('s.bullets = []', src/core/sim.ts:549).",

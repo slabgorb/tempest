@@ -357,13 +357,20 @@ describe('AC7 / W-022 — the fuseball\'s vulnerability is INVERTED (COLCHK, ALW
 })
 
 // ---------------------------------------------------------------------------
-// Scope guard — WD-010 is NOT this story (moved to tp1-1 at SM setup)
+// Scope guard — WD-010 is NOT this story. It LANDED IN tp1-23.
 // ---------------------------------------------------------------------------
 //
-// No test here touches rules.ts:51 / warpAccel. Feeding it a 0-based CURWAV is
-// ordering-constrained behind tp1-1's frame-rate rebase: fixing it while the 60 is
-// still baked into `(60 * 60) / WARP_ALONG_SPAN` re-bakes the 60. Deliberately absent,
-// not forgotten. See the session file's SM Assessment.
+// No test here touches warpAccel. Feeding it a 0-based CURWAV was ordering-constrained
+// behind tp1-1's frame-rate rebase: fixing it while the 60 was still baked into
+// `(60 * 60) / WARP_ALONG_SPAN` would have re-baked the 60. Deliberately absent, not
+// forgotten.
+//
+// Where it went (story tp1-23): this note used to say "moved to tp1-1 at SM setup", and
+// tp1-1 never implemented it — the move landed after tp1-1's session file had already
+// snapshotted its ACs, so the finding was disclaimed HERE and unowned THERE, and fell
+// through the gap between the two stories. tp1-1 merged; the ordering constraint lifted;
+// tp1-23 then shipped the fix at the call site (sim.ts, `warpAccel(s.level - 1)`) with
+// its pins in tests/core/tp1-23.warp-curwav.test.ts. Do not re-add it here.
 //
 // NOTE for Dev: rules.ts:27 (SCORE_SPIKE_SEGMENT, AC3) IS in scope. Same file,
 // nearby line, opposite instruction. Do not conflate them.

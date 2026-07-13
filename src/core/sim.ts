@@ -613,7 +613,11 @@ function stepWarp(s: GameState, dt: number): void {
     s.warp.warning = Math.max(0, s.warp.warning - dt)
     return // still at the rim — the dive (and any spike crash) waits for the countdown
   }
-  s.warp.velocity += warpAccel(s.level) * dt
+  // WD-010 (tp1-23): warpAccel's ramp is indexed by the ROM's CURWAV, which is 0-based,
+  // while s.level is the displayed 1-based number (state.ts seeds it at 1). Feeding it
+  // s.level ran the whole ramp one wave early — the level-1 dive got 0x24 where the ROM
+  // gives 0x20 (12.5% hot) and the cap landed on level 12 instead of 13.
+  s.warp.velocity += warpAccel(s.level - 1) * dt
   s.warp.progress += s.warp.velocity * dt
   if (resolveWarpSpikeHit(s)) return // crashed onto a spike — do not advance the level
   if (s.warp.progress >= 1) {
