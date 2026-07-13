@@ -117,17 +117,23 @@ describe('demoInput — anticipatory auto-fire within 2 lanes', () => {
     expect(out.fire).toBe(true)
   })
 
-  // AC: "within 2" is inclusive — distance exactly 2 still fires.
-  it('fires when an enemy is exactly 2 lanes away (boundary, inclusive)', () => {
+  // RE-SEATED by tp1-3 (B-009, 2026-07-13). These two tests asserted the BUG: that the
+  // 2-lane window is INCLUSIVE. It is not. FIREPC (ALWELG.MAC:2648-2649) computes the
+  // absolute lane delta and does `CMP I,2 / IFCC` — branch-if-carry-clear, i.e. STRICTLY
+  // less than 2. The ROM never auto-fires at a delta of exactly 2, and the book's own
+  // prose agreed ("|lane - CURSL1| < 2"): our `<=` diverged from BOTH. The window's
+  // WRAP-AWARENESS — the property these tests also exist to protect — is preserved by
+  // moving the seam case to delta 1 (lane 15), where it still fires.
+  it('does NOT fire when an enemy is exactly 2 lanes away (the bound is exclusive)', () => {
     const out = demoInput(board({ playerLane: 0, enemies: [flipperAt(2, 0.5)] }))
-    expect(out.fire).toBe(true)
+    expect(out.fire).toBe(false)
   })
 
-  // AC: the 2-lane window is measured by WRAPPED distance — lane 14 is 2 away from
-  // lane 0 going the short way (16 - 14 = 2), so it must also fire.
-  it('fires across the wrap seam (player 0, enemy 14 → wrapped distance 2)', () => {
-    const out = demoInput(board({ playerLane: 0, enemies: [flipperAt(14, 0.5)] }))
-    expect(out.fire).toBe(true)
+  // The window is measured on WRAPPED distance — lane 15 is one lane below lane 0 going
+  // the short way round, so it fires; lane 14 (delta 2) does not.
+  it('fires across the wrap seam at delta 1 (player 0, enemy 15) but not at delta 2 (enemy 14)', () => {
+    expect(demoInput(board({ playerLane: 0, enemies: [flipperAt(15, 0.5)] })).fire).toBe(true)
+    expect(demoInput(board({ playerLane: 0, enemies: [flipperAt(14, 0.5)] })).fire).toBe(false)
   })
 
   // AC: does NOT fire when the only enemy is beyond 2 lanes and no bolt threatens.
