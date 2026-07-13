@@ -64,18 +64,21 @@ describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
   })
 
   it('keeps spawn cadence tightening across the cycle boundary', () => {
-    // AC#1: shorter intervals = faster spawning/flipping at higher levels.
+    // AC#1: shorter intervals = faster spawning at higher levels.
+    //
+    // `flipInterval` used to be asserted here too. tp1-4 deleted it: a flipper's flip
+    // cadence is not a per-level number at all, it is written into the wave's CAM
+    // program (W-005/W-006), and the wave picks the program from CAMWAV — so "flips
+    // faster at higher levels" is not a thing the ROM does, or can do.
     const p16 = levelParams(16)
     const p20 = levelParams(20)
     expect(p20.spawnInterval).toBeLessThan(p16.spawnInterval)
-    expect(p20.flipInterval).toBeLessThan(p16.flipInterval)
   })
 
   it('clamps timing intervals to playable floors at very high levels', () => {
     // AC#2: a level-50 ramp must not drive any cadence to zero — the game has
     // to stay finite/playable arbitrarily deep into the difficulty curve.
     const p = levelParams(50)
-    expect(p.flipInterval).toBeGreaterThanOrEqual(0.4)
     expect(p.spawnInterval).toBeGreaterThanOrEqual(0.3)
     expect(p.pulseInterval).toBeGreaterThanOrEqual(1.2)
     // And the floors must actually bind here (otherwise "floor" is meaningless):

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { levelParams } from '../../src/core/rules'
 import { tubeForLevel } from '../../src/core/geometry'
@@ -56,7 +56,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
   it('does NOT enter warp while enemies remain', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
-    s.enemies = [{ kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 1, 0.2, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('playing')
@@ -82,7 +82,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
     s.spawn.remaining = 0
     s.lives = 1
     s.player.lane = 4
-    s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('gameover') // player died this frame

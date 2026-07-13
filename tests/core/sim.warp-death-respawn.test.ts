@@ -23,10 +23,10 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { currentLane } from '../../src/core/geometry'
 import type { Input } from '../../src/core/input'
-import { SPIKE_MAX_DEPTH, RESPAWN_DELAY, START_LIVES } from '../../src/core/rules'
+import { SPIKE_MAX_DEPTH, RESPAWN_DELAY, START_LIVES, levelParams } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -159,8 +159,8 @@ describe('warp-death resolution preserves existing behavior (Story 3-6 regressio
     s.spawn.remaining = 0
     s.player.lane = 4
     s.enemies = [
-      { kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }, // kills, cleared on respawn
-      { kind: 'flipper', lane: 9, depth: 0.3, flipTimer: 999 },  // survives → level NOT clear
+      makeEnemy('flipper', 4, 0.95, levelParams(1)), // kills, cleared on respawn
+      makeEnemy('flipper', 9, 0.3, levelParams(1)),  // survives → level NOT clear
     ]
     s = stepGame(s, NEUTRAL, DT)
     expect(s.mode).toBe('dying')                  // guard: a real death occurred

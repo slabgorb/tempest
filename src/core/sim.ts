@@ -1,25 +1,21 @@
 // src/core/sim.ts
-import { GameState, Enemy, EnemyKind, TankerCargo } from './state'
+import { GameState, Enemy, EnemyKind, Tanker, TankerCargo } from './state'
 import { Input } from './input'
 import { Tube, wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
-  SCORE_SPIKE_SEGMENT, SPIKE_MAX_DEPTH, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
-  rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
+  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, SPLIT_CHILD_DEPTH, LevelParams,
+  PULSE_DURATION, rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
-  enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds, ROM_FPS,
+  enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
 import { nextInt, nextFloat } from '@arcade/shared/rng'
 import { qualifiesForHighScore, insertHighScore } from '@arcade/shared/highscore'
 import { stepNameEntry } from '@arcade/shared/name-entry'
-import { stepFlipper } from './enemies/flipper'
-import { stepSpiker } from './enemies/spiker'
-import { stepPulsar } from './enemies/pulsar'
-import { stepFuseball } from './enemies/fuseball'
-import { stepTanker, splitTanker } from './enemies/tanker'
+import { runCam, camForNewEnemy, isJumping, type CamContext } from './enemies/interpreter'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -106,18 +102,41 @@ function stepBullets(s: GameState, dt: number): void {
   s.bullets = s.bullets.filter((b) => b.depth > 0)
 }
 
-export function makeEnemy(
-  kind: EnemyKind, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
-): Enemy {
-  switch (kind) {
-    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipPattern.moveFrames / ROM_FPS }
-    case 'tanker':   return { kind, lane, depth, contains: cargo }
-    case 'spiker':   return { kind, lane, depth, direction: 1 }
-    case 'fuseball': return { kind, lane, depth, jitterTimer: 0, vulnerable: false }
-    case 'pulsar':   return { kind, lane, depth, flipTimer: params.flipInterval, pulseTimer: params.pulseInterval, pulsing: false }
-  }
+/**
+ * A new invader, on its kind's CAM program (tp1-4). NEWINV hands every invader a
+ * program at birth; a flipper's comes from the WAVE (WFLICAM/CAMWAV), which is why
+ * `params` carries it — a flipper does not have "flipper behaviour", it has wave 1's
+ * behaviour or wave 4's.
+ *
+ * The rotation bit starts CW. The ROM leaves INVROT wherever NEWINV's status byte
+ * put it and every program that cares sets it by rule before its first jump
+ * (VCHPLA/VCHROT — W-007: not one call site draws a random direction).
+ */
+export function makeEnemy<K extends EnemyKind>(
+  kind: K, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
+): Extract<Enemy, { kind: K }> {
+  const cam = { camPc: camForNewEnemy(kind, params), camLoop: 0, rot: -1 as const, direction: 1 as const }
+  const made: Enemy = ((): Enemy => {
+    switch (kind) {
+      case 'flipper':  return { kind: 'flipper', lane, depth, ...cam }
+      case 'tanker':   return { kind: 'tanker', lane, depth, ...cam, contains: cargo }
+      case 'spiker':   return { kind: 'spiker', lane, depth, ...cam }
+      case 'fuseball': return { kind: 'fuseball', lane, depth, ...cam, jitterTimer: 0, vulnerable: false }
+      case 'pulsar':   return { kind: 'pulsar', lane, depth, ...cam, pulseTimer: params.pulseInterval, pulsing: false }
+    }
+    throw new Error(`unknown enemy kind ${String(kind)}`)
+  })()
+  // The switch above returns exactly the kind it was asked for; TypeScript cannot
+  // check that against the type parameter, so say it once, here, rather than making
+  // every caller narrow a five-way union it already knows the answer to.
+  return made as Extract<Enemy, { kind: K }>
 }
 
+/**
+ * MOVINV (ALWELG.MAC:1508-1534). Every invader runs its CAM program for one frame —
+ * one loop, one interpreter, no dispatch on `kind` (W-005). What an invader DOES is
+ * the bytecode at its program counter, and the counter persists across frames.
+ */
 function stepEnemies(s: GameState, dt: number): void {
   const params = levelParams(s.level)
 
@@ -139,74 +158,51 @@ function stepEnemies(s: GameState, dt: number): void {
     }
   }
 
-  // Move every enemy by kind, threading the RNG.
-  const moved: Enemy[] = []
+  const ctx: CamContext = {
+    tube: s.tube,
+    params,
+    level: s.level,
+    dt,
+    playerLane: currentLane(s.tube, s.player.lane),
+    spikes: s.spikes,
+    spawnRemaining: s.spawn.remaining,
+    rng: s.rng,
+  }
+  // cloneState already handed us fresh enemy objects, so the interpreter mutates
+  // them in place. It returns the invader because a program can CONVERT one (the
+  // traler that runs out of well and becomes a tanker — JSTRAI).
+  s.enemies = s.enemies.map((e) => runCam(e, ctx))
+
+  stepPulseClock(s, dt)
+}
+
+/**
+ * The pulse. In the ROM this is a GLOBAL clock (PULSON/PULTIM) ticked by MOVINV
+ * AFTER the invader loop (ALWELG.MAC:1536-1570), not by the CAM — the CAM only ever
+ * ASKS about it, through VCHKPU. Ours is still per-pulsar (a separate finding), but
+ * it ticks in the same place, for the same reason: a clock is not a program.
+ */
+function stepPulseClock(s: GameState, dt: number): void {
+  const params = levelParams(s.level)
   for (const e of s.enemies) {
-    switch (e.kind) {
-      case 'flipper': {
-        const res = stepFlipper(e, dt, params, s.tube, s.rng)
-        moved.push(res.enemy)
-        break
-      }
-      case 'spiker': {
-        const wasDescending = e.direction === -1
-        const res = stepSpiker(e, dt, params)
-        const sp = res.enemy
-        // Far-end bottom-out: a descending spiker that reaches depth 0.
-        if (wasDescending && sp.direction === 1 && sp.depth === 0) {
-          if (s.spawn.remaining === 0) {
-            // spiker_hop "none pending" branch (story 6-15, rev-3 §C l.211): with
-            // no spike-enemies left to release, it CONVERTS into a flipper-holding
-            // tanker instead of hopping forever.
-            moved.push(makeEnemy('tanker', sp.lane, 0, params, 'flipper'))
-            break
-          }
-          // Otherwise hop (W-040): ASTRAL (ALWELG.MAC:2253-2291) sends the spiker to the
-          // NEEDIEST line, not the tallest. It scores each line by LINEY — depth from the
-          // rim, so a SHORTER spike scores HIGHER — and a dead line takes `LDA I,0FF`,
-          // the "WORST CASE", which beats every standing spike outright. Our `spikes[i]`
-          // is spike HEIGHT, LINEY's inverse, so the neediest line is simply the smallest
-          // height, and an empty lane (0) is already the minimum. This one comparison is
-          // why the arcade's spikes spread across the well while ours piled into one lane.
-          //
-          // The scan starts at a RANDOM line (`LDA RANDO2`) and walks down, and the
-          // compare is `IFCS` (>=), so an equal score displaces the incumbent — the
-          // random start IS the tie-break. It carries real weight: on an empty well
-          // every lane ties at 0, and a fixed scan would pile every hop into lane 0.
-          const n = s.tube.laneCount
-          const start = nextInt(s.rng, n)
-          let target = start
-          let neediest = Infinity
-          for (let k = 0; k < n; k++) {
-            const i = (((start - k) % n) + n) % n
-            if (s.spikes[i] <= neediest) { neediest = s.spikes[i]; target = i }
-          }
-          sp.lane = target
-        }
-        s.spikes[sp.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(s.spikes[sp.lane], sp.depth))
-        moved.push(sp)
-        break
-      }
-      case 'pulsar': {
-        const res = stepPulsar(e, dt, params, s.tube, s.rng)
-        moved.push(res.enemy)
-        break
-      }
-      case 'fuseball': {
-        const res = stepFuseball(e, dt, params, s.tube, s.rng, s.player.lane)
-        moved.push(res.enemy)
-        break
-      }
-      case 'tanker': {
-        const res = stepTanker(e, dt, params)
-        moved.push(res.enemy)
-        break
-      }
-      default:
-        moved.push(e) // kinds without a stepper yet (added in later tasks) hold position
+    if (e.kind !== 'pulsar') continue
+    e.pulseTimer -= dt
+    if (e.pulseTimer <= 0) {
+      e.pulsing = !e.pulsing
+      e.pulseTimer = e.pulsing ? PULSE_DURATION : params.pulseInterval
     }
   }
-  s.enemies = moved
+}
+
+// Two cargo enemies straddling the tanker on the FLANKING lanes seg-1 and seg+1
+// (authentic rev-3, story 6-9) — the tanker's own lane is left empty. Depth is
+// capped just below the rim so a rim-split is not an instant grab.
+export function splitTanker(t: Tanker, tube: Tube, params: LevelParams): Enemy[] {
+  const depth = Math.min(t.depth, SPLIT_CHILD_DEPTH)
+  return [
+    makeEnemy(t.contains, wrapLane(tube, t.lane - 1), depth, params),
+    makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),
+  ]
 }
 
 // --- Enemy energy bolts (Story 6-5) ------------------------------------------
@@ -400,7 +396,7 @@ function resolvePlayerHits(s: GameState): void {
   // the fairness pay-off of the multi-tick flip: you can rotate "through" it.
   const grabber = s.enemies.find(
     (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl
-      && !(e.kind === 'flipper' && e.flipping),
+      && !(e.kind === 'flipper' && isJumping(e)),
   )
   // A grab takes precedence over a pulse; a pulse is still reported on the
   // player-grab channel (Story 5-1), attributed to the pulsing pulsar.

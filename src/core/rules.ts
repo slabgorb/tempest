@@ -2,6 +2,7 @@
 
 import { type Rng, nextFloat } from '@arcade/shared/rng'
 import type { Enemy, EnemyKind, TankerCargo } from './state'
+import { flipperCamForWave } from './enemies/cam'
 
 // ─── THE CLOCK (story tp1-1) ─────────────────────────────────────────────────
 //
@@ -238,8 +239,7 @@ export const SPLIT_CHILD_DEPTH = 0.85
 export interface LevelParams {
   enemyCount: number
   flipperSpeed: number   // depth units per second
-  flipInterval: number   // seconds between flips (pulsars; legacy flipper fallback)
-  flipPattern: FlipPattern // authentic per-level flipper cadence + flip duration (6-14)
+  flipperCam: number     // WFLICAM — the CAM program THIS wave's flippers run (tp1-4)
   spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
   pulseInterval: number  // seconds between pulsar pulses
@@ -265,27 +265,27 @@ export function flipperSpeedForLevel(level: number): number {
   return (alongPerFrame * ROM_FPS) / WARP_ALONG_SPAN
 }
 
-// Authentic per-level flipper flip pattern (story 6-14). The arcade ROM drives
-// each level's flipper with a `flipper_move` program (enemy-roster ROM extract
-// §A l.9204-9348): L1 is the gentle "move 8 ticks then flip"; deep levels are
-// "flip constantly, 1 move between". We model the CADENCE envelope — climb frames
-// between flips, ramping 8 (L1) → 1 (L33+) — plus the multi-tick flip duration.
-// `flip_top_accel` (l.7184-7187) steps 2→3 at L33, so deep flips animate FASTER
-// (fewer frames). We do not gold-plate the exact deep-level frame counts nobody
-// reaches — only the documented envelope and the direction of the L33 change.
-export interface FlipPattern {
-  moveFrames: number   // ROM frames of climb between flips (ROM flipper_move cadence)
-  flipFrames: number   // frames one flip animates over (multi-tick; >= 2)
+// The CAM's two wave parameters, which VSLOPB loads into an invader's loop counter
+// (WTABLE, ALWELG.MAC:728-751). Story 6-14's `flipPatternForLevel` used to sit here
+// — a per-level "move N frames, flip over M" envelope, invented because the CAM had
+// not been read yet. Both of its numbers are refuted by the source: a flip is 8
+// angle-steps at EVERY wave (W-008, JUMP_ANGLE_STEPS), and the climb between flips
+// is written into the program itself (MOVJMP's `VSLOOP 8`), not ramped per level.
+
+// TWTTFRA (ALWELG.MAC:704-706): T1,1,20.,2 / T1,21.,32.,2 / T1,33.,99.,3 — angle-
+// steps a CHASER burns per frame at the rim, its "DOUBLE SPEED JUMP". 2 through
+// wave 32, 3 from 33. Read by TOPPER, which story tp1-5 gives a rim state to run in.
+export function wttfraForLevel(level: number): number {
+  return level >= 33 ? 3 : 2
 }
 
-export function flipPatternForLevel(level: number): FlipPattern {
-  // Cadence ramps linearly from the gentle L1 "move 8 ticks then flip" down to
-  // the "flip constantly, 1 move between" floor of 1 by L33, then holds.
-  const moveFrames = Math.max(1, Math.min(8, Math.round(8 - (7 * (level - 1)) / 32)))
-  // flip_top_accel 2 (L1-32) → 3 (L33+): deep flips cross the gap faster.
-  const flipFrames = level >= 33 ? 3 : 4
-  return { moveFrames, flipFrames }
-}
+// TPUCHDE (ALWELG.MAC:680-684): the pulsar's chase delay — frames it moves before
+// it flips again. The ROM's table is per-wave and pulsars only appear from wave 17,
+// where it resolves to 20 frames before ramping down in the deep waves. We take the
+// 20 (the wave-33 `.BYTE TA,33.,39.,20.,-1` seed) flat, because our pulsars appear
+// from wave 1 and the ramp's early rows are written in symbols (PN/PC) whose values
+// are not in the audited extract.
+export const PUCHDE_FRAMES = 20
 
 export function levelParams(level: number): LevelParams {
   const ramp = 1 + (level - 1) * 0.15
@@ -293,8 +293,9 @@ export function levelParams(level: number): LevelParams {
   return {
     enemyCount: 6 + (level - 1) * 2,
     flipperSpeed,
-    flipInterval: Math.max(0.4, 1.5 / ramp),
-    flipPattern: flipPatternForLevel(level),
+    // WFLICAM (NEWFLI, ALWELG.MAC:1428-1433): the wave's flipper program. This is
+    // the whole of W-006 — wave 1 gets NOJUMP, so its flippers never flip.
+    flipperCam: flipperCamForWave(level),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
     pulseInterval: Math.max(1.2, 3.0 / ramp),

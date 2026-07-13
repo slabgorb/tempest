@@ -14,8 +14,9 @@
 import { describe, it, expect } from 'vitest'
 import { GameState } from '../../src/core/state'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
+import { levelParams } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const DT = 1 / 60
@@ -41,7 +42,7 @@ function firedThisStep(s: GameState): boolean {
 
 describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
   it('a tanker fires a bolt within ~2.5s', () => {
-    let s = fireBoard(1, [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }])
+    let s = fireBoard(1, [makeEnemy('tanker', 4, 0.5, levelParams(1), 'flipper')])
     let fired = false
     for (let i = 0; i < 150 && !fired; i++) {
       s = stepGame(s, NEUTRAL, DT)
@@ -53,7 +54,7 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
   it('a flipper fires a bolt within ~2.5s', () => {
     // flipTimer 999 keeps it from flipping during the window, so it is never
     // "mid-flip" (a fire gate) and never wanders onto the player's lane.
-    let s = fireBoard(2, [{ kind: 'flipper', lane: 4, depth: 0.4, flipTimer: 999 }])
+    let s = fireBoard(2, [makeEnemy('flipper', 4, 0.4, levelParams(1))])
     let fired = false
     for (let i = 0; i < 150 && !fired; i++) {
       s = stepGame(s, NEUTRAL, DT)
@@ -65,7 +66,7 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
   it('a spiker fires a bolt within ~2.5s', () => {
     // A spiker oscillates within [.., 0.75]; from 0.5 it stays well past the
     // along-eligibility depth for the whole window.
-    let s = fireBoard(3, [{ kind: 'spiker', lane: 4, depth: 0.5, direction: 1 }])
+    let s = fireBoard(3, [makeEnemy('spiker', 4, 0.5, levelParams(1))])
     let fired = false
     for (let i = 0; i < 150 && !fired; i++) {
       s = stepGame(s, NEUTRAL, DT)
@@ -76,8 +77,8 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
 
   it('fuseballs never fire — positive control: the tanker beside it does', () => {
     let s = fireBoard(1, [
-      { kind: 'fuseball', lane: 4, depth: 0.3, jitterTimer: 0, vulnerable: false },
-      { kind: 'tanker', lane: 8, depth: 0.4, contains: 'flipper' },
+      { ...makeEnemy('fuseball', 4, 0.3, levelParams(1)), jitterTimer: 0, vulnerable: false },
+      makeEnemy('tanker', 8, 0.4, levelParams(1), 'flipper'),
     ])
     const fireLanes = new Set<number>()
     for (let i = 0; i < 130; i++) {
@@ -90,8 +91,8 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
 
   it('pulsars do not fire below level 60 — positive control: the tanker does', () => {
     let s = fireBoard(1, [
-      { kind: 'pulsar', lane: 4, depth: 0.3, flipTimer: 999, pulseTimer: 999, pulsing: false },
-      { kind: 'tanker', lane: 8, depth: 0.4, contains: 'flipper' },
+      { ...makeEnemy('pulsar', 4, 0.3, levelParams(1)), pulseTimer: 999, pulsing: false },
+      makeEnemy('tanker', 8, 0.4, levelParams(1), 'flipper'),
     ]) // playingState() starts at level 1
     const fireLanes = new Set<number>()
     for (let i = 0; i < 130; i++) {
@@ -105,7 +106,7 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
 
 describe('enemy-fire SFX hook (AC8)', () => {
   it('emits an enemy-fire event carrying the firing lane and a numeric depth', () => {
-    let s = fireBoard(1, [{ kind: 'tanker', lane: 4, depth: 0.5, contains: 'flipper' }])
+    let s = fireBoard(1, [makeEnemy('tanker', 4, 0.5, levelParams(1), 'flipper')])
     let ev: GameState['events'][number] | undefined
     for (let i = 0; i < 150 && !ev; i++) {
       s = stepGame(s, NEUTRAL, DT)
@@ -125,7 +126,7 @@ describe('concurrent enemy bolts are capped (AC3, self-limiting)', () => {
     // reach the split depth (0.9) within the window, so all stay eligible shooters.
     const enemies: GameState['enemies'] = []
     for (let lane = 0; lane <= 10; lane++) {
-      enemies.push({ kind: 'tanker', lane, depth: 0.35, contains: 'flipper' })
+      enemies.push(makeEnemy('tanker', lane, 0.35, levelParams(1), 'flipper'))
     }
     let s = fireBoard(5, enemies, 15)
 
@@ -145,9 +146,9 @@ describe('enemy firing is deterministic (AC7)', () => {
   it('produces an identical bolt set for a fixed seed and input stream', () => {
     const run = (): Array<{ lane: number; depth: number }> => {
       let s = fireBoard(7, [
-        { kind: 'tanker', lane: 2, depth: 0.4, contains: 'flipper' },
-        { kind: 'tanker', lane: 6, depth: 0.4, contains: 'flipper' },
-        { kind: 'tanker', lane: 10, depth: 0.4, contains: 'flipper' },
+        makeEnemy('tanker', 2, 0.4, levelParams(1), 'flipper'),
+        makeEnemy('tanker', 6, 0.4, levelParams(1), 'flipper'),
+        makeEnemy('tanker', 10, 0.4, levelParams(1), 'flipper'),
       ])
       for (let i = 0; i < 90; i++) s = stepGame(s, NEUTRAL, DT)
       return s.enemyBullets.map((b) => ({ lane: b.lane, depth: b.depth }))

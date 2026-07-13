@@ -162,6 +162,20 @@ type Step =
   | { op: string; imm: number }
   | { op: string; any: true }   // operand exists but has no port-side meaning
 
+/**
+ * The byte an address operand is stored as: the target MINUS ONE, as a BYTE.
+ *
+ * The mask is the encoding, not a convenience. TRALUP is the first program and `CAM:`
+ * labels its first byte, so TRALUP sits at offset 0 and its own `VSETPC TRALUP`
+ * assembles `.BYTE TRALUP-CAM-1` = `.BYTE -1` = the byte 0xFF. CAMPC is one byte wide,
+ * so the dispatcher's `INC CAMPC` wraps 0xFF round to 0x00 and the jump lands on
+ * TRALUP. Without the mask this expectation would demand a CAM entry of -1, which the
+ * ROM could not hold and which the byte-array rule in tp1-4.cam-source-rules rightly
+ * rejects. (Dev, tp1-4: this was `got[step.to].offset - 1`, which is the same rule for
+ * every target except the one at offset zero.)
+ */
+const minusOne = (target: number): number => (target - 1) & 0xff
+
 function assertProgram(label: ProgramName, steps: readonly Step[]): void {
   const entry = CAM_ENTRY[label]
   expect(entry, `CAM_ENTRY.${label}`).toBeTypeOf('number')
@@ -180,9 +194,9 @@ function assertProgram(label: ProgramName, steps: readonly Step[]): void {
       expect(got[i].operand, `${where} immediate`).toBe(step.imm)
     } else if ('to' in step) {
       // Rule 1: an address operand is the target offset MINUS ONE.
-      expect(got[i].operand, `${where} → instruction ${step.to}`).toBe(got[step.to].offset - 1)
+      expect(got[i].operand, `${where} → instruction ${step.to}`).toBe(minusOne(got[step.to].offset))
     } else if ('ext' in step) {
-      expect(got[i].operand, `${where} → ${step.ext}`).toBe(CAM_ENTRY[step.ext] - 1)
+      expect(got[i].operand, `${where} → ${step.ext}`).toBe(minusOne(CAM_ENTRY[step.ext]))
     } else {
       expect(got[i].operand, `${where} operand`).toBeTypeOf('number')
     }

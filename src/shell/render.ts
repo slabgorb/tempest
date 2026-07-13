@@ -3,6 +3,7 @@ import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import { withGlow, glowPolyline } from '@arcade/shared/glow'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform } from '../core/geometry'
+import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
@@ -341,11 +342,13 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
       const baseAngle = Math.atan2(near.y - far.y, near.x - far.x) + Math.PI / 2
       let fp = p
       let spin = baseAngle
-      if (e.flipping) {
-        const dir = e.flipDir ?? 1
+      if (isJumping(e)) {
+        // The jump's direction is the invader's rotation bit (INVROT), which the
+        // CAM sets by rule and keeps across jumps (tp1-4, W-007).
+        const dir = e.rot
         const pivot = flipPivot(tube, e.lane, dir, e.depth)
         const to = project(tube, e.lane + dir, e.depth)
-        const t = e.flipProgress ?? 0
+        const t = jumpProgress(e)
         const arc = arcAbout(p, to, pivot, t)
         fp = arc.pos
         spin = baseAngle + arc.swing * t

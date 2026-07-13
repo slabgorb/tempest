@@ -19,10 +19,10 @@
 // deviation note.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { currentLane, tubeForLevel } from '../../src/core/geometry'
-import { RESPAWN_DELAY, START_LIVES, spawnForLevel } from '../../src/core/rules'
+import { RESPAWN_DELAY, START_LIVES, spawnForLevel, levelParams } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -44,8 +44,8 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
     s.spawn.remaining = 0 // no fresh spawns muddy the window before death
     s.player.lane = 4
     s.enemies = [
-      { kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }, // the killer
-      { kind: 'flipper', lane: 4, depth: 0.8, flipTimer: 999 },  // would chain-kill if it survives
+      makeEnemy('flipper', 4, 0.95, levelParams(1)), // the killer
+      makeEnemy('flipper', 4, 0.8, levelParams(1)),  // would chain-kill if it survives
     ]
 
     s = stepGame(s, NEUTRAL, DT) // → dying
@@ -76,9 +76,9 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
       { lane: 8, depth: 0.7 },
     ]
     s.enemies = [
-      { kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 },       // the killer
-      { kind: 'flipper', lane: 7, depth: 0.3, flipTimer: 999 },        // far survivor (old model keeps it)
-      { kind: 'tanker', lane: 2, depth: 0.5, contains: 'flipper' },    // mid-tube survivor
+      makeEnemy('flipper', 4, 0.95, levelParams(1)),       // the killer
+      makeEnemy('flipper', 7, 0.3, levelParams(1)),        // far survivor (old model keeps it)
+      makeEnemy('tanker', 2, 0.5, levelParams(1), 'flipper'),    // mid-tube survivor
     ]
 
     s = stepGame(s, NEUTRAL, DT) // → dying
@@ -101,11 +101,11 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
       s.spawn.remaining = 0
       s.player.lane = deathLane
       s.enemies = [
-        { kind: 'flipper', lane: deathLane, depth: 0.95, flipTimer: 999 }, // the killer
+        makeEnemy('flipper', deathLane, 0.95, levelParams(1)), // the killer
         // A far survivor on a third lane keeps the level un-cleared under the old
         // model (so it resumes 'playing' instead of warping), forcing the failure
         // onto the respawn-lane assertion below rather than an incidental warp.
-        { kind: 'flipper', lane: 0, depth: 0.3, flipTimer: 999 },
+        makeEnemy('flipper', 0, 0.3, levelParams(1)),
       ]
       s = stepGame(s, NEUTRAL, DT) // → dying
       for (let i = 0; i < DYING_FRAMES; i++) s = stepGame(s, NEUTRAL, DT)
@@ -127,7 +127,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
     let s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
 
     s = stepGame(s, NEUTRAL, DT) // → dying, one life spent
     for (let i = 0; i < DYING_FRAMES; i++) s = stepGame(s, NEUTRAL, DT)
@@ -136,7 +136,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
 
     // Drop a grabber straight onto the rim of the respawn lane.
     const lane = currentLane(s.tube, s.player.lane)
-    s.enemies = [{ kind: 'flipper', lane, depth: 0.95, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', lane, 0.95, levelParams(1))]
 
     s = stepGame(s, NEUTRAL, DT)
     expect(s.mode).toBe('dying')              // killed again — no shield protected the ship
@@ -150,7 +150,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
       let s = playingState(42)
       s.spawn.remaining = 0
       s.player.lane = 4
-      s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+      s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
       s = stepGame(s, NEUTRAL, DT)
       for (let i = 0; i < DYING_FRAMES + 10; i++) s = stepGame(s, NEUTRAL, DT)
       return s

@@ -25,6 +25,8 @@ import {
   Flipper, Tanker, Spiker, Fuseball, Pulsar, TankerCargo,
 } from '../core/state'
 import { currentLane } from '../core/geometry'
+import { CAM_ENTRY } from '../core/enemies/cam'
+import { JUMP_ANGLE_STEPS } from '../core/enemies/interpreter'
 import { cellRects, flatTube } from '../core/modelView'
 import {
   drawTube, drawSpikes, drawEnemy, drawPlayer, advanceRenderClock,
@@ -74,28 +76,34 @@ function baseState(): GameState {
   return s
 }
 
+// The CAM registers every invader carries. The contact sheet does not run the
+// interpreter — each cell hand-animates its model so the SHAPE can be eyeballed —
+// so these are just the quiescent values render.ts reads.
+const regs = () => ({ camPc: CAM_ENTRY.NOJUMP, camLoop: 0, rot: 1 as const, direction: 1 as const })
+
 // Flipper — climbs far→near and tumbles lane→lane, bouncing across the board's
 // three lanes (0→1→2→1→0). render.ts supplies the bowtie spin + mid-flip half-turn.
 function flipperCell(): ModelCell {
   const s = baseState()
-  const f: Flipper = { kind: 'flipper', lane: 0, depth: 0, flipTimer: 0.8, flipping: false, flipProgress: 0, flipDir: 1 }
+  const f: Flipper = { kind: 'flipper', lane: 0, depth: 0, ...regs() }
   s.enemies = [f]
+  let settled = 0.8 // seconds on this lane before the next tumble
   const step = (dt: number) => {
     f.depth = (f.depth + dt * 0.18) % 1 // slow climb, loops at the rim
-    f.flipTimer -= dt
-    if (f.flipping) {
-      f.flipProgress = (f.flipProgress ?? 0) + dt * 2 // ~0.5s per flip
-      if (f.flipProgress >= 1) {
-        f.lane = Math.max(0, Math.min(LANES - 1, f.lane + (f.flipDir ?? 1))) // settle (open board clamps)
-        f.flipping = false
-        f.flipProgress = 0
-        f.flipTimer = 0.7
+    if (f.jumpAngle !== undefined) {
+      f.jumpAngle += dt * JUMP_ANGLE_STEPS * 2 // ~0.5s per flip
+      if (f.jumpAngle >= JUMP_ANGLE_STEPS) {
+        f.lane = Math.max(0, Math.min(LANES - 1, f.lane + f.rot)) // settle (open board clamps)
+        f.jumpAngle = undefined
+        settled = 0.7
       }
-    } else if (f.flipTimer <= 0) {
+      return
+    }
+    settled -= dt
+    if (settled <= 0) {
       // Bounce off the edges, hold course in the middle.
-      f.flipDir = f.lane >= LANES - 1 ? -1 : f.lane <= 0 ? 1 : (f.flipDir ?? 1)
-      f.flipping = true
-      f.flipProgress = 0
+      f.rot = f.lane >= LANES - 1 ? -1 : f.lane <= 0 ? 1 : f.rot
+      f.jumpAngle = 0
     }
   }
   return { name: 'FLIPPER', descriptor: 'flips lane→lane', color: COLOR.flipper, state: s, step }
@@ -105,7 +113,7 @@ function flipperCell(): ModelCell {
 // pulsar) is visible in turn. render.ts supplies the X-diamond + emblem.
 function tankerCell(): ModelCell {
   const s = baseState()
-  const t: Tanker = { kind: 'tanker', lane: 1, depth: 0, contains: 'flipper' }
+  const t: Tanker = { kind: 'tanker', lane: 1, depth: 0, ...regs(), contains: 'flipper' }
   s.enemies = [t]
   const cargo: TankerCargo[] = ['flipper', 'fuseball', 'pulsar']
   let clock = 0
@@ -122,7 +130,7 @@ function tankerCell(): ModelCell {
 function spikerCell(): ModelCell {
   const s = baseState()
   const LANE = 1
-  const sp: Spiker = { kind: 'spiker', lane: LANE, depth: 0, direction: 1 }
+  const sp: Spiker = { kind: 'spiker', lane: LANE, depth: 0, ...regs() }
   s.enemies = [sp]
   const step = (dt: number) => {
     const next = sp.depth + dt * 0.22
@@ -141,7 +149,7 @@ function spikerCell(): ModelCell {
 // render.ts supplies the 4-frame ball-of-legs writhe.
 function fuseballCell(): ModelCell {
   const s = baseState()
-  const fb: Fuseball = { kind: 'fuseball', lane: 1, depth: 0.5, jitterTimer: 0, vulnerable: true }
+  const fb: Fuseball = { kind: 'fuseball', lane: 1, depth: 0.5, ...regs(), jitterTimer: 0, vulnerable: true }
   s.enemies = [fb]
   const hop = [0, 1, 2, 1] // bounce across the lanes, staying on the open board
   let clock = 0
@@ -157,7 +165,7 @@ function fuseballCell(): ModelCell {
 // zig-zag jaggedness + cyan/white colour strobe and the electrified lane quad.
 function pulsarCell(): ModelCell {
   const s = baseState()
-  const pu: Pulsar = { kind: 'pulsar', lane: 1, depth: 0.5, flipTimer: 0, pulseTimer: 0, pulsing: true }
+  const pu: Pulsar = { kind: 'pulsar', lane: 1, depth: 0.5, ...regs(), pulseTimer: 0, pulsing: true }
   s.enemies = [pu]
   let clock = 0
   const step = (dt: number) => {

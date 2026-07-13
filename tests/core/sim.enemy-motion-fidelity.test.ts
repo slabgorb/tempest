@@ -32,7 +32,7 @@
 // the spiker-hop / fuseball-collision logic in sim.ts (and rules.ts constants).
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { levelParams, ROM_FPS } from '../../src/core/rules'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
@@ -94,7 +94,7 @@ describe('spiker 0x20 near turnaround (story 6-15)', () => {
     // (move away). Today it reverses at SPIKE_MAX_DEPTH = 0.75 and so never
     // approaches the rim the way the arcade spiker does — valid RED.
     let s = isolated(3)
-    s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.0, direction: 1 }]
+    s.enemies = [makeEnemy('spiker', 5, 0.0, levelParams(1))]
 
     let peak = 0
     let turned = false
@@ -123,7 +123,7 @@ describe('spiker far-end conversion when nothing is pending (story 6-15)', () =>
     // flipper-holding tanker instead of hopping forever. We model "none pending"
     // as an empty spawn budget. Today the spiker always hops and stays a spiker.
     let s = isolated(11, /* spawnRemaining */ 0) // nothing left to spawn ⇒ convert
-    s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.02, direction: -1 }] // about to bottom out
+    s.enemies = [{ ...makeEnemy('spiker', 5, 0.02, levelParams(1)), direction: -1 }] // about to bottom out
 
     for (let i = 0; i < 40; i++) s = stepGame(s, NEUTRAL, DT)
 
@@ -147,7 +147,7 @@ describe('spiker far-end conversion when nothing is pending (story 6-15)', () =>
     // — a tall uniform field with one short lane — which makes lane 10 unambiguous
     // again. Only the fixture moved; what this test guards is unchanged.
     let s = isolated(11, /* spawnRemaining */ 5)
-    s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.02, direction: -1 }]
+    s.enemies = [{ ...makeEnemy('spiker', 5, 0.02, levelParams(1)), direction: -1 }]
     s.spikes.fill(0.6)
     s.spikes[10] = 0.1 // the unambiguous NEEDIEST (shortest) spike → the hop target
 
@@ -173,7 +173,7 @@ describe('fuseball steers toward the player (story 6-15)', () => {
     const player = s0.player.lane // 8
     const start = (player + 4) % n // 4 lanes away; the short way is toward the player
     let s: GameState = s0
-    s.enemies = [{ kind: 'fuseball', lane: start, depth: 0, jitterTimer: 0, vulnerable: false }]
+    s.enemies = [{ ...makeEnemy('fuseball', start, 0, levelParams(1)), jitterTimer: 0, vulnerable: false }]
 
     const init = rdist(start, player, n)
     let max = init
@@ -237,20 +237,20 @@ describe('fuseball wider hit tolerance (story 6-15)', () => {
 
   it('kills a vulnerable fuseball at a gap that is too wide for the default window', () => {
     const fuseball: Enemy = {
-      kind: 'fuseball', lane: 6, depth: BULLET_DEPTH + WIDE_OFFSET, jitterTimer: 999, vulnerable: true,
+      ...makeEnemy('fuseball', 6, BULLET_DEPTH + WIDE_OFFSET, levelParams(1)), jitterTimer: 999, vulnerable: true,
     }
     expect(killedAtOffset(fuseball, WIDE_OFFSET)).toBe(true)
   })
 
   it('does NOT kill a flipper at that same wide gap (the widening is fuseball-specific)', () => {
     // Guards against a lazy fix that widens the GLOBAL HIT_DEPTH for everyone.
-    const flipper: Enemy = { kind: 'flipper', lane: 6, depth: BULLET_DEPTH + WIDE_OFFSET, flipTimer: 999 }
+    const flipper: Enemy = makeEnemy('flipper', 6, BULLET_DEPTH + WIDE_OFFSET, levelParams(1))
     expect(killedAtOffset(flipper, WIDE_OFFSET)).toBe(false)
   })
 
   it('still kills a vulnerable fuseball inside the default window (not made narrower)', () => {
     const fuseball: Enemy = {
-      kind: 'fuseball', lane: 6, depth: BULLET_DEPTH + NARROW_OFFSET, jitterTimer: 999, vulnerable: true,
+      ...makeEnemy('fuseball', 6, BULLET_DEPTH + NARROW_OFFSET, levelParams(1)), jitterTimer: 999, vulnerable: true,
     }
     expect(killedAtOffset(fuseball, NARROW_OFFSET)).toBe(true)
   })
@@ -266,7 +266,7 @@ describe('pulsar far/near dual climb speed (story 6-15)', () => {
     let s = isolated(2)
     s.level = level
     s.enemies = [{
-      kind: 'pulsar', lane: 2, depth: startDepth, flipTimer: 999, pulseTimer: 999, pulsing: false,
+      ...makeEnemy('pulsar', 2, startDepth, levelParams(1)), pulseTimer: 999, pulsing: false,
     }]
     const before = startDepth
     const frames = 10
@@ -316,9 +316,9 @@ describe('determinism of the 6-15 motion paths (core-purity rule)', () => {
       s.level = 20
       s.player.lane = 8
       s.enemies = [
-        { kind: 'spiker', lane: 5, depth: 0.02, direction: -1 },     // hop RNG
-        { kind: 'fuseball', lane: 12, depth: 0.1, jitterTimer: 0.01, vulnerable: true }, // steer RNG
-        { kind: 'pulsar', lane: 2, depth: 0.1, flipTimer: 0.01, pulseTimer: 0.01, pulsing: false }, // flip RNG
+        { ...makeEnemy('spiker', 5, 0.02, levelParams(1)), direction: -1 },     // hop RNG
+        { ...makeEnemy('fuseball', 12, 0.1, levelParams(1)), jitterTimer: 0.01, vulnerable: true }, // steer RNG
+        { ...makeEnemy('pulsar', 2, 0.1, levelParams(1)), pulseTimer: 0.01, pulsing: false }, // flip RNG
       ]
       return s
     }

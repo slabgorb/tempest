@@ -43,8 +43,7 @@
 // is deterministic and needs no DOM/time/Math.random (CLAUDE.md hard boundary).
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
-import { splitTanker } from '../../src/core/enemies/tanker'
+import { stepGame, makeEnemy, splitTanker } from '../../src/core/sim'
 import { levelParams, SPLIT_CHILD_DEPTH, ROM_FPS } from '../../src/core/rules'
 import { wrapLane } from '../../src/core/geometry'
 import type { GameState, Enemy } from '../../src/core/state'
@@ -132,7 +131,7 @@ describe('authentic full-tube traverse (story 6-9)', () => {
     let s = isolated(7)
     // flipTimer huge: no lane flips, so it climbs straight up lane 0 (off the
     // Claw's lane 8 — never grabs, never gets culled). depth only ever rises.
-    s.enemies = [{ kind: 'flipper', lane: 0, depth: 0, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 0, 0, levelParams(1))]
     let frames = 0
     // The climb is now 2.11× longer, so the old 400-frame bound would have tripped
     // before the flipper ever arrived and failed for the wrong reason.
@@ -158,7 +157,7 @@ describe('authentic tanker split geometry (story 6-9)', () => {
     // on the tanker's own lane (seg, seg+1), so this fails on the seg-1 child.
     const tube = playingState(1).tube
     const params = levelParams(1)
-    const tanker: Enemy = { kind: 'tanker', lane: 4, depth: 0.5, contains: 'pulsar' }
+    const tanker: Enemy = makeEnemy('tanker', 4, 0.5, levelParams(1), 'pulsar')
     const kids = splitTanker(tanker, tube, params)
 
     expect(kids).toHaveLength(2)
@@ -172,7 +171,7 @@ describe('authentic tanker split geometry (story 6-9)', () => {
   it('vacates the seam correctly when splitting on lane 0 (wraps to 15 and 1)', () => {
     const tube = playingState(1).tube // 16-lane closed well
     const kids = splitTanker(
-      { kind: 'tanker', lane: 0, depth: 0.5, contains: 'flipper' }, tube, levelParams(1),
+      makeEnemy('tanker', 0, 0.5, levelParams(1), 'flipper'), tube, levelParams(1),
     )
     const lanes = kids.map((k) => k.lane).sort((a, b) => a - b)
     expect(lanes).toEqual([1, 15]) // wrap(-1)=15, wrap(+1)=1 — never -1
@@ -185,7 +184,7 @@ describe('authentic spiker spike & far-end hop (story 6-9)', () => {
   it('grows the spike only toward the rim and never shrinks it on descent', () => {
     // spike_ht tracks the spiker's high-water mark; descending must not lower it.
     let s = isolated(3)
-    s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.0, direction: 1 }]
+    s.enemies = [makeEnemy('spiker', 5, 0.0, levelParams(1))]
     // Climb a while, capture the peak spike, then keep stepping (it will turn and
     // descend) and assert the spike height never drops below that peak.
     let peak = 0
@@ -210,7 +209,7 @@ describe('authentic spiker spike & far-end hop (story 6-9)', () => {
   // lane wins, tallest is NOT chosen) lives in tests/core/tp1-3.cheap-wins.test.ts.
   it('hops to the NEEDIEST lane — the shortest spike — when it bottoms out at the far end', () => {
     let s = isolated(11)
-    s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.02, direction: -1 }] // about to bottom out
+    s.enemies = [{ ...makeEnemy('spiker', 5, 0.02, levelParams(1)), direction: -1 }] // about to bottom out
     s.spikes = new Array(s.tube.laneCount).fill(0.6) // a tall, uniform field...
     s.spikes[10] = 0.1 // ...with one unambiguously neediest lane → the hop target
     for (let i = 0; i < 60; i++) s = stepGame(s, NEUTRAL, DT)
@@ -234,7 +233,7 @@ describe('authentic fuseball vulnerability (story 6-9; semantics corrected by tp
   // and the rim gate we never implemented, are covered in tests/core/tp1-3.cheap-wins.test.ts.
   function boardWith(vulnerable: boolean): GameState {
     const s = isolated(5)
-    s.enemies = [{ kind: 'fuseball', lane: 6, depth: 0.5, jitterTimer: 999, vulnerable }]
+    s.enemies = [{ ...makeEnemy('fuseball', 6, 0.5, levelParams(1)), jitterTimer: 999, vulnerable }]
     s.bullets = [{ lane: 6, depth: 0.5 }]
     return s
   }
@@ -259,7 +258,7 @@ describe('flipper rim-grab and determinism (story 6-9 guards)', () => {
   it('grabs and kills the Claw when it reaches the rim on the player segment', () => {
     const s = isolated(1)
     s.player.lane = 3
-    s.enemies = [{ kind: 'flipper', lane: 3, depth: 0.95, flipTimer: 999 }] // at the rim, same seg
+    s.enemies = [makeEnemy('flipper', 3, 0.95, levelParams(1))] // at the rim, same seg
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.mode).toBe('dying')
     expect(out.lives).toBe(2)
@@ -271,9 +270,9 @@ describe('flipper rim-grab and determinism (story 6-9 guards)', () => {
     const build = (): GameState => {
       const s = isolated(1234)
       s.enemies = [
-        { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 0.01 },
-        { kind: 'fuseball', lane: 9, depth: 0.3, jitterTimer: 0.01, vulnerable: true },
-        { kind: 'pulsar', lane: 12, depth: 0.4, flipTimer: 0.01, pulseTimer: 0.01, pulsing: false },
+        makeEnemy('flipper', 1, 0.2, levelParams(1)),
+        { ...makeEnemy('fuseball', 9, 0.3, levelParams(1)), jitterTimer: 0.01, vulnerable: true },
+        { ...makeEnemy('pulsar', 12, 0.4, levelParams(1)), pulseTimer: 0.01, pulsing: false },
       ]
       return s
     }

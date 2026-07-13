@@ -169,10 +169,24 @@ describe('tp1-4 — the wave-2 / wave-3 pair: one opcode apart, two behaviours',
 
     expect(flipDirections(samples, s.tube.laneCount).length, 'SPIRAL must flip')
       .toBeGreaterThan(0)
+    // The climb pauses for EXACTLY ONE frame per jump — the frame that runs VJUMPS.
+    //
+    // This assertion read `.toBe(0)` in RED, which no faithful interpreter can satisfy:
+    // VJUMPS and VSMOVE are different opcodes, and SPIRAL's `VEXIT` (ALWELG.MAC:2409)
+    // sits between them, so the frame that STARTS the jump has no move in it. Zero was
+    // the old stepper's artifact — it advanced depth unconditionally, before it even
+    // looked at the flip (flipper.ts:16). The ROM's spiral climbs through all EIGHT
+    // angle-steps of the jump (the `VSMOVE` at 2413, inside the loop) and rests only on
+    // the one frame that launches it.
+    //
+    // Pinning the 1 exactly is what keeps the wave-2/wave-3 pair load-bearing, and it is
+    // strictly tighter than the RED assertion: MOVJMP freezes for 8 frames (no VSMOVE in
+    // its jump loop), SPIRAL for 1, and the old always-climb code for 0. All three are
+    // now distinguishable, and only the middle one passes. (Dev, tp1-4.)
     expect(
       longestFrozenRun(samples),
-      'a SPIRAL flipper climbs on every frame, including mid-flip',
-    ).toBe(0)
+      'a SPIRAL flipper climbs through its jump, pausing only on the VJUMPS frame',
+    ).toBe(1)
   })
 })
 
