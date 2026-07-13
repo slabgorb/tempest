@@ -131,8 +131,8 @@ export const WARP_INITIAL_SPEED = (2.0 * ROM_FPS) / WARP_ALONG_SPAN  // 16/63 �
 // CURWAV is 0-BASED: INIRAT seeds it with zero (ALWELG.MAC:192-193) and the scoreboard
 // adds one to display it (ALSCOR.MAC:296-298). Our GameState.level is the DISPLAYED,
 // 1-based number, so callers must hand us `level - 1`. The parameter is named `wave`
-// precisely so that passing a level reads wrong at the call site: for eight months it
-// was named `level`, it was fed a level, and every dive accelerated one wave early.
+// precisely so that passing a level reads wrong at the call site: it was named `level`,
+// fed a level, and every dive accelerated one wave early — introduced in story 6-1, fixed in tp1-23.
 //
 // At the real clock the level-1 (wave 0) dive takes ~1.62 s — 46 ROM frames, which is
 // the figure the audit derives independently in pair-11. It used to take ~0.73 s.
