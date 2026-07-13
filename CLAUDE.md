@@ -92,7 +92,7 @@ Built in "waves," each a self-contained slice:
   arcade orchestrator); every push to `main` auto-deploys to R2 — never push it
   by hand.
 - **Branches:** `feat/{description}`, `fix/{description}`, `chore/{description}`.
-- Don't commit/push unless asked.
+- Just commit; no need to ask first (`develop` is the working branch).
 
 ## Important Notes
 
