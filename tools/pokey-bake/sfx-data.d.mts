@@ -22,7 +22,15 @@ export interface SfxSpec {
   readonly stream?: { readonly audfStart: number; readonly audcStart: number }
 }
 
-export const SFX: SfxSpec[]
+/**
+ * Lift a clean single-note cue out of the embedded ROM data region at its CPU
+ * address. Throws RangeError if `rom` is unreadable or falls outside the region —
+ * including the NaN case, where a bare range check would silently return an empty
+ * envelope (which bakes to silence).
+ */
+export function alsounAt(rom: string): { audf: number[]; audc: number[] }
+
+export const SFX: readonly SfxSpec[]
 export const ALSOUN_STREAM: readonly number[]
 export const ALSOUN_STREAM_BASE: number
 export const DEFERRED: readonly { readonly name: string; readonly reason: string }[]

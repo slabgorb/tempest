@@ -112,7 +112,7 @@
     },
     "ours": {
       "file": "tools/pokey-bake/sfx-data.mjs",
-      "line": 143,
+      "line": 149,
       "verbatim": "    rom: '$cc75',"
     },
     "claim": "SOUTS2 (ALSOUN's T2) fires in MOVCUD (\"PLAY-MOVE CURSOR DOWN\") on the very first frame of the dive, while CURSY still equals ILINLI (cursor/claw still at the top of the well). This is the same moment our LevelClearEvent fires, starting the sustained 'levelClear' loop (warp.wav). T26F/T26A (0xc0,0x02,0xff,0xff / 0x28,0x02,0x00,0xf0) are byte-identical to warp.wav's baked audf/audc arrays ($cc75).",

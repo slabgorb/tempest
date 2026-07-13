@@ -25,7 +25,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SFX, ALSOUN_STREAM, ALSOUN_STREAM_BASE } from '../../tools/pokey-bake/sfx-data.mjs'
+import { SFX, ALSOUN_STREAM, ALSOUN_STREAM_BASE, alsounAt } from '../../tools/pokey-bake/sfx-data.mjs'
 import { playEventSounds } from '../../src/shell/audio-dispatch'
 import type { AudioEngine, SoundName } from '../../src/shell/audio'
 import type { GameEvent } from '../../src/core/events'
@@ -287,12 +287,139 @@ describe('tp1-2 AC#5 — the audit record is reconciled, so citations stay green
   })
 })
 
+describe('tp1-2 — alsounAt() fails loudly on an address it cannot read', () => {
+  // The guard is the only thing standing between a typo'd address and a silent,
+  // wrong sound. It has to actually guard. NaN is the case that matters: a bare
+  // range check lets it through (every comparison against NaN is false) and the
+  // slice then yields an EMPTY envelope, which bakes to silence — the one defect
+  // nobody hears. This story exists because a check that should have failed didn't.
+  it.each(['$zzzz', '$', 'not-an-address', ''])('throws on the unreadable address %o', (rom) => {
+    expect(() => alsounAt(rom)).toThrow(RangeError)
+  })
+
+  it.each(['$0000', '$ffff', '$cbd0', '$cca0'])('throws on %s — outside the embedded region', (rom) => {
+    // $cbd0 is one byte BEFORE the region; $cca0 starts inside it but its 12-byte
+    // record runs off the end. Both must throw, not return a truncated envelope.
+    expect(() => alsounAt(rom)).toThrow(RangeError)
+  })
+
+  it('returns a full 12-byte record for an address it CAN read', () => {
+    const r = alsounAt(LA.rom)
+    expect(r.audf).toHaveLength(6)
+    expect(r.audc).toHaveLength(6)
+    expect(r.audf).toEqual(LA.audf)
+  })
+})
+
 // ── Provenance: prove the constants above against the 1981 source ────────────
 // Skipped in CI, which has no copy of Theurer's source. Locally it is the whole
-// point: every byte this story moves is re-read from ALSOUN.MAC at the line the
-// audit cites, so a typo in the constants above cannot survive.
+// point: every byte we ship is re-read from ALSOUN.MAC, so neither a typo in the
+// constants above nor a corrupted ROM blob can survive.
 describe.skipIf(!sourceAvailable)('tp1-2 provenance — bytes re-read from Theurer\'s ALSOUN.MAC', () => {
   const line = (n: number) => readFileSync(join(sourceDir, 'ALSOUN.MAC'), 'utf8').split('\n')[n - 1]
+
+  // Every labelled `.BYTE` record in ALSOUN.MAC, as label -> bytes. Two wrinkles the
+  // parser has to survive: some labels sit alone with their `.BYTE` on the NEXT line
+  // (DI1F does), and some `.BYTE` operands are macro expressions rather than hex
+  // (those are not sound data — skip them).
+  const alsounRecords = (): Record<string, number[]> => {
+    const src = readFileSync(join(sourceDir, 'ALSOUN.MAC'), 'latin1').split('\n')
+    const out: Record<string, number[]> = {}
+    const bytesOf = (operands: string): number[] | null => {
+      const parts = operands
+        .replace(/;.*$/, '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      if (!parts.length || !parts.every((p) => /^[0-9a-f]+$/i.test(p))) return null
+      return parts.map((p) => parseInt(p, 16))
+    }
+    let pending: string | null = null
+    for (const raw of src) {
+      const labelled = /^(\w+):\s*(.*)$/.exec(raw)
+      if (labelled) {
+        const directive = /^\.BYTE\s+(.+)$/i.exec(labelled[2])
+        if (directive) {
+          const b = bytesOf(directive[1])
+          if (b) out[labelled[1]] = b
+          pending = null
+        } else {
+          pending = labelled[1] // label alone on its line; its .BYTE follows
+        }
+        continue
+      }
+      if (pending) {
+        const directive = /^\s+\.BYTE\s+(.+)$/i.exec(raw)
+        if (directive) {
+          const b = bytesOf(directive[1])
+          if (b) out[pending] = b
+        }
+        pending = null
+      }
+    }
+    return out
+  }
+
+  // ALSOUN names each slot's two envelopes <SLOT><n>F (AUDF) and <SLOT><n>A (AUDC):
+  // LA3F/LA3A, EX2F/EX2A, T36F/T36A, DI1F/DI1A...
+  const recordFor = (records: Record<string, number[]>, slot: string, voice: 'F' | 'A') => {
+    const label = Object.keys(records).find((l) => new RegExp(`^${slot}\\d*${voice}$`).test(l))
+    expect(label, `ALSOUN.MAC has no ${slot}*${voice} record`).toBeDefined()
+    return { label, bytes: records[label as string] }
+  }
+
+  // A record's first note is 4 bytes. Whether the trailing `0,0` terminator shares
+  // the line or sits on the next one varies by record (EX2F splits it, LA3F does
+  // not), so compare the note. The 6-byte shape and the terminator are asserted
+  // separately, on our side, by tools/pokey-bake/bake-sfx.test.mjs.
+  const NOTE = 4
+
+  it('ALL THIRTEEN slots hold the bytes Theurer wrote — not just the three this story moved', () => {
+    // The point of this test (reviewer finding F-2). Deriving every cue from one ROM
+    // blob removed the hand-typed literals — which WERE the bug, but were also a
+    // second, independent copy. With one copy left, a corrupted blob would change
+    // five cues' sounds and every other test in this repo would still pass, because
+    // they now ask the blob to confirm itself. This is the test that asks the ROM.
+    const records = alsounRecords()
+    for (const { idx, slot, rom, meaning } of ALSOUN_SLOTS) {
+      const offset = parseInt(rom.slice(1), 16) - ALSOUN_STREAM_BASE
+      if (offset + NOTE > ALSOUN_STREAM.length) {
+        // PO ($cca9) alone: the embedded region ends at $ccaa, mid-record. It is a
+        // DEFERRED sound we do not ship (see DEFERRED in sfx-data.mjs), so there are
+        // no bytes of ours to check. Assert that this is the ONLY such slot, so a
+        // future truncation of the blob cannot quietly excuse itself here.
+        expect(slot, 'PO is the only slot outside the embedded region').toBe('PO')
+        continue
+      }
+      const { label, bytes } = recordFor(records, slot, 'F')
+      expect(
+        ALSOUN_STREAM.slice(offset, offset + NOTE),
+        `blob @${rom} (slot ${idx} ${slot} "${meaning}") must be ALSOUN's ${label}`,
+      ).toEqual(bytes.slice(0, NOTE))
+    }
+  })
+
+  it('every clean cue we ship carries its own slot\'s envelope pair', () => {
+    // The other half of F-2: not just "the blob is right" but "each cue reads the
+    // right part of it". enemy_fire, warp, countdown_beep, segment_tick and
+    // spike_shot had no independent byte check at all before this test.
+    const records = alsounRecords()
+    for (const spec of SFX) {
+      if (!spec.alsoun) continue // streaming cues walk the blob; covered by the slot test
+      const slot = ALSOUN_SLOTS.find((s) => s.rom === spec.rom)
+      expect(slot, `${spec.name} (${spec.rom}) is not on an ALSOUN slot`).toBeDefined()
+      const audf = recordFor(records, slot!.slot, 'F')
+      const audc = recordFor(records, slot!.slot, 'A')
+      expect(
+        spec.alsoun.audf.slice(0, NOTE),
+        `${spec.name} AUDF must be ALSOUN's ${audf.label} (${slot!.slot} — "${slot!.meaning}")`,
+      ).toEqual(audf.bytes.slice(0, NOTE))
+      expect(
+        spec.alsoun.audc.slice(0, NOTE),
+        `${spec.name} AUDC must be ALSOUN's ${audc.label}`,
+      ).toEqual(audc.bytes.slice(0, NOTE))
+    }
+  })
 
   // `.BYTE 10,1,7,20,0,0` -> [0x10, 0x01, 0x07, 0x20, 0x00, 0x00]
   const bytesOf = (src: string) =>

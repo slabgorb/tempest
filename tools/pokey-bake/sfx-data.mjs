@@ -74,12 +74,18 @@ export const ALSOUN_STREAM = [
 // the 6-byte AUDF1 record, immediately followed by the 6-byte AUDC1 record. This
 // is the 12-byte shape ALSOUN's table entries have (e.g. LA3F/LA3A, ALSOUN.MAC:141).
 // A cue therefore declares its ADDRESS and nothing else; the bytes follow from it.
-function alsounAt(rom) {
+export function alsounAt(rom) {
   const addr = parseInt(rom.replace('$', ''), 16);
   const offset = addr - ALSOUN_STREAM_BASE;
-  if (offset < 0 || offset + 12 > ALSOUN_STREAM.length) {
+  // `!Number.isInteger` first, and not as an afterthought: a malformed address makes
+  // parseInt return NaN, and EVERY comparison against NaN is false — so a bare
+  // range check waves it through, and `slice(NaN, …)` then coerces to `slice(0, 0)`
+  // and hands back an EMPTY envelope. That bakes to silence, and silence is the one
+  // defect an ear never catches. This whole story exists because a check that
+  // should have failed loudly didn't fail at all; the guard does not get to repeat it.
+  if (!Number.isInteger(addr) || offset < 0 || offset + 12 > ALSOUN_STREAM.length) {
     throw new RangeError(
-      `${rom} is outside the embedded ALSOUN data region ` +
+      `${rom} is not a readable address in the embedded ALSOUN data region ` +
         `($${ALSOUN_STREAM_BASE.toString(16)}..$${(ALSOUN_STREAM_BASE + ALSOUN_STREAM.length - 1).toString(16)})`,
     );
   }
