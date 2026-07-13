@@ -11,26 +11,41 @@
 // is 0xf0 − 0x10 = 224 along-units (the same WARP_ALONG_SPAN the warp dive uses).
 // So a ROM speed of S along/second maps to S/224 depth/second.
 //
-// Speed bytes are signed, sign-extended ×8; the recon gives the net per-second
-// rates directly, which is what we pin here:
-//   • Flipper L1     −82.5 /s  → 82.5/224  = 0.3683 depth/s  (~2.7 s up the tube)
-//   • Flipper L33+   −202.5/s  → 202.5/224 = 0.9040 depth/s  (the fast high tier)
-//   • Fuseball L1    −165 /s   → 165/224   = 0.7366 depth/s  ( = 2 × flipper)
-//   • Tanker          flipper speed (straight up)
-//   • Pulsar (near)  −82.5 /s  (const; coincides with flipper L1)
+// ── REBASED BY STORY tp1-1 (2026-07-13). Read this before touching a number. ──
+// This suite used to pin the flipper at "−82.5 along/s → 0.3683 depth/s (~2.7 s up
+// the tube)" and called that the ROM. It was wrong, and it was wrong in the most
+// dangerous way available: it CITED the ROM for it.
+//
+// The ROM's speed bytes are per FRAME, not per second: the L1 flipper is 1.375
+// along/FRAME. Story 6-9 converted that to a per-second rate by multiplying by 60 —
+// and the ROM does not run at 60. It runs at 256/9 = 28.44 fps (audit §3: a 256 Hz
+// IRQ, nine ticks to the game frame, ALHARD.MAC:149-152 + ALEXEC.MAC:49-55). The
+// notorious 82.5 is simply 1.375 × 60 with the invented rate baked into its face.
+//
+// So the correct per-second rates are the ROM's per-frame bytes × ROM_FPS:
+//   • Flipper L1     1.375 along/frame → 39.1 /s  → 0.1746 depth/s  (~5.7 s up the tube)
+//   • Flipper L33+   3.375 along/frame → 96.0 /s  → 0.4286 depth/s  (the fast high tier)
+//   • Fuseball        2 × flipper                                   (a RATIO — unaffected)
+//   • Tanker          1 × flipper                                   (a RATIO — unaffected)
+//   • Pulsar (near)   the L1 flipper byte                           (a RATIO — unaffected)
+//
+// The ratios were right all along; only the base was wrong. Every absolute number
+// below is now DERIVED from ROM_FPS rather than typed in, so it cannot silently
+// re-acquire a frame rate.
+//
+// Footnote, and the reason the audit exists: this file's traverse test used to say
+// "Today (0.18 depth/s) it takes ~5.6 s and blows the upper bound — valid RED." The
+// pre-6-9 value of 0.18 depth/s was very nearly RIGHT (the truth is 0.1746, a 5.73 s
+// traverse). Story 6-9 replaced a correct number with one 2.11× too fast, in the
+// name of fidelity, and wrote a test to defend it.
 //
 // These are exercised against the pure rules/sim with a seeded RNG, so the suite
 // is deterministic and needs no DOM/time/Math.random (CLAUDE.md hard boundary).
-//
-// Many of these FAIL today: the current levelParams speeds are invented
-// approximations (flipper 0.18, fuseball 0.26, tanker 0.14) and several behaviors
-// (spiker far-end hop, fuseball vulnerable phase, seg-1/seg+1 split geometry) are
-// not yet authentic. Dev turns them green by tuning rules.ts + the enemy steppers.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { splitTanker } from '../../src/core/enemies/tanker'
-import { levelParams, SPLIT_CHILD_DEPTH } from '../../src/core/rules'
+import { levelParams, SPLIT_CHILD_DEPTH, ROM_FPS } from '../../src/core/rules'
 import { wrapLane } from '../../src/core/geometry'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
@@ -39,9 +54,13 @@ const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 // ROM-derived authentic targets (see header for the along↔depth derivation).
+// The ROM bytes are per FRAME; ROM_FPS turns them into per-second rates. Never
+// write these as decimals — a literal is how the 60 got in here the first time.
 const ALONG_SPAN = 0xf0 - 0x10 // 224
-const FLIPPER_L1 = 82.5 / ALONG_SPAN // 0.3683 depth/s  (~2.7 s full traverse)
-const FLIPPER_L33 = 202.5 / ALONG_SPAN // 0.9040 depth/s (fast high-level tier)
+const FLIPPER_ALONG_PER_FRAME_L1 = 1.375  // ROM byte (was mis-scaled to 82.5/s = ×60)
+const FLIPPER_ALONG_PER_FRAME_L33 = 3.375 // ROM byte (was mis-scaled to 202.5/s = ×60)
+const FLIPPER_L1 = (FLIPPER_ALONG_PER_FRAME_L1 * ROM_FPS) / ALONG_SPAN  // 0.1746 depth/s (~5.7 s)
+const FLIPPER_L33 = (FLIPPER_ALONG_PER_FRAME_L33 * ROM_FPS) / ALONG_SPAN // 0.4286 depth/s
 
 // A board frozen except for the enemy under test: no spawning (a high timer with
 // budget still pending, so the spiker-hop "none pending" conversion never fires),
@@ -60,20 +79,21 @@ function isolated(seed: number): GameState {
 // ── AC: authentic climb speeds (rules.levelParams) ──────────────────────────
 
 describe('authentic climb speeds (story 6-9)', () => {
-  it('flips climb at the ROM L1 rate ≈ 82.5/s → 0.368 depth/s', () => {
-    // -82.5 along/s ÷ 224 = 0.3683 depth/s. Generous band around the target so
-    // the "~" in the spec has room; the current 0.18 is far below and fails.
+  it('flips climb at the ROM L1 rate: 1.375 along/frame × 28.44 fps → 0.175 depth/s', () => {
+    // 1.375 × 256/9 = 39.1 along/s ÷ 224 = 0.1746 depth/s. The 0.368 this test used
+    // to demand is exactly 2.11× too fast — it was 1.375 × 60.
     const v = levelParams(1).flipperSpeed
-    expect(v).toBeGreaterThan(0.32)
-    expect(v).toBeLessThan(0.42)
+    expect(v).toBeGreaterThan(0.15)
+    expect(v).toBeLessThan(0.20)
   })
 
-  it('reaches the fast L33+ flipper tier ≈ 202.5/s → 0.904 depth/s', () => {
-    // The ROM steps flipper climb to -3.375/frame at L33+. Pin the high tier so
-    // a runaway continuous ramp (today L33 ≈ 2.1 depth/s) is rejected.
+  it('reaches the fast L33+ flipper tier: 3.375 along/frame → exactly 96/s → 3/7 depth/s', () => {
+    // The ROM steps flipper climb to 3.375 along/frame at L33+. At the true clock
+    // that is 3.375 × 256/9 = 96.0 along/s exactly — the base being right is why the
+    // number comes out clean. ÷224 = 3/7 = 0.4286 depth/s.
     const v = levelParams(33).flipperSpeed
-    expect(v).toBeGreaterThan(0.80)
-    expect(v).toBeLessThan(1.00)
+    expect(v).toBeGreaterThan(0.38)
+    expect(v).toBeLessThan(0.48)
     // Sanity: still strictly faster than the L1 rate (the tier rises, not falls).
     expect(v).toBeGreaterThan(levelParams(1).flipperSpeed)
   })
@@ -104,23 +124,28 @@ describe('authentic climb speeds (story 6-9)', () => {
 // ── AC: authentic traverse time (full sim) ──────────────────────────────────
 
 describe('authentic full-tube traverse (story 6-9)', () => {
-  it('a level-1 flipper climbs the whole tube in ≈ 2.7 seconds', () => {
-    // The single most load-bearing authentic constant: at -82.5/s a flipper
-    // covers the 224-unit well in 224/82.5 ≈ 2.7 s. Today (0.18 depth/s) it takes
-    // ~5.6 s and blows the upper bound — valid RED.
+  it('a level-1 flipper climbs the whole tube in ≈ 5.7 seconds', () => {
+    // The single most load-bearing authentic constant, and this suite had it wrong.
+    // At the ROM's real L1 rate (1.375 along/frame × 28.44 fps = 39.1 along/s) a
+    // flipper covers the 224-unit well in 224/39.1 ≈ 5.73 s. The 2.7 s this test
+    // used to demand assumed a 60 fps machine that never existed.
     let s = isolated(7)
     // flipTimer huge: no lane flips, so it climbs straight up lane 0 (off the
     // Claw's lane 8 — never grabs, never gets culled). depth only ever rises.
     s.enemies = [{ kind: 'flipper', lane: 0, depth: 0, flipTimer: 999 }]
     let frames = 0
-    while (s.enemies.length > 0 && s.enemies[0].depth < 0.999 && frames < 400) {
+    // The climb is now 2.11× longer, so the old 400-frame bound would have tripped
+    // before the flipper ever arrived and failed for the wrong reason.
+    while (s.enemies.length > 0 && s.enemies[0].depth < 0.999 && frames < 600) {
       s = stepGame(s, NEUTRAL, DT)
       frames++
     }
-    const seconds = frames / 60
+    // `frames * DT` — accumulated wall time. NOT `frames / 60`: that spells the
+    // invented frame rate out loud and is exactly how this suite got poisoned.
+    const seconds = frames * DT
     expect(s.enemies.length, 'the flipper must survive the climb (no grab/cull)').toBe(1)
-    expect(seconds).toBeGreaterThan(2.2)
-    expect(seconds).toBeLessThan(3.2)
+    expect(seconds).toBeGreaterThan(5.0)
+    expect(seconds).toBeLessThan(6.5)
   })
 })
 
