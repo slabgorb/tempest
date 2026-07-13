@@ -117,7 +117,7 @@ const SPIKER_BASE: readonly V[] = Array.from({ length: 12 }, (_, i) => {
 
 export function spikerGlyph(frame: number): Glyph {
   const a = (frame & 3) * (Math.PI / 2) // ROM cycles 4 frames, each +90deg
-  return [{ points: rotPoints(SPIKER_BASE, a), closed: false, color: 'orange' }]
+  return [{ points: rotPoints(SPIKER_BASE, a), closed: false, color: 'green' }]
 }
 
 // ==========================================================================
@@ -293,4 +293,26 @@ export function playerBulletColor(chargesInFlight: number): GlyphColor {
   if (chargesInFlight >= 8) return 'red'
   if (chargesInFlight >= 6) return 'cyan'
   return 'yellow'
+}
+
+// ==========================================================================
+// I. Lives icon — the ROM's own LIFE1 picture (ALVROM.MAC:171-181).
+// ==========================================================================
+// The AVG walks LIFE1 as `ICVEC` (pen to the origin) then eight `SCVEC`s, the last
+// returning to (0,0): a closed, mirror-symmetric W — the claw's own silhouette, and
+// deliberately NOT the player-cursor picture NCRS1-8 (V-016 calls that out).
+//
+// SCVEC's operands are ABSOLUTE, not deltas — its CVEC macro emits `NEWX-...OLX` and
+// carries the pen position itself — so these are vertices, transcribed straight from
+// the source rather than accumulated like CLAW_DELTAS.
+//
+// Y is NEGATED from the source: the AVG's +y is up and the canvas's is down, so the
+// raw chain would hang the claw upside down. Yellow is LIFE1's own `CSTAT YELLOW`.
+const LIFE1: readonly V[] = [
+  { x: 0, y: 0 }, { x: 4, y: 2 }, { x: 1, y: 3 }, { x: 3, y: 2 },
+  { x: 0, y: 1 }, { x: -3, y: 2 }, { x: -1, y: 3 }, { x: -4, y: 2 },
+]
+
+export function lifeIconGlyph(): Glyph {
+  return [{ points: LIFE1, closed: true, color: 'yellow' }]
 }

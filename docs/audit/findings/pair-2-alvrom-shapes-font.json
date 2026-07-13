@@ -145,7 +145,8 @@
     "reasoning": "The colour is flatly wrong — orange is not in the pulled palette at all (the ROM's eight slots are white/yellow/purple/red/turquoise/green/blue/blue) — and the shape has 12 vertices where the ROM has 21, with a different winding rate. Both are visible from across the room. [REFUTATION] Re-opened ALVROM.MAC 516-620 (CM=2/CD=1 in effect, CSTAT GREEN confirmed verbatim at line 522; TRACOL=GREEN confirmed at ALCOMN.MAC 369; PITAB SPIRA1,PTSPI1 confirmed verbatim at line 2110). Hand-traced SPIRA1's 21 absolute vertices: radius grows monotonically from ~1.4 to ~21.2 units across ~2.6 revolutions at 45-degree angular steps, confirming 'outward-winding spiral of steadily growing radius' and the 21-vertex count exactly as transcribed. Colour palette check (ALCOMN.MAC 351-358: WHITE=0,YELLOW=1,PURPLE=2,RED=3,TURQOI=4,GREEN=5,BLUE=6,BLULET=7) confirms ORANGE is genuinely absent from the ROM's 8 slots — our spikerGlyph() uses 'orange', a flat colour error. Our SPIKER_BASE has 12 vertices at 60-degree steps (2 full turns, radius 2 to 9.7) vs the ROM's 21 vertices at 45-degree steps (2.6 turns, radius 1.4 to 21.2) — real vertex-count and winding-rate divergence. However, I attacked the specific sub-claim that SPIRA2/3/4 are 're-authored, not rotated': rotating every one of SPIRA1's 21 (x,y) pairs by exactly 90 degrees CCW reproduces SPIRA2's table point-for-point (verified all 21); 180 degrees reproduces SPIRA3; 270 degrees (90 CW) reproduces SPIRA4. They are precise mathematical rotations of one base spiral, just hardcoded as 4 separate tables rather than computed at runtime — the opposite of what the claim's prose asserts. This is a real error in the finding's own reasoning (and ironically means our code's rotate-one-table approach is architecturally identical to what the ROM's data encodes), but it does not rescue the actual colour and vertex-count divergence, which are independently verified and real. [CORRECTION] SPIRA2/SPIRA3/SPIRA4 are NOT independently re-authored data distinct from a rotation — they are exact 90/180/270-degree rotations of SPIRA1 (verified point-by-point). The claim's 'advanced one quarter-turn but re-authored, not rotated' is backwards; only the colour (orange vs GREEN) and vertex-count/winding-rate (12 @ 60deg vs 21 @ 45deg) divergences should be relied on.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "fixed_in": "tp1-3"
   },
   {
     "id": "V-009",
@@ -225,7 +226,8 @@
     "reasoning": "The 16-spoke geometry and the doubling scale ladder ARE the ROM's; only the colour is invented. A one-constant fix. [REFUTATION] Re-opened ALVROM.MAC:344-376. EXPL1-4 are exactly as claimed: each opens `CSTAT WHITE` (350/358/366/374) then calls SPOK16 (macro at 120-145, verified: ICVEC + 16 SCVEC pairs = 16 spokes) at CM=1,2,4,8 (345-372) with CB stepping 07->0E (347/356/364/372, i.e. brightness 7->14, matching the claim's '7->14 brightness ramp'). EXPCOL=WHITE is confirmed at ALCOMN.MAC:366, and ALCOMN is a shipped .INCLUDE, so the DSPEXP citation is legitimate (not decoy-tainted). Checked our side is governing: render.ts drawEnemyBurst (460-477) is invoked from drawExplosions only for ex.kind==='enemy', and fx.ts:185-186 spawns that burst specifically on the 'enemy-death' event -- this is the actual code path, not overridden elsewhere. ENEMY_BURST_COLOR = '#ffe66b' at render.ts:460 is unambiguously yellow, not white. No unit/radix trick rescues this -- WHITE=0 is a color-RAM index, not a numeric quantity that could be misread. Holds cleanly.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "fixed_in": "tp1-3"
   },
   {
     "id": "V-013",
@@ -238,7 +240,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 503,
+      "line": 506,
       "verbatim": "  jaggedStarPath(ctx, ex.x, ex.y, ex.spokes, ex.radius, ex.radius * 0.45)"
     },
     "claim": "SPLAT (ALVROM.MAC 806-850, CM=2 CD=1 CB=7) is a SINGLE closed jagged outline of 26 absolute vertices — (18,-8) (38,8) (20,0C) (24,14) (1C,15) (22,20) (10,16) (12,30) (4,28) (-0A,2D) (-0C,12) (-2E,18) (-1C,0) (-26,-8) (-20,-0A) (-26,-17) (-0D,-0E) (-10,-22) (-0C,-20) (-8,-2C) (4,-20) (10,-2C) (12,-18) (22,-1E) (18,-8) (0,0) — with the colour re-stated every TWO vertices, cycling PDIWHI -> PDIRED -> PDIYEL -> PDIWHI ... (indices 9/11/10, ALVROM.MAC 812/816/819 and ALCOMN.MAC 384-386), so all three colours are on screen SIMULTANEOUSLY around the ring. SPLAT1-6 (ALVROM.MAC 793-804) then re-draw that one picture at six SCAL sizes. Ours draws two concentric procedural jagged rings (outer/inner radius alternating) in ONE colour per frame, cycling white->red->yellow across frames (render.ts 495-507).",
@@ -305,7 +307,8 @@
     "reasoning": "We already own the correct 8-vertex claw shape (CLAW_DELTAS, V-002) — the lives HUD just doesn't use it. Cheap fidelity win. [REFUTATION] Re-opened ALVROM.MAC:165-186. LIFE1's chain (0,0)(4,-2)(1,-3)(3,-2)(0,-1)(-3,-2)(-1,-3)(-4,-2)(0,0) matches source verbatim (lines 173-181), and the CSTAT YELLOW at 172 plus LIFE0's blank SCVEC 0A,0,0 at 182 are both confirmed. Traced LSYMBL/LSYMB0 usage to ALSCOR.MAC:186 ('LDA LSYMBL ;DEFAULT LIFE PIC') inside the lives-counter display loop (175-197, iterating up to 6 icons via SCOBUF) -- this really is the lives-HUD picture, not a self-test-only asset. Our drawClawIcon (render.ts:521-549) draws a two-leg chevron + horizontal cross-brace + white apex dot -- structurally nothing like the ROM's closed 8-vertex zigzag. Divergence holds. HOWEVER the finding's specific recommendation is built on a false premise that needs flagging: CLAW_DELTAS (glyphs.ts:247-256, cited as V-002) is NOT the LIFE1 picture -- it's a byte-exact transcription of NCRS1-8, the 'DISPLAY CURSOR' in-flight rotating-claw graphics, which I found still shipped at ALDISP.MAC:1917-1997 (verified NCRS1's deltas 0,-2/2,-1/3,4/-3,-3/-1,0/0,2/2,1/-3,-1 match CLAW_DELTAS[0] exactly). NCRS1-8 and LIFE1 are two distinct ROM pictures for two distinct purposes (rotating gameplay cursor vs static lives icon); their vertex chains differ (LIFE1 is a symmetric W, NCRS1-8 are asymmetric roll frames). So 'we already own the correct shape, just reuse it' is wrong -- a true fix needs new authored vertex data matching LIFE1's own chain, not a call into playerClawGlyph(). The core divergence claim stands; the 'cheap, just reuse V-002' framing does not. [CORRECTION] CLAW_DELTAS/V-002 (NCRS1-8) is a different ROM picture from LIFE1 (confirmed shipped separately at ALDISP.MAC:1917-1997, used for the in-flight rotating cursor, not the lives HUD). Reusing it verbatim will not reproduce LIFE1's actual 8-vertex chain -- new vertex data must be authored from ALVROM.MAC:173-181 for a true fix; the size should not be called 's' on the assumption existing data can be repointed.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "fixed_in": "tp1-3"
   },
   {
     "id": "V-017",
@@ -318,7 +321,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 679,
+      "line": 662,
       "verbatim": "    drawGlowText(ctx, 'TEMPEST', W / 2, titleY, size, pass.color, 8 + Math.round(20 * pass.depth))"
     },
     "claim": "TEMLIT (ALVROM.MAC 1297-1351, CM=1 CD=1 CB=6) has SEVEN dedicated logo-letter routines with their own geometry — e.g. `E: VCTR -50,0,CB / VCTR -14,-40,CB / VCTR 70,0,CB / VCTR -70,0,0 / VCTR -14,-40,CB / VCTR 84,0,CB` (a BACK-SLANTED E, its arms stepping left as they descend), and `M`, `P`, `S`, `T` likewise (ALVROM.MAC 1318-1351) — none of which is the ANVGAN message glyph for that letter. The layout is NOT a straight baseline: after CNTR it moves (-1B0,100), draws T, +60 E, +24 M, +34 P, then JUMPS (0F8,48) — up and right — draws E, +16,+28 S, then +60,-60 T. So 'TEMP' sits low-left and 'EST' climbs up and right in a stair-step. We render the string 'TEMPEST' through the ordinary message font (render.ts 679 -> vecText -> layoutText) on one horizontal baseline.",
@@ -338,7 +341,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 790,
+      "line": 773,
       "verbatim": "  vecText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, 22, color, 12, 'right', 'top')"
     },
     "claim": "The SCORES template (ALVROM.MAC 1955-2017) fixes the colour of every HUD field: `CSTAT GREEN` before the 6-digit player score (1958), `CSTAT YELLOW` before the row of LIFE0 life icons (1971-1977), `CSTAT GREEN` before the 6-digit high score (1979), `CSTAT BLUE` before the 2-digit LEVEL (1987-1989), `CSTAT GREEN` before the 3 hi-score initials (1990-1994). Ours draws score, level AND hi-score in the level-cycling `color` (render.ts 787/790/794) and adds three captions the ROM has no glyphs for — 'SCORE', 'LEVEL', 'HI-SCORE' (render.ts 788/791/795) — in a steel-blue that is not a palette colour. The ROM also places the high score directly under player 1's score with the level below it, not centred at the top.",
@@ -467,7 +470,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 805,
+      "line": 788,
       "verbatim": "    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, 64, '#39ff14', 26)"
     },
     "claim": "The message table declares GAMOV as GREEN, scale 1, y=56h; the English literal is `EGAMOV: ASCVH <GAME OVER>` (ALLANG.MAC 97). We draw the same string in '#39ff14' (GLYPH_HEX green).",
@@ -484,7 +487,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 686,
+      "line": 669,
       "verbatim": "  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, 26, '#ff2f4f', 18)"
     },
     "claim": "PRESS is RED, scale 1, y=56h; English literal `EPRESS: ASCVH <PRESS START>` (ALLANG.MAC 111). We draw 'PRESS START' in '#ff2f4f' (GLYPH_HEX red), blinking, on the attract screen.",
@@ -501,7 +504,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 623,
+      "line": 606,
       "verbatim": "  drawGlowText(ctx, 'HIGH SCORES', cx, top, 20, '#ff2f4f', 14)"
     },
     "claim": "HIGHS is RED, and note SCALE 0 (the big cell) — the only message besides PLAYER and AVOID SPIKES to use it. English literal `EHIGHS: ASCVH 0BC,<HIGH SCORES>` (ALLANG.MAC 136), plural. We draw the plural 'HIGH SCORES' in '#ff2f4f'.",
@@ -518,7 +521,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 700,
+      "line": 683,
       "verbatim": "  drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, 40, '#39ff14', 22)"
     },
     "claim": "RATE = GREEN (ALLANG.MAC 74, literal `ERATE: ASCVH <RATE YOURSELF>` at 146); NOVIC = RED and EXPER = RED (ALLANG.MAC 75-76). We draw 'RATE YOURSELF' green (#39ff14) and 'NOVICE'/'EXPERT' red (#ff2f4f, render.ts 708-709).",
@@ -535,7 +538,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 985,
+      "line": 968,
       "verbatim": "    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, 28, '#ffffff', 18)"
     },
     "claim": "SPIKE is WHITE at scale 0 (double-size cell), y=0; English literal `ESPIKE: ASCVH -72.,<AVOID SPIKES>` (ALLANG.MAC 238). We draw 'AVOID SPIKES' in '#ffffff' during the warp hold.",
@@ -552,7 +555,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 993,
+      "line": 976,
       "verbatim": "    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, 40, '#39ff14', 20)"
     },
     "claim": "BONUS = GREEN scale 1 y=-70. (ALLANG.MAC 77) and TIME = GREEN scale 1 y=98h (ALLANG.MAC 78); literals `SBONUS: ASCVH 8B,<BONUS>` (164) and `ETIME: ASCVH 0E8,<TIME>` (166). We draw both banners in '#39ff14' on the level-clear warp (render.ts 993-994).",
@@ -569,7 +572,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1010,
+      "line": 993,
       "verbatim": "    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, 26, '#1f8fff', 16)"
     },
     "claim": "SUPZA uses BLULET (=7, the second letters slot, ALCOMN.MAC 352) — not the usual LETCOL green. English falls through to `FSUPZA: ASCVH <SUPERZAPPER RECHARGE>` (ALLANG.MAC 248-249), i.e. the English string IS 'SUPERZAPPER RECHARGE'. We draw exactly that string in '#1f8fff' blue.",
@@ -586,7 +589,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 710,
+      "line": 693,
       "verbatim": "  drawGlowText(ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72, 16, 'rgba(150,190,255,0.7)', 6)"
     },
     "claim": "PRMOV is TURQOI, scale 1, y=0; the English literal is `EPRMOV: ASCVH <SPIN KNOB TO CHANGE>` (ALLANG.MAC 126). Ours reads 'SPIN OR ARROW KEYS TO CHANGE' in 'rgba(150,190,255,0.7)' — a translucent steel-blue that is not one of the eight palette slots.",
@@ -606,7 +609,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 713,
+      "line": 696,
       "verbatim": "  drawGlowText(ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32, 18, color, 12)"
     },
     "claim": "PRFIR is YELLOW, scale 1, y=-10.; English literal `EPRFIR: ASCVH <PRESS FIRE TO SELECT>` (ALLANG.MAC 131). Ours reads 'PRESS START / ENTER TO BEGIN' in the per-level cycling `color` — so on level 1 it is blue, level 2 red, and so on.",
@@ -626,7 +629,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 720,
+      "line": 703,
       "verbatim": "  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, 44, color, 24)"
     },
     "claim": "ENTER is RED, scale 1, y=0B0h (ALLANG.MAC 69 `MESS\\tENTER,RED,1,0B0\\t\\t;ENTER`), with the English literal 'ENTER YOUR INITIALS'. Our high-score entry screen's heading is 'NEW HIGH SCORE' in the level-cycling colour (render.ts 720); 'ENTER YOUR INITIALS' appears only in the defensive no-entry branch, and there it is drawn in CLAW_COLOR yellow (render.ts 724), not red.",
@@ -646,7 +649,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 701,
+      "line": 684,
       "verbatim": "  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)"
     },
     "claim": "The MRANK message (RED, scale 1, y=-50., ALLANG.MAC 73) has the English literal 'RANKING FROM 1 TO ' — a sentence with a trailing space onto which the game appends the top selectable level. Ours prints the four-letter label 'RANK'. The colour (RED / '#ff2f4f') is right.",

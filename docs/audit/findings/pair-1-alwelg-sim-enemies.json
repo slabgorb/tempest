@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 633,
+      "line": 646,
       "verbatim": "  stepBullets(s, dt)"
     },
     "claim": "PLAY (ALWELG:869-878) runs MOVCUR, FIREPC, PROSUZ, MOVNYM, MOVINV, MOVCHA, FIREIC, COLLIS, PROEXP, ANALYZ. Our stepPlaying (sim.ts:630-644) runs stepPlayer, stepFiring, stepZap, stepBullets, stepEnemies, stepEnemyFire, stepEnemyBullets, resolve*. The first three slots match exactly (cursor, player fire, superzapper). After that: (a) we move player charges (stepBullets, line 633) BEFORE enemies; the arcade moves ALL charges (player and enemy, one MOVCHA loop) AFTER MOVINV, so an invader is at its new position when the bullet advances through it; (b) the arcade fires enemy charges (FIREIC) AFTER MOVCHA, so a newly launched enemy bolt sits still for its birth frame; we call stepEnemyFire then stepEnemyBullets, so our new bolt already moves one step on the frame it is born; (c) the arcade has no spawn step here at all — MOVNYM occupies that slot (see W-002).",
@@ -185,7 +185,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 389,
+      "line": 402,
       "verbatim": "    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl"
     },
     "claim": "JKITST (1980-1993) tests INVAC1 for IFPL — the INVMOT ($80) bit clear, i.e. the invader is on its lines and NOT jumping — before it will compare INVAL1/INVAL2 against CURSL1/CURSL2 and kill the cursor. A jumping invader passing over the player's lane does not kill. Our resolvePlayerHits excludes flippers with `e.flipping` (sim.ts:390) for exactly this reason.",
@@ -414,7 +414,8 @@
     "reasoning": "This is a correctness inversion, not a tuning error, and it inverts the skill: in the arcade you must time your shot for the moment the fuseball is crossing between lanes; in ours you must wait for it to settle. It also makes our rim fuseball killable where the arcade's cannot be touched at all. [REFUTATION] Re-opened ALWELG.MAC. COLCHK's fuse branch (2964-2979) requires exactly the three things claimed: INVAY != CURSY (2969-2970, 'FUSE AT TOP?' — an IFNE on the not-equal branch), matching base line (2971-2973), and INVAL2 negative (2974-2976, IFMI before JSR INCFS2, the kill routine). Cross-checked the two writers of INVAL2: JUMPSD (2013-2034) sets it to $81 or $87 (both bit7=1, negative) the instant a lateral jump STARTS; JJUMPM (the jump-processing routine, lines ~1924-1928) sets it to $20 (bit7=0, positive) the instant the fuse LANDS on a line, with the verbatim comment 'MAKE IT INVINCIBLE' at 1928. So mid-jump=negative=vulnerable, landed=positive=invincible — exactly inverted from our code. Read fuseball.ts and sim.ts directly: the code's own comments assert 'killable by a bullet only in its on-lane vulnerable phase... invulnerable while rolling the rim' (fuseball.ts:19-23, state.ts:72-75) and sim.ts:316 skips the bullet hit when NOT vulnerable — the documented and implemented model is the precise opposite of the ROM. Not a unit or macro-decode artifact; a genuine correctness inversion. Holds.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "fixed_in": "tp1-3"
   },
   {
     "id": "W-023",
@@ -427,7 +428,7 @@
     },
     "ours": {
       "file": "src/core/enemies/fuseball.ts",
-      "line": 38,
+      "line": 47,
       "verbatim": "      const dir = laneStepToward(tube, e.lane, playerLane)"
     },
     "claim": "The fuseball's chase behaviour is controlled by WFUSCH (D7 = chase at the top, D6 = chase on the tube, ALCOMN.MAC:786) and comes from TWFUSC (686-690). TWFUSC's FIRST record starts at wave 17, and the table ends in TE — so for every wave below 17, CONTOUR's EOT path (442) yields 0 and WFUSCH = 0, meaning NEITHER chase bit is set. JFUSEUP/MAYBLR (2121-2165) then always take the LEFRIT branch, which chooses the rotation direction from RANDOM (2171-2178). Fuseballs first appear at wave 11 (W-036), so for their entire early-game life they wander. Even from wave 17 the chase is conditional: TR alternates 0/$40 across waves 17-32, and MAYBLR only chases on an EVEN invader index (2157-2159). Our fuseball ALWAYS steps toward the player's lane.",
@@ -447,7 +448,7 @@
     },
     "ours": {
       "file": "src/core/enemies/fuseball.ts",
-      "line": 30,
+      "line": 38,
       "verbatim": "  e.depth = Math.min(1, e.depth + params.fuseballSpeed * dt)"
     },
     "claim": "JFUSEUP (2105-2130): if there are nymphs left AND CURWAV < 17 ('EARLY WAVE?'), the fuseball's climb is capped at Y = $20 (depth 0.929) instead of CURSY — reaching it triggers a lateral move (LEFRIT/FUCHPL) rather than an arrival. Only when the nymph queue is empty does it 'HEAD FOR THE TOP' (2118). It also reverses at the BOTTOM of its range ($80, 2132-2143), so it yo-yos. Our fuseball climbs monotonically to depth 1 and grabs.",
@@ -507,7 +508,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 394,
+      "line": 407,
       "verbatim": "  const killer = grabber ?? s.enemies.find((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)"
     },
     "claim": "JPULMO's kill test (1802-1817) requires PULSON to be positive (pulse on) AND INVAY < PULPOT AND both cursor legs to match the pulsar's legs. PULPOT is $A0 for waves 1-64 and $C0 for 65+ (WPULPOT, 606-609) — $A0 is depth 0.357 in our convention. So a pulsing pulsar deeper than 0.357 (i.e. in the far third of the well) does NOT kill. Our resolvePlayerHits kills whenever a pulsing pulsar shares the player's lane, at ANY depth, including one that has just hatched at the far end.",
@@ -696,7 +697,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 558,
+      "line": 571,
       "verbatim": "  s.spikes = new Array(s.tube.laneCount).fill(0)"
     },
     "claim": "TELIHI is a TZANDF table (indexed by (wave-1) mod 16) giving NWTELI, the INITIAL height of every enemy line for the new wave. INIENE (303-313) writes that one value into LINEY for all NLINES=16 lines. The bytes are 0, 0, 0, $E0, $D8, $D4, $D0, $C8, $C0, $B8, $B0, $A8, $A0, $A0, $A0, $A8 — so waves 1-3 start clean, and from wave 4 EVERY lane begins with a spike, growing from depth ($F0-$E0)/224 = 0.071 at wave 4 to ($F0-$A0)/224 = 0.357 by wave 13. We reset every lane to zero on every level (advanceLevel, sim.ts:558) and grow spikes only from spikers.",
@@ -733,7 +734,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 176,
+      "line": 186,
       "verbatim": "        s.spikes[sp.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(s.spikes[sp.lane], sp.depth))"
     },
     "claim": "JSTRAI (2214-2221) writes the spiker's own INVAY straight into LINEY whenever it is higher than the current line height — the spike IS the spiker's high-water mark, with no cap other than the spiker's own $20 turnaround (W-038). So a fully grown spike reaches depth 0.929, essentially the rim. We clamp the stored spike height to SPIKE_MAX_DEPTH = 0.75 (rules.ts:28) even though we already turn the spiker around at 0.929 — so the last 0.18 of the spiker's climb lays no spike at all.",
@@ -760,7 +761,8 @@
     "reasoning": "The polarity is inverted. The arcade's spiker spreads its spikes across the well (which is why late levels end up with a spike on nearly every lane); ours piles them all onto one lane, leaving the rest of the well clean and the warp trivially dodgeable. One comparison operator, but it changes the shape of every board. [REFUTATION] ASTRAL (ALWELG.MAC:2252-2291) confirmed: cited line 2272 verbatim 'IFCS ;NEEDIEST LINE SO FAR?' is exact. Traced the polarity precisely: TEMP4 starts at 0 (running max), loop reads LINEY[Y] (or forces $FF if LINEY==0, i.e. a dead/vacant line), CMP TEMP4, IFCS (A>=TEMP4) updates TEMP4:=A and TEMP0:=Y -- so the routine keeps walking toward and settling on the line with the numerically LARGEST LINEY. Independently confirmed (via JSTRAI, same file) that LINEY is inversely related to spike height: it's set from INVAY, and lower INVAY = closer to rim = taller spike, so a small LINEY = tall spike and a large LINEY (up to the explicit $FF dead-line sentinel) = short or absent spike. Therefore ASTRAL provably biases toward the shortest/emptiest lane, exactly as claimed, and a dead lane always wins over any live spike. Also confirmed ASTRAL is invoked specifically when the spiker bottoms out at the far end (CMP I,0F2 / IFCS 'MIN HEIGHT?' immediately preceding the JSR ASTRAL in JSTRAI), matching the title's 'bottoms out' framing. Our sim.ts:169 verbatim matches ('if (s.spikes[i] > tallest)...') -- confirmed opposite polarity, plus the random-fallback-only-when-zero-spikes-exist behavior (sim.ts:171-173) which is also a narrower trigger than the ROM's true random-walk-every-time. Holds cleanly.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "fixed_in": "tp1-3"
   },
   {
     "id": "W-041",
@@ -790,7 +792,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 476,
+      "line": 489,
       "verbatim": "    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')"
     },
     "claim": "KILENE's EXIKIL (3562-3566) takes the first live invader it finds, CLEARS the INVCAR bits in its INVAC2, and then explodes it — the carrier bit is stripped precisely so that the kill does not split it. So the arcade's zap DOES destroy tankers; it just denies you the cargo. Our first-zap cadence and our kill-count both filter tankers out (`e.kind !== 'tanker'`, sim.ts:476 and 513), so a tanker survives a full superzap.",
@@ -867,7 +869,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 287,
+      "line": 297,
       "verbatim": "const HIT_DEPTH = 0.06"
     },
     "claim": "COLCHK compares |charge Y - invader Y| against ENSIZE indexed by the invader's TYPE (2963-2964). ENSIZE for the fuseball is set literally to (PCVELO+3)/2 = 6 (545-546). For flippers, tankers and pulsars it is computed by TIMES8 (570-577) as ((255 - hi) + 13) >> 1 where hi is the high byte of speed*8 — which evaluates to 7 at waves 1-16 and 8 at waves 33+. In our depth units (224 along-units = depth 1.0) that is 0.031-0.036 for a flipper and 0.027 for a fuseball. Our HIT_DEPTH is 0.06 (13.4 units, ~1.9x too generous) and our FUSEBALL_HIT_DEPTH is 0.09 (20 units, ~3.3x too generous). Our comment at sim.ts:288-291 asserts the ROM's fuseball tolerance is WIDER than the default; the source shows it is NARROWER (6 vs 7).",
@@ -887,7 +889,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 338,
+      "line": 351,
       "verbatim": "      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)"
     },
     "claim": "LIFECT (2589-2626) runs from MOVCHA on every frame a player charge is at or past a spike tip: it SLOWS the charge (PCVELO - 4 = 5 units/frame, 2542-2545), sets LINEY to the charge's CURRENT Y — cutting the spike down to exactly where the bullet is — increments the charge's CHARCO counter, awards 1 point (2609-2615), and deactivates the charge once CHARCO reaches 2 (2618-2624). So one shot eats ~2 frames' worth (~10 units, ~0.045 depth) of spike and scores ~2 points, and the spike visibly recedes ahead of the bullet. Ours removes a flat SPIKE_SHORTEN = 0.08 depth, kills the bullet instantly, and awards SCORE_SPIKE_SEGMENT = 3.",

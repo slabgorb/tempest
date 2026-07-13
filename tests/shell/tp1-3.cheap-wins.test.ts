@@ -202,7 +202,11 @@ describe('AC8 / DA-020 — the invented pulsar colour-strobe is dropped (PULPIC,
     expect(call, 'render.ts must still call pulsarColor').not.toBeNull()
     const arg = call![1]
     expect(arg).toMatch(/pulsing/) // it is still driven by the pulse state...
-    expect(arg).not.toMatch(/beat|sin|renderTime|Math\./) // ...and by nothing else
+    // ...and by nothing else. NOTE: `sin` cannot be a bare alternative here — "pulSINg"
+    // contains it, so `/pulsing/` and `/sin/` would be mutually unsatisfiable and no
+    // argument could ever pass both. Match the CALL form instead: `\bsin\(` catches
+    // `Math.sin(` (the `.` is a word boundary) but not the substring inside the state.
+    expect(arg).not.toMatch(/beat|renderTime|Math\.|\bsin\(/)
   })
 
   it('no `beat > 0.5` colour gate survives anywhere in render.ts', () => {

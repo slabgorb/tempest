@@ -10,7 +10,7 @@ import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
-  playerBulletColor, playerClawGlyph,
+  playerBulletColor, playerClawGlyph, lifeIconGlyph,
   type Glyph, type GlyphColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
@@ -355,12 +355,15 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
       break
     }
     case 'pulsar': {
-      // Zig-zag bar whose jaggedness + colour strobe together while pulsing.
+      // Zig-zag bar whose jaggedness animates while pulsing (PULTAB). The COLOUR does
+      // not: PULPIC (ALDISP.MAC:861-867) is a plain two-state toggle on the sign of
+      // PULSON — white for the whole pulse window, turquoise otherwise. `beat` drives
+      // only the glow, which has no ROM counterpart; it must not reach the colour.
       const beat = e.pulsing ? 0.5 + 0.5 * Math.sin(renderTime * 18) : 0
       const variant = e.pulsing
         ? pulsarVariant(Math.floor((0.5 + 0.5 * Math.sin(renderTime * 12)) * 0xff))
         : 4 // flat bar when dormant
-      const color = pulsarColor(e.pulsing && beat > 0.5)
+      const color = pulsarColor(e.pulsing)
       strokeGlyph(ctx, pulsarBar(variant), p.x, p.y, r / 4, 0, e.pulsing ? 22 + beat * 18 : 12, color)
       if (e.pulsing) {
         // Electrify the whole lane as a warning (boundary-safe quad).
@@ -457,7 +460,7 @@ function drawParticles(ctx: CanvasRenderingContext2D, fx: Fx): void {
 // that doubles in size with a two-tier brightness; the player splat is a
 // concentric jagged star that grows/shrinks while its colour cycles.
 const ENEMY_BURST_BASE_LEN = 3 // spoke length at scale 1
-const ENEMY_BURST_COLOR = '#ffe66b'
+const ENEMY_BURST_COLOR = '#fff' // EXPCOL=WHITE (ALCOMN.MAC:366); EXPL1-4 each open `CSTAT WHITE`
 
 function drawEnemyBurst(ctx: CanvasRenderingContext2D, ex: EnemyBurst): void {
   const len = ENEMY_BURST_BASE_LEN * ex.scale
@@ -515,37 +518,17 @@ function drawExplosions(ctx: CanvasRenderingContext2D, fx: Fx): void {
   ctx.shadowBlur = 0
 }
 
-// A compact Claw glyph for the lives HUD and framing screens — the same
-// chevron-with-crossbar silhouette the player ship and warp-dive Claw use,
-// shrunk to an icon. Drawn around (cx, cy) in whatever space the caller is in.
+// The lives-HUD claw: the ROM's own LIFE1 picture (V-016), not the hand-drawn
+// chevron-with-crossbar we used to stroke here — and not the invented white apex
+// dot either, which no ROM picture has. The geometry is pure and lives in glyphs.ts;
+// this is only its canvas consumer. LIFE1 spans 8 units wide, so `size` is the icon's
+// width; the chain hangs below its origin, so lift it half its height to sit centred
+// on (cx, cy). Colour comes from the glyph itself (`CSTAT YELLOW`).
 function drawClawIcon(
-  ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string,
+  ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number,
 ): void {
-  const w = size
-  const h = size * 0.85
-  const lx = cx - w / 2
-  const rx = cx + w / 2
-  const apexY = cy - h / 2
-  const baseY = cy + h / 2
-  ctx.strokeStyle = color
-  ctx.shadowColor = color
-  ctx.shadowBlur = 10
-  ctx.lineWidth = 2
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  // Two legs meeting at the muzzle apex.
-  ctx.beginPath()
-  ctx.moveTo(lx, baseY); ctx.lineTo(cx, apexY); ctx.lineTo(rx, baseY)
-  ctx.stroke()
-  // Cross-brace body.
-  ctx.beginPath()
-  ctx.moveTo(lx + w * 0.2, baseY - h * 0.32)
-  ctx.lineTo(rx - w * 0.2, baseY - h * 0.32)
-  ctx.stroke()
-  // Bright muzzle tip.
-  ctx.fillStyle = '#fff'
-  ctx.shadowBlur = 8
-  ctx.beginPath(); ctx.arc(cx, apexY, 1.6, 0, Math.PI * 2); ctx.fill()
+  const scale = size / 8
+  strokeGlyph(ctx, lifeIconGlyph(), cx, cy - scale * 1.5, scale, 0, 10)
 }
 
 // Draw stroke-vector text in the authentic VGMSGA font (@arcade/shared/font, via
@@ -795,7 +778,7 @@ function drawHud(
   vecText(ctx, 'HI-SCORE', W / 2, 50, 13, LABEL_COLOR, 5, 'center', 'top')
   // Remaining lives as little Claw-icon glyphs (the player ship in miniature).
   for (let i = 0; i < s.lives; i++) {
-    drawClawIcon(ctx, 36 + i * 26, H - 30, 18, CLAW_COLOR)
+    drawClawIcon(ctx, 36 + i * 26, H - 30, 18)
   }
 
   if (s.mode === 'gameover') {

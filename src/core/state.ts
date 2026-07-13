@@ -69,9 +69,11 @@ export interface Spiker extends EnemyBase {
 export interface Fuseball extends EnemyBase {
   kind: 'fuseball'
   jitterTimer: number   // seconds until next erratic lane hop
-  // Authentic vulnerable bit (rev-3 L02cc bit7, story 6-9): a fuseball is killable
-  // by a bullet ONLY while `vulnerable` (settled on a lane), NOT while rolling the
-  // rim. It flips each time the fuseball rolls to a new lane (see stepFuseball).
+  // Authentic vulnerable bit — the ROM's INVAL2 sign (W-022). A fuseball is killable
+  // by a bullet ONLY while `vulnerable`, which means ROLLING BETWEEN LANES; once it
+  // lands on a lane it is bulletproof (";MAKE IT INVINCIBLE"), and at the rim it is
+  // bulletproof outright. A state, not a toggle — set on every roll, cleared on every
+  // landing (see stepFuseball; the rim gate is in sim.ts).
   vulnerable: boolean
 }
 

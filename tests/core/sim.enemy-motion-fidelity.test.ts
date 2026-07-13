@@ -132,12 +132,18 @@ describe('spiker far-end conversion when nothing is pending (story 6-15)', () =>
   })
 
   it('still hops and stays a spiker while spike-enemies are pending (6-9 behaviour preserved)', () => {
-    // The contrast case: with a pending budget the far-end behaviour is the 6-9
-    // hop — relocate to the tallest-spike lane, remain a spiker. This already
-    // passes; it guards the conversion above from over-firing.
+    // The contrast case: with a pending budget the far-end behaviour is the hop —
+    // relocate, remain a spiker. It guards the conversion above from over-firing.
+    //
+    // RE-SEATED for tp1-3 (W-040): the spiker now hops to the NEEDIEST lane, not the
+    // tallest, so a lone 0.5 spike at lane 10 is the LEAST attractive lane on the board
+    // and any of the 15 empty ones beats it. The fixture moves into the corrected rule
+    // — a tall uniform field with one short lane — which makes lane 10 unambiguous
+    // again. Only the fixture moved; what this test guards is unchanged.
     let s = isolated(11, /* spawnRemaining */ 5)
     s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.02, direction: -1 }]
-    s.spikes[10] = 0.5 // the unambiguous tallest spike → the hop target
+    s.spikes.fill(0.6)
+    s.spikes[10] = 0.1 // the unambiguous NEEDIEST (shortest) spike → the hop target
 
     for (let i = 0; i < 40; i++) s = stepGame(s, NEUTRAL, DT)
 
