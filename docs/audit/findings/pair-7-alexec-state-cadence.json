@@ -85,8 +85,9 @@
       "verbatim": "export const START_LIVES = 3"
     },
     "claim": "NEWGAM reads LVSGAM at the start of every game (ALEXEC.MAC:294-295, `LDA LVSGAM ;GET # LIVES` / `STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)`) — a RAM cell the cabinet operator sets via DIP-switch-derived options, so \"lives per game\" is a configurable cabinet setting, not a compile-time constant. `START_LIVES = 3` (rules.ts:15) is a fixed literal with no equivalent options/settings mechanism anywhere in state.ts or rules.ts.",
-    "reasoning": "A real divergence, not cosmetic: the original lets an arcade operator dial starting lives up or down (commonly 2/3/4/5 across cabinets); a browser build has no operator role and no coin door, so there is nothing to configure it FOR. Recommend wont_fix rather than accept, because this is a deliberate removal of a real feature (operator configurability) rather than an equivalent restatement of it.",
-    "recommendation": "wont_fix"
+    "reasoning": "A real divergence, not cosmetic: the original lets an arcade operator dial starting lives up or down (commonly 2/3/4/5 across cabinets); a browser build has no operator role and no coin door, so there is nothing to configure it FOR. Recommend wont_fix rather than accept, because this is a deliberate removal of a real feature (operator configurability) rather than an equivalent restatement of it. [REFUTATION] All three citations verified verbatim: ALCOMN.MAC:785 'LVSGAM: .BLKB 1 ;LIVES/GAME' exact match; ALEXEC.MAC:294-295 'LDA LVSGAM ;GET # LIVES' / 'STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)' exact match inside NEWGAM. Traced LVSGAM's producer: ALLANG.MAC INILIT (271-278) decodes OPTIN2 bits through a 4-entry table GAMLVS (line 290: '.BYTE 3,4,5,2') into LVSGAM — genuinely a DIP-switch-derived RAM cell, not a constant, confirming both the 'operator-configurable' framing and the '2/3/4/5' value set cited in the reasoning. Checked our side: rules.ts:15 'export const START_LIVES = 3' is a bare literal; grepped rules.ts/state.ts for any options/settings surface — none exists. Claim is accurate and the citations are exact.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
   },
   {
     "id": "P7-006",
