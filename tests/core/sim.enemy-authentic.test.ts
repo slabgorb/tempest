@@ -200,13 +200,19 @@ describe('authentic spiker spike & far-end hop (story 6-9)', () => {
     }
   })
 
-  it('hops to the tallest-spike lane when it bottoms out at the far end', () => {
-    // ROM: at the far end the spiker relocates to a new lane, preferring the one
-    // with the tallest standing spike. Today it just reverses on its own lane, so
-    // it never leaves lane 5 and this fails.
+  // RE-SEATED by tp1-3 (W-040, 2026-07-13). This test used to assert the spiker hops
+  // to the TALLEST standing spike — which is what our code did, and it is backwards.
+  // ASTRAL (ALWELG.MAC:2260-2291) keeps the LARGEST LINEY, and LINEY is depth-from-the-
+  // rim, so the largest is the SHORTEST spike; a dead line scores 0FF ("WORST CASE") and
+  // beats every spike outright. Theurer's own comment on the compare reads
+  // `IFCS ;NEEDIEST LINE SO FAR?`. The story's intent — "it relocates at the far end" —
+  // is unchanged; only the lane it chooses moves. Full coverage of the new rule (empty
+  // lane wins, tallest is NOT chosen) lives in tests/core/tp1-3.cheap-wins.test.ts.
+  it('hops to the NEEDIEST lane — the shortest spike — when it bottoms out at the far end', () => {
     let s = isolated(11)
     s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.02, direction: -1 }] // about to bottom out
-    s.spikes[10] = 0.5 // the unambiguous tallest spike → the hop target
+    s.spikes = new Array(s.tube.laneCount).fill(0.6) // a tall, uniform field...
+    s.spikes[10] = 0.1 // ...with one unambiguously neediest lane → the hop target
     for (let i = 0; i < 60; i++) s = stepGame(s, NEUTRAL, DT)
     const spiker = s.enemies.find((e) => e.kind === 'spiker')
     expect(spiker, 'the spiker survives the hop').toBeDefined()
@@ -214,13 +220,18 @@ describe('authentic spiker spike & far-end hop (story 6-9)', () => {
   })
 })
 
-// ── AC: fuseball killable ONLY in its on-lane vulnerable phase ───────────────
+// ── AC: the fuseball is killable ONLY while ROLLING between lanes ────────────
 
-describe('authentic fuseball vulnerability (story 6-9)', () => {
-  // The collision setup: a stationary fuseball (jitterTimer parked) sharing the
-  // bullet's lane and depth. One frame of motion drifts them < HIT_DEPTH apart,
-  // so geometry resolves a hit — what changes is whether the vulnerable bit
-  // ALLOWS the kill. `vulnerable` is the test's contract for the ROM L02cc bit7.
+describe('authentic fuseball vulnerability (story 6-9; semantics corrected by tp1-3 / W-022)', () => {
+  // RE-SEATED by tp1-3 (W-022, 2026-07-13). The MECHANISM these two tests pin — the
+  // `vulnerable` bit gates the kill — is correct and unchanged. Their LABELS were
+  // backwards: they called `vulnerable: false` "rolling the rim" and `true` "on-lane",
+  // which is the exact inverse of the ROM. COLCHK (ALWELG.MAC:2965-2979) kills a fuse
+  // only while INVAL2 is NEGATIVE, and INVAL2 goes negative when a lateral jump STARTS
+  // ($81/$87) and positive the instant the fuse LANDS on a line ($20, under the comment
+  // ";MAKE IT INVINCIBLE", ALWELG.MAC:1928). So: rolling = killable, parked on a lane =
+  // invincible, at the rim = invincible. Only the prose moves here; what SETS the bit,
+  // and the rim gate we never implemented, are covered in tests/core/tp1-3.cheap-wins.test.ts.
   function boardWith(vulnerable: boolean): GameState {
     const s = isolated(5)
     s.enemies = [{ kind: 'fuseball', lane: 6, depth: 0.5, jitterTimer: 999, vulnerable }]
@@ -228,14 +239,14 @@ describe('authentic fuseball vulnerability (story 6-9)', () => {
     return s
   }
 
-  it('survives a point-blank shot while NOT in its vulnerable phase (rolling the rim)', () => {
+  it('survives a point-blank shot while PARKED on a lane (invincible — INVAL2 positive)', () => {
     const out = stepGame(boardWith(false), NEUTRAL, DT)
     const fuseball = out.enemies.find((e) => e.kind === 'fuseball')
-    expect(fuseball, 'an invulnerable fuseball is not destroyed by a bullet').toBeDefined()
+    expect(fuseball, 'a fuseball parked on a lane is not destroyed by a bullet').toBeDefined()
     expect(out.score).toBe(0) // no kill ⇒ no points
   })
 
-  it('is destroyed by that same shot once it is in its vulnerable phase', () => {
+  it('is destroyed by that same shot while ROLLING between lanes (INVAL2 negative)', () => {
     const out = stepGame(boardWith(true), NEUTRAL, DT)
     expect(out.enemies.some((e) => e.kind === 'fuseball')).toBe(false)
     expect(out.score).toBeGreaterThan(0) // the kill scored

@@ -91,7 +91,8 @@
     "reasoning": "The authentic burst is a stark white flash against the colored well; a gold tint is a purely cosmetic choice with no source backing and is trivial to correct. [REFUTATION] Re-opened ALVROM.MAC:344-376: EXPL1 (350), EXPL2 (358), EXPL3 (366), EXPL4 (374) all read 'CSTAT WHITE' verbatim, matching ALCOMN.MAC:366 EXPCOL=WHITE. Checked whether CSTAT WHITE could be dynamically recolored per-wave the way PSHCTR is (WHITE=0 is also just a color-RAM index, ALVROM.MAC:159) -- traced INICOL (ALDISP.MAC:2353-2378), which does rewrite ALL 16 color-RAM slots per wave-group from COLTAB (line 2405+). But every row of COLTAB has its slot-0 byte as ZWHITE (lines 2406, 2414, 2422, 2430, 2441, 2449 -- 'EXPLOSIONS(0)' per the line-2406 comment) across every wave-group in the table, so despite the indirection the explosion color is white in every wave, not just incidentally. Checked our side: render.ts:460 ENEMY_BURST_COLOR = '#ffe66b', used to stroke/glow every EnemyBurst (confirmed by grep). No dead-module or unit issue. Holds -- genuinely a cosmetic-only gold tint against an always-white ROM burst.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-3"
   },
   {
     "id": "DA-006",
@@ -111,7 +112,8 @@
     "reasoning": "A concrete, source-verified off-by-one: the authentic burst brightens after its very first (smallest) frame, ours holds it dim for twice as long, softening the flash's punch for an extra frame. [REFUTATION] Re-opened ALVROM.MAC:344-376. CB (SPOK16's intensity operand) = 07 set at line 347, consumed by EXPL1's SPOK16 (line 352); CB is reset to 0E at line 356 before EXPL2 (line 360) and stays 0E for EXPL3 (364/368) and EXPL4 (372/375) -- so only the very first, smallest-scale frame (CM=1) is dim; frames 1-3 (CM=2,4,8) are uniformly 'full intensity' per the source's own comments. Checked our side: fx.ts:225-233 -- frame is derived from progress (0..3, matching CM steps 1,2,4,8 per the adjacent comment 'scale steps 1,2,4,8'), and `ex.brightness = frame < 2 ? ENEMY_DIM : ENEMY_BRIGHT` dims frames 0 AND 1. Notably the code's own comment one line above (230: 'brightness 7 then 14') describes the CORRECT one-frame-only dim behavior, but the code on the next line contradicts its own comment -- strong independent corroboration this is a real off-by-one bug, not an interpretation artifact. No unit/frame-rate issue (this is an ordinal stage count, not a timing claim). Holds.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-3"
   },
   {
     "id": "DA-007",
@@ -163,7 +165,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 238,
+      "line": 239,
       "verbatim": "        ex.color = SPLAT_CYCLE[ex.cycle % SPLAT_CYCLE.length]"
     },
     "claim": "The SPLAT picture (ALVROM.MAC:810-849) alternates `CSTAT PDIWHI` / `CSTAT PDIRED` / `CSTAT PDIYEL` every 2 vectors around the star, so white, red and yellow segments are all on screen AT ONCE, in a fixed spatial pattern. ALTCOL (ALDISP.MAC:1084-1094) seeds those 3 color-RAM slots to white/yellow/red once, and ROTCOL (ALDISP.MAC:1098-1110) 3-way-ROTATES the slot contents every subsequent frame — so the pattern of which star segment is which color visibly spins over time, but a red segment and a white segment always coexist. Our `drawPlayerSplat` (render.ts:495-507) strokes the ENTIRE jagged star with one `ctx.strokeStyle = ex.color`, and `update()` (fx.ts:236-239) advances that single color through `SPLAT_CYCLE` (white→red→yellow) one whole-object flash per frame.",
@@ -203,7 +205,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 236,
+      "line": 237,
       "verbatim": "        ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)"
     },
     "claim": "TSPTIM's picture order (ALDISP.MAC:1022-1030) plays SPLAT6 (the LARGEST picture, `SCAL 2,40`, line 803) first as the \"CHARGE PLAYER EXPLOSION START\", steps down through SPLAT5/4/3/2 to SPLAT1 (the smallest, `SCAL 0,0`, line 793) at the sequence's middle, then climbs back up through SPLAT3/SPLAT5 to SPLAT6 again at the \"FINISH\". So the authentic splat begins already at its biggest size, collapses toward a point, then re-expands to full size. Our `ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)` is the opposite arc: it starts at 0, grows to a single peak at the midpoint, and shrinks back to 0.",
@@ -345,7 +347,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 261,
+      "line": 271,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",
@@ -372,7 +374,8 @@
     "reasoning": "A fabricated flicker not evidenced by this ROM section: the authentic cue is a steady white for the whole active pulse (a clean binary \"it's live\" signal), while ours flickers white/cyan throughout, diluting that signal. [REFUTATION] Re-opened ALDISP.MAC:861-867 (PULPIC). Decoded exactly: default LDA I,TURQOI ('PULSE OFF'), then LDY PULSON; IFPL -> LDA I,WHITE ('PULSE ON'); STA COLOR. PULSON is defined at ALCOMN.MAC:775 as 'PULSE STATUS (MINUS=OFF)', and ALWELG.MAC:1537-1542 shows it is a bouncing counter incremented by PULTIM every invader-move frame, ranging roughly -27..+15 (ALWELG.MAC:1558-1568) — i.e. the on/off cadence itself is a slow multi-frame triangle wave, but PULPIC's color decision is a single sign check with no secondary modulation: white for the WHOLE window PULSON>=0, turquoise otherwise. Checked our side: src/core/enemies/pulsar.ts sets e.pulsing on/off for PULSE_DURATION/pulseInterval (the equivalent of the PULSON sign), and render.ts:359-363 computes `beat = 0.5+0.5*sin(renderTime*18)` and gates color on `e.pulsing && beat>0.5` — an additional strobe layered on top of the on-phase that has no ROM counterpart in PULPIC's color logic. Checked macro/governance: no other writer of `color` for the pulsar bar overrides this. Not a unit-trap (renderTime is seconds, PULSON is frames, but the finding's claim is structural — 'binary vs strobing', not about matching periods) and not self-refuting. Holds. [CORRECTION] None — the finding correctly scopes itself to color logic only, not the legitimately-animated PULTAB zig-zag shape.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-3"
   },
   {
     "id": "DA-021",

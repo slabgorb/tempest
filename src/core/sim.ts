@@ -161,15 +161,25 @@ function stepEnemies(s: GameState, dt: number): void {
             moved.push(makeEnemy('tanker', sp.lane, 0, params, 'flipper'))
             break
           }
-          // Otherwise hop (story 6-9): relocate to the tallest-standing-spike lane,
-          // or a random lane when none stand yet.
-          let target = -1
-          let tallest = 0
-          for (let i = 0; i < s.spikes.length; i++) {
-            if (s.spikes[i] > tallest) { tallest = s.spikes[i]; target = i }
-          }
-          if (target === -1) {
-            target = nextInt(s.rng, s.tube.laneCount)
+          // Otherwise hop (W-040): ASTRAL (ALWELG.MAC:2253-2291) sends the spiker to the
+          // NEEDIEST line, not the tallest. It scores each line by LINEY — depth from the
+          // rim, so a SHORTER spike scores HIGHER — and a dead line takes `LDA I,0FF`,
+          // the "WORST CASE", which beats every standing spike outright. Our `spikes[i]`
+          // is spike HEIGHT, LINEY's inverse, so the neediest line is simply the smallest
+          // height, and an empty lane (0) is already the minimum. This one comparison is
+          // why the arcade's spikes spread across the well while ours piled into one lane.
+          //
+          // The scan starts at a RANDOM line (`LDA RANDO2`) and walks down, and the
+          // compare is `IFCS` (>=), so an equal score displaces the incumbent — the
+          // random start IS the tie-break. It carries real weight: on an empty well
+          // every lane ties at 0, and a fixed scan would pile every hop into lane 0.
+          const n = s.tube.laneCount
+          const start = nextInt(s.rng, n)
+          let target = start
+          let neediest = Infinity
+          for (let k = 0; k < n; k++) {
+            const i = (((start - k) % n) + n) % n
+            if (s.spikes[i] <= neediest) { neediest = s.spikes[i]; target = i }
           }
           sp.lane = target
         }
@@ -311,9 +321,12 @@ function resolveBulletHits(s: GameState): void {
     for (let ei = 0; ei < s.enemies.length; ei++) {
       if (deadEnemies.has(ei)) continue
       const e = s.enemies[ei]
-      // A fuseball is bullet-proof while rolling the rim — killable by a bullet
-      // only in its on-lane vulnerable phase (story 6-9). Other kinds always hit.
-      if (e.kind === 'fuseball' && !e.vulnerable) continue
+      // W-022 / COLCHK (ALWELG.MAC:2965-2979) gates the fuseball kill twice. It is
+      // killable ONLY while rolling between lanes (`vulnerable`; see fuseball.ts) —
+      // parked on a lane it is bulletproof — and `CMP CURSY / IFNE ;FUSE AT TOP?`
+      // refuses the kill outright once it reaches the rim, however it is moving. A
+      // fuseball on the rim cannot be shot off it. Other kinds always hit.
+      if (e.kind === 'fuseball' && (!e.vulnerable || e.depth >= 1)) continue
       const tol = e.kind === 'fuseball' ? FUSEBALL_HIT_DEPTH : HIT_DEPTH
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= tol) {
         deadBullets.add(bi)
@@ -675,9 +688,11 @@ export function demoInput(s: GameState): Input {
     if (target === null || e.depth > target.depth) target = e
   }
   const spin = target === null ? 0 : laneOffset(s.tube, pl, target.lane)
-  // Auto-fire: any enemy OR enemy bolt within DEMO_FIRE_LANES lanes (wrap-aware).
+  // Auto-fire: any enemy OR enemy bolt STRICTLY inside DEMO_FIRE_LANES (wrap-aware).
+  // FIREPC's `CMP I,2 / IFCC` is branch-if-carry-clear — strictly less than, so a
+  // target exactly 2 lanes away does not draw fire (ALWELG.MAC:2648).
   const within = (lane: number): boolean =>
-    Math.abs(laneOffset(s.tube, pl, lane)) <= DEMO_FIRE_LANES
+    Math.abs(laneOffset(s.tube, pl, lane)) < DEMO_FIRE_LANES
   const fire = s.enemies.some((e) => within(e.lane)) || s.enemyBullets.some((b) => within(b.lane))
   return { spin, fire, zap: false, start: false }
 }

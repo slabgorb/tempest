@@ -104,7 +104,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 223,
+      "line": 233,
       "verbatim": "  const holdoffSeconds = enemyFireHoldoffFrames(s.level) / 60"
     },
     "claim": "TCHARFR's wave-1 record ('\t.BYTE TA,1,20.,80.,-3', ALWELG.MAC:583) is 80 GAME frames, and the ROM's own header two lines up says those frames run at 28 per second (ALWELG.MAC:581) - so an invader's post-shot holdoff at wave 1 is 80/28.44 = 2.81 s, falling to 23/28.44 = 0.81 s by wave 20. sim.ts:223 computes holdoffSeconds = enemyFireHoldoffFrames(level) / 60 = 1.33 s at level 1: enemies refire 2.11x more often than the arcade's, at every level.",
