@@ -116,7 +116,7 @@ export const ZAP_WINDOW_SECOND = 5
 //
 // Initial dive speed: ROM 0x0200 = 2.0 along-units/frame → progress/sec.
 export const WARP_INITIAL_SPEED = (2.0 * ROM_FPS) / WARP_ALONG_SPAN  // 16/63 ≈ 0.254
-// Per-frame ROM acceleration min(level*4, 0x30) + 0x20 is stored in 8.8 fixed point
+// Per-frame ROM acceleration min(wave*4, 0x30) + 0x20 is stored in 8.8 fixed point
 // (along-units/frame²); convert to progress/sec².
 //
 // THIS IS THE SQUARED ONE. An acceleration is per-frame-PER-FRAME, so the base rate
@@ -125,9 +125,19 @@ export const WARP_INITIAL_SPEED = (2.0 * ROM_FPS) / WARP_ALONG_SPAN  // 16/63 �
 // codebase. A rebase that replaces one 60 and leaves the other is wrong by 2.11x and
 // looks entirely plausible; rom-clock.test.ts rejects that case by name.
 //
-// At the real clock the level-1 dive takes ~1.55 s. It used to take ~0.73 s.
-export function warpAccel(level: number): number {
-  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²
+// THE ARGUMENT IS A WAVE, NOT A LEVEL (WD-010, story tp1-23). MOVCUD's per-frame block
+// (ALWELG.MAC:1064-1078) reads `LDA CURWAV / ASL / ASL / CMP I,30 / IFCS / LDA I,30 /
+// ENDIF / CLC / ADC I,20` — min(CURWAV*4, 0x30) + 0x20, applied to CURWAV *itself*.
+// CURWAV is 0-BASED: INIRAT seeds it with zero (ALWELG.MAC:192-193) and the scoreboard
+// adds one to display it (ALSCOR.MAC:296-298). Our GameState.level is the DISPLAYED,
+// 1-based number, so callers must hand us `level - 1`. The parameter is named `wave`
+// precisely so that passing a level reads wrong at the call site: it was named `level`,
+// fed a level, and every dive accelerated one wave early — introduced in story 6-1, fixed in tp1-23.
+//
+// At the real clock the level-1 (wave 0) dive takes ~1.62 s — 46 ROM frames, which is
+// the figure the audit derives independently in pair-11. It used to take ~0.73 s.
+export function warpAccel(wave: number): number {
+  const perFrame8_8 = Math.min(wave * 4, 0x30) + 0x20  // 1/256 along-units / frame²
   return (perFrame8_8 / 256) * (ROM_FPS * ROM_FPS) / WARP_ALONG_SPAN
 }
 // AVOID SPIKES countdown: the Claw holds at the rim for this long before the dive

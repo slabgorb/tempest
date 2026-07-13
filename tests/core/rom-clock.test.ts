@@ -112,12 +112,17 @@ describe('the warp dive — warpAccel carries the base SQUARED (AC5)', () => {
   it('accelerates at the ROM rate — ROM_FPS squared, not ROM_FPS x 60', () => {
     // rules.ts:52 had (perFrame8_8 / 256) * (60 * 60) / 224. BOTH 60s are the bug.
     // This is the single most base-sensitive expression in the codebase.
-    for (const level of [1, 5, 12, 33]) {
-      const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20
+    //
+    // warpAccel takes a 0-based WAVE (post-tp1-23), so wave 1 here == displayed
+    // level 2. These tests pin the ROM_FPS-squared conversion (tp1-1's rebase),
+    // NOT the wave index — that's pinned separately in
+    // tests/core/tp1-23.warp-curwav.test.ts.
+    for (const wave of [1, 5, 12, 33]) {
+      const perFrame8_8 = Math.min(wave * 4, 0x30) + 0x20
       const expected = (perFrame8_8 / 256) * (ROM_FPS * ROM_FPS) / WARP_ALONG_SPAN
-      expect(warpAccel(level)).toBeCloseTo(expected, 12)
+      expect(warpAccel(wave)).toBeCloseTo(expected, 12)
     }
-    expect(warpAccel(1)).toBeCloseTo(32 / 63, 12) // the exact rational
+    expect(warpAccel(1)).toBeCloseTo(32 / 63, 12) // the exact rational, for WAVE 1
   })
 
   it('REJECTS the half-fixed rebase: one 60 replaced, the other left standing', () => {
@@ -130,6 +135,7 @@ describe('the warp dive — warpAccel carries the base SQUARED (AC5)', () => {
   })
 
   it('is 4.45x slower than the 60 Hz value — the squared error, not the linear one', () => {
+    // warpAccel(1) here is WAVE 1 (not level 1) — see the note above.
     const perFrame8_8 = Math.min(1 * 4, 0x30) + 0x20
     const old60 = (perFrame8_8 / 256) * (INVENTED_60 * INVENTED_60) / WARP_ALONG_SPAN
     expect(old60 / warpAccel(1)).toBeCloseTo(4.449, 2)
