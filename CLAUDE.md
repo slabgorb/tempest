@@ -76,6 +76,40 @@ enemy state machine driven by a fixed RNG seed, collision (bullet↔enemy,
 enemy↔player, spike↔player-on-warp), and scoring/spawn/level-transition logic.
 The shell (render/input/audio/loop) is verified by running the game.
 
+## The fidelity audit and its citation gate
+
+`docs/audit/findings/*.json` is the machine-checked half of the primary-source audit.
+Every finding carries two citations: `source` (a byte-exact quote of Theurer's 1981
+assembler) and `ours` (a byte-exact quote of the line in THIS repo that diverges from it).
+`npm test -- citations` re-opens both and compares. A citation that cannot be re-opened is
+not evidence, so **the gate is not optional and must stay green**.
+
+That creates a trap for every story in the `tp1` epic, because fixing a finding
+necessarily makes its own `ours` quote false — the quote describes the bug you just
+removed. Two rules resolve it, and **both are load-bearing**:
+
+1. **Fixed a finding? Mark it `"remediated_by": "<story-id>"`.**
+   The checker then keeps the `ours` citation as HISTORY and stops re-opening it against
+   the working tree. The quote stays as the record of what our code said when it was
+   audited; its line number is deliberately frozen and will drift. That is intended — the
+   durable route back to the change is the field itself, which names the story. The ROM
+   `source` side is still checked, always: that is where the audit's authority lives, and
+   the 1981 source does not change.
+
+2. **Touched a cited file? Run `node tools/audit/reanchor-citations.mjs --write`.**
+   A citation you did not fix, in a file you edited, is still TRUE — it just points at the
+   wrong row now. The tool re-finds each quote and corrects the line. It reports
+   `LOST` for any quote it cannot find, which means either you fixed that line and forgot
+   rule 1, or the citation was already broken. Commit the re-anchored JSON.
+
+Do both **before committing**, or the gate goes red on the next story with a confusing
+"does not match verbatim". `ours` must always name a **tracked file in this repo** — never
+`node_modules/`, whose line numbers move on every re-pin (the checker rejects it outright).
+
+> This convention was invented twice, independently, because it was written down nowhere:
+> tp1-1 shipped `remediated_by` and tp1-3 shipped an identical `fixed_in` in parallel, and
+> they collided on merge. `remediated_by` won. Do not add a third name.
+
 ## Build Roadmap
 
 Built in "waves," each a self-contained slice:

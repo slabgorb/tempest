@@ -94,14 +94,23 @@ describe('AC3 / B-016 — SCORE_SPIKE_SEGMENT is 1 (ALWELG.MAC:2606-2615, "ADD 1
   it('a single bullet-vs-spike hit awards exactly 1 point end-to-end', () => {
     // Behavioural guard: pinning the constant alone would not catch an award path
     // that multiplies it. Shoot a spike, score exactly 1.
-    const s = isolated(4)
+    //
+    // Deliberately NOT tuned to a single frame's worth of bullet travel. The original
+    // fixture stepped once and assumed the bullet crossed a 0.02 gap — true only while
+    // BULLET_SPEED was 2.4. tp1-1's ROM-clock rebase more than halved it (to
+    // (9 * ROM_FPS) / WARP_ALONG_SPAN ≈ 1.143 depth units/sec), so one 1/60 frame now
+    // descends 0.019 and lands at 0.601, missing `b.depth <= h` by a hair. The AWARD was
+    // never wrong; the fixture was silently coupled to the flight time. Step until the
+    // bullet RESOLVES instead, so this pins the award and nothing else.
+    let s = isolated(4)
     s.spikes[2] = 0.6
     s.bullets = [{ lane: 2, depth: 0.62 }]
 
-    const out = stepGame(s, NEUTRAL, DT)
+    for (let i = 0; i < 60 && s.bullets.length > 0; i++) s = stepGame(s, NEUTRAL, DT)
 
-    expect(out.spikes[2]).toBeLessThan(0.6) // the spike was actually trimmed...
-    expect(out.score).toBe(1) // ...and the hit paid exactly one point
+    expect(s.bullets, 'the spike consumes the bullet').toHaveLength(0)
+    expect(s.spikes[2]).toBeLessThan(0.6) // the spike was actually trimmed...
+    expect(s.score).toBe(1) // ...and the hit paid exactly ONE point, not three
   })
 })
 
@@ -207,6 +216,50 @@ describe('AC6 / W-040 — the spiker hops to the NEEDIEST lane (ASTRAL, ALWELG.M
 
     expect(spikerLane(s)).not.toBe(10)
     expect(spikerLane(s)).toBe(3)
+  })
+
+  // ---- ASTRAL's RANDOM SCAN START — the tie-break ---------------------------
+  //
+  // ASTRAL seeds its scan from `LDA RANDO2 ;START AT A RANDOM LINE` (ALWELG.MAC:2258),
+  // walks all 16 lines DOWNWARD, and compares with `IFCS` (>=) — so an EQUAL score
+  // DISPLACES the incumbent. The random start therefore IS the tie-break, and a tie is
+  // the COMMON case, not a corner: on an empty well every lane scores 0. Without it a
+  // fixed scan sends every hop to the SAME lane, trading the tall-lane pile-up for an
+  // index pile-up and calling it fidelity — so W-040's whole promise ("the arcade's
+  // spikes spread across the well") would go undelivered.
+  //
+  // The three tests above each build a UNIQUE minimum, so every one of them passes under
+  // a fixed ascending scan: they cannot see the start at all. These two are what pin it.
+
+  // Step until it actually relocates — never a fixed frame budget. (tp1-1's ROM-clock
+  // rebase halved every speed in the sim; a frame count is not a behaviour.)
+  const hopFrom = (seed: number): number | undefined => {
+    let s = aboutToHop(seed)
+    for (let i = 0; i < 240 && spikerLane(s) === 5; i++) s = stepGame(s, NEUTRAL, DT)
+    return spikerLane(s)
+  }
+
+  it('scatters the hop across the well when every lane ties — the random start IS the tie-break', () => {
+    // `isolated()` leaves every spike at 0, so the board is one big tie. (The spiker
+    // lays a stub on its own lane as it descends, which merely excludes lane 5.)
+    const landed = new Set<number>()
+    for (let seed = 1; seed <= 24; seed++) {
+      const lane = hopFrom(seed)
+      if (lane !== undefined) landed.add(lane)
+    }
+    // A fixed scan — ascending or descending — lands EVERY seed on ONE lane, so this
+    // assertion is exactly the refutation of one. Measured: 13 distinct lanes.
+    expect(
+      landed.size,
+      `an all-tied well must scatter the hop; got [${[...landed].sort((a, b) => a - b)}]`,
+    ).toBeGreaterThan(6)
+  })
+
+  it('but the scatter is SEEDED, not ad-hoc — the same seed always hops to the same lane', () => {
+    // core/ is a pure deterministic sim (CLAUDE.md's hardest rule): the scan start must
+    // come from the RNG carried in GameState, never Math.random. Same seed, same lane.
+    expect(hopFrom(7)).toBe(hopFrom(7))
+    expect(hopFrom(23)).toBe(hopFrom(23))
   })
 })
 

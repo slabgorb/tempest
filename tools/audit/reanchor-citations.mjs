@@ -10,9 +10,11 @@
 //
 //   2. The line was FIXED. We changed what it says, on purpose, because the finding
 //      told us to. No amount of re-anchoring helps: the quoted text is gone. Such a
-//      finding is marked `"fixed_in": "<story-id>"` by hand, which tells the checker to
-//      stop byte-comparing it — the quote stays as the historical record of what our
-//      code said when it was audited. This tool leaves those alone.
+//      finding is marked `"remediated_by": "<story-id>"` by hand, which tells the checker
+//      to stop re-opening its `ours` side at all — the citation stays as the historical
+//      record of what our code said when it was audited, and its line number is
+//      deliberately frozen. This tool leaves those alone: there is nothing to re-anchor
+//      TO, and chasing them would re-couple a closed finding to a live file.
 //
 // Usage:  node tools/audit/reanchor-citations.mjs [--write]
 // Without --write it only reports (dry run).
@@ -44,8 +46,9 @@ for (const name of readdirSync(findingsDir).filter((f) => f.endsWith('.json'))) 
   let dirty = false
 
   for (const f of findings) {
-    // Fixed findings are history — their quote is meant to be stale. Skip.
-    if (!f.ours?.file || f.fixed_in) continue
+    // Remediated findings are history — their quote is MEANT to be stale, and the
+    // checker no longer re-opens them. Skip.
+    if (!f.ours?.file || f.remediated_by) continue
     const lines = linesOf(join(repoRoot, f.ours.file))
     if (lines === null) continue // e.g. a node_modules citation the checker now rejects
 
@@ -60,7 +63,7 @@ for (const name of readdirSync(findingsDir).filter((f) => f.endsWith('.json'))) 
 
     if (hits.length === 0) {
       // The text is gone entirely. Either we fixed this line and forgot to mark it
-      // `fixed_in`, or the citation was already broken. A human has to look.
+      // `remediated_by`, or the citation was already broken. A human has to look.
       console.log(`LOST  ${f.id.padEnd(7)} ${f.ours.file}:${f.ours.line}`)
       console.log(`        quote: ${JSON.stringify(f.ours.verbatim)}`)
       lost++
@@ -79,5 +82,5 @@ for (const name of readdirSync(findingsDir).filter((f) => f.endsWith('.json'))) 
 }
 
 console.log(`\n${ok} already correct, ${moved} re-anchored, ${lost} lost.`)
-if (lost > 0) console.log('LOST citations need a human: fix the quote, or mark the finding `fixed_in`.')
+if (lost > 0) console.log('LOST citations need a human: fix the quote, or mark the finding `remediated_by`.')
 if (moved > 0 && !write) console.log('Dry run — pass --write to apply.')

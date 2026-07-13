@@ -145,7 +145,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 175,
+      "line": 276,
       "verbatim": "  const flipFrames = level >= 33 ? 3 : 4"
     },
     "claim": "JJUMPM (1892-1976) advances the jump angle in INVAL2 by exactly ONE unit (mod 16) per call and ends the jump when the angle reaches CALSAN's final angle, which is the start angle + 8 — so a jump is 8 steps. Climbing programs (MOVJMP, SPIRAL, SPIRCH, COWJMP, AVOIDR) call VJUMPM once per VEXIT, i.e. 1 step/frame => an 8-frame flip. Only TOPPER (the rim chaser) loops VJUMPM WTTFRA times per frame (2456-2459, 'DOUBLE SPEED JUMP'), and WTTFRA is 2 for waves 1-32 and 3 for waves 33+ (TWTTFRA, 704-706) => a 4-frame flip at the rim, 2.67 at deep levels. Our flipFrames is 4 for every flipper at every depth (3 at L33+).",
@@ -202,7 +202,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 183,
+      "line": 284,
       "verbatim": "    enemyCount: 6 + (level - 1) * 2,"
     },
     "claim": "NWNYMC (the wave's nymph count = its total enemy budget) is itemised per wave: 10, 12, 15, 17, 20, 22, 20, 24, 27, 29, 27, 24, 26, 28, 30, 27 for waves 1-16, then TA/T1 records to wave 99 (698-703). Note it is NOT monotonic — it DROPS at wave 7 (22 -> 20) and again at wave 12 (27 -> 24). Ours is 6 + 2*(level-1): 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36. Wave 1 is 6 for us and 10 in the arcade; wave 16 is 36 for us and 27 in the arcade.",
@@ -222,7 +222,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 150,
+      "line": 251,
       "verbatim": "export function flipperSpeedForLevel(level: number): number {"
     },
     "claim": "WINVIL (the base invader speed, used by flippers and tankers, doubled for fuseballs, offset for enemy shots) comes from TINVIN (591-599). Waves 1-8 are TA: -44 with -5 PER WAVE (wave 8 = -79). Waves 9-16 are itemised: -81, -84, -84, -84, -88, -92, -96, -96. Wave 17-25 RESTARTS at -81 (enemies get SLOWER at wave 17), 26-32 at -99, 33-39 at -108, 40-48 at -110, 49-64 at -120, 65-99 alternates -160/-191. TIMES8 (560-578) scales by 8 into 8.8 fixed point, so along-units/frame = |WINVIL|/32. Wave 1 = 1.375, wave 8 = 2.469, wave 16 = 3.000, wave 17 = 2.531, wave 33 = 3.375. Our flipperSpeedForLevel interpolates LINEARLY from 1.375 (L1) to 3.375 (L33): wave 8 = 1.813 (27% too slow), wave 16 = 2.313 (23% too slow), and it never dips at 17.",
@@ -246,7 +246,8 @@
       "verbatim": "const FLIPPER_ALONG_PER_FRAME_L1 = 1.375"
     },
     "claim": "TINVIN's wave-1 byte is -44 and its wave-33 byte is -108; TIMES8 multiplies by 8 into an 8.8 fixed-point per-frame increment, giving 44*8/256 = 1.375 and 108*8/256 = 3.375 along-units/frame. Our FLIPPER_ALONG_PER_FRAME_L1 = 1.375 and FLIPPER_ALONG_PER_FRAME_L33 = 3.375 (rules.ts:148-149), and the well spans ILINLIY=$10 to ILINDDY=$F0 = 224 units (ALCOMN.MAC:819-820), matching our WARP_ALONG_SPAN of 224.",
-    "reasoning": "The endpoints and the unit conversion are exactly right. Only the shape between them is wrong (W-012). Recorded so the fix for W-012 does not accidentally 'correct' the anchors."
+    "reasoning": "The endpoints and the unit conversion are exactly right. Only the shape between them is wrong (W-012). Recorded so the fix for W-012 does not accidentally 'correct' the anchors.",
+    "remediated_by": "tp1-1"
   },
   {
     "id": "W-014",
@@ -259,7 +260,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 188,
+      "line": 289,
       "verbatim": "    spikerSpeed: 0.22 * ramp,"
     },
     "claim": "The spiker's speed slot is WINVIL+ZABTRA, filled from TSPIIN (602-605) using type code TB, which DOTB (829-832) implements as 'the record byte PLUS the already-computed WINVIL' (the CONTOUR loop walks WTABLE backwards, so WINVIL is set first). TSPIIN's byte is 0 for waves 1-20, so the spiker's speed IS the flipper's speed: 1.375 along-units/frame at wave 1, which at the ROM's 28.44 fps (FR-001) is 0.175 depth/s. It then becomes WINVIL-48 for waves 21-32, WINVIL-40 for 33-48, WINVIL-48 for 49-99 — i.e. FASTER than a flipper in the late game. Our spikerSpeed is 0.22 * (1 + 0.15*(level-1)): 0.22 depth/s at L1, on a curve unrelated to the flipper's — 26% FASTER than the arcade's spiker, not slower.",
@@ -279,7 +280,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 190,
+      "line": 291,
       "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
     },
     "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
@@ -296,7 +297,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 97,
+      "line": 182,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, and in the same units: ROM GAME frames, converted to seconds only at the call site (sim.ts:223), where the divisor is wrong.",
@@ -313,7 +314,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 89,
+      "line": 168,
       "verbatim": "const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]"
     },
     "claim": "FIREIC (2705-2708) draws RANDOM and fires when RANDOM >= CHANCE[ESHCOU], where ESHCOU is the number of enemy shots already on screen. The thresholds 0, $E0, $F0, $FA, $FF give firing probabilities of 256/256 = 1.0, 32/256 = 0.125, 16/256 = 0.0625, 6/256 = 0.0234, 1/256 = 0.0039. Our ENEMY_FIRE_CHANCE is [1.0, 0.125, 0.0625, 0.023, 0.004], indexed the same way (sim.ts:229).",
@@ -330,7 +331,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 82,
+      "line": 161,
       "verbatim": "    case 'pulsar':  return level >= 60"
     },
     "claim": "FIREIC gates on the INVFIR ($40) bit of INVAC2 (2696-2698). TNEWI2 (1485-1489) sets that bit per type: flipper ZFIRYE, pulsar ZFIRNO, tanker ZFIRYE, spiker(TRALER) ZFIRYE, fuse ZFIRNO. NEWPUL (1434-1438) then ORs WPULFI into the pulsar's byte, and WPULFI comes from TWFULF/TWPULF — which has NO record below wave 60 (so it resolves to 0 via the TE default) and ZFIRYE for waves 60-99. Our enemyCanShoot returns true for flipper/tanker/spiker, level >= 60 for pulsar, false for fuseball.",
@@ -347,7 +348,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 62,
+      "line": 141,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "FIREIC searches enemy-charge slots WCHAMX..0 for a vacancy (2709-2726), so the live cap is WCHAMX+1 (hence the ';ADD 1' comment). TCHAMX (586-588) gives WCHAMX = 1,1,1,2,3,2,2,3,3 for waves 1-9, then 2 for waves 10-64, then 3 for 65-99. The cap is therefore 2 bolts on waves 1-3, 3 on wave 4, 4 on wave 5, 3 on waves 6-7, 4 on waves 8-9, 3 on waves 10-64 and 4 on waves 65+ — it goes DOWN as well as up. NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count. We hard-cap at 4 on every level (sim.ts:225).",
@@ -367,7 +368,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 72,
+      "line": 151,
       "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
     },
     "claim": "TCHARIN is a single TB record for waves 1-99 with byte -64, and TB (DOTB, 829-832) means 'byte + WINVIL'. So WCHARL = WINVIL - 64 for EVERY wave, then TIMES8 scales it: the bolt is always exactly 64*8/256 = 2.0 along-units/frame faster than the invader that fired it. At the ROM's real 28.44 fps (FR-001) that offset is 2.0 * (256/9) / 224 = 0.254 depth/s, and the wave-1 bolt's absolute speed is (44+64)/32 = 3.375 along/frame = 0.4286 depth/s. Our ENEMY_BOLT_SPEED_OFFSET is 0.72 depth/s — 2.83x the ROM's offset — giving 0.368 + 0.72 = 1.088 depth/s at L1, 2.54x the arcade's bolt. The code comment claiming 'flipper-relative +0xc0' is not what the source says.",
@@ -387,7 +388,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 65,
+      "line": 144,
       "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
     },
     "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
@@ -415,7 +416,7 @@
     "recommendation": "fix",
     "size": "s",
     "verdict": "CONFIRMED",
-    "fixed_in": "tp1-3"
+    "remediated_by": "tp1-3"
   },
   {
     "id": "W-023",
@@ -568,7 +569,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 126,
+      "line": 224,
       "verbatim": "export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth"
     },
     "claim": "JSMOVE (1749-1760) splits a carrier the moment its INVAY drops below $20 — depth ($F0-$20)/224 = 0.929, the SAME $20 threshold we already use for SPIKER_TURNAROUND_DEPTH (rules.ts:115). KILINV then places both children at TEMP0 = the parent's own INVAY (2301-2302), i.e. at the parent's exact depth. We split at TANKER_SPLIT_DEPTH = 0.9 and clamp the children to SPLIT_CHILD_DEPTH = 0.85 (tanker.ts:19).",
@@ -620,7 +621,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 266,
+      "line": 367,
       "verbatim": "    ['fuseball', level >= 11 ? 4 : 0],"
     },
     "claim": "NEWTAN (1445-1474) picks the cargo by drawing a random index 0-3 into WTACAR and walking it until it finds a type with openings. WTACAR has four entries: slots 0 and 1 are hard-set to ZCARFL on every wave (CONTOUR, 551-553); slot 2 comes from WWTAC2 (614-617) = ZCARFL for waves 1-32, ZCARFU for 33-40, ZCARPU for 41-99; slot 3 comes from WWTAC3 (618-620) = ZCARFL for waves 1-48, ZCARFU for 49-99. So ALL FOUR slots are flippers for waves 1-32: a tanker cannot carry anything but flippers until wave 33, cannot carry a pulsar until wave 41, and the pulsar cargo lives in only one of four slots even then. We roll fuseball cargo from level 11 and pulsar cargo from level 17, at weights 4 against flipper's 10.",
@@ -640,7 +641,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 244,
+      "line": 345,
       "verbatim": "export function rollSpawnKind(level: number, rng: Rng): EnemyKind {"
     },
     "claim": "NYMCHA (1266-1412) decides what a hatching nymph becomes, in this order: (1) compute per-type 'openings' = WFLMAX[type] - FLIPCO[type] (the live count of that type) for all 5 types; (2) subtract 2 openings of the carried type for EVERY live tanker, so cargo is reserved in advance (1286-1303); (3) clamp openings to the total free invader slots; (4) if exactly one type has openings, take it; (5) otherwise satisfy any type whose live count is below its WFLMIN first (1351-1364); (6) then attempt a 'smart launch' — if both a spiker and a tanker slot are free, look at the enemy line the nymph is standing on and launch a SPIKER on a short/dead line or a TANKER on a long one (1366-1385); (7) failing all that, draw RANDO2 AND 3, add 1 — a random type that EXCLUDES flippers (1386-1389) — and walk from there to the first needy type. Our rollSpawnKind is a single weighted pick from a fixed table (flipper 10, tanker 4, spiker 3, pulsar 3, fuseball 3) with level gates and a per-cycle 'hard' multiplier.",
@@ -660,7 +661,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 250,
+      "line": 351,
       "verbatim": "    ['tanker', level >= 5 ? 4 * hard : 0],"
     },
     "claim": "WTANMX (651-657) itemises the tanker MAX for waves 1-5 as 0, 0, 1, 0, 1 — so exactly one tanker is allowed on wave 3, none on wave 4, one on wave 5, then 2 for waves 6-16. WTANMI (645-650) itemises the MIN as 0, 0, 1, 0 — wave 3 REQUIRES its tanker. WSPIMX (628-635) itemises the spiker max for waves 1-6 as 0, 0, 0, 2, 3, 4 — the first spiker is possible on wave 4 — and WSPIMI (621-627) makes wave 4 require one. Our gates are `level >= 5` for both, with weights rather than counts.",
@@ -680,7 +681,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 252,
+      "line": 353,
       "verbatim": "    ['pulsar', level >= 17 ? 3 * hard : 0],"
     },
     "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Our gates are `level >= 17` for pulsars and `level >= 11` for fuseballs (rules.ts:252-253).",
@@ -762,7 +763,7 @@
     "recommendation": "fix",
     "size": "s",
     "verdict": "CONFIRMED",
-    "fixed_in": "tp1-3"
+    "remediated_by": "tp1-3"
   },
   {
     "id": "W-041",
@@ -812,7 +813,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 35,
+      "line": 108,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "With CSUSTA=3 and CSUINT=1 (3490-3492), TIMAX resolves to 0, 3+8*2 = 19, 3+1*2 = 5, 0, 0, indexed by SUZCNT. So the first zap runs 19 frames and the second 5. KILENE (3542-3546) only kills when SUZTIM >= CSUSTA (3) AND (SUZTIM AND CSUINT) == 0 — i.e. on every SECOND frame from frame 4 — giving at most 8 kills across the first window (which is exactly what the '8*' in TIMAX is sizing). It also takes the first live invader scanning DOWN from slot WINVMX (3548), which is slot order, not nearest-the-rim. Our ZAP_WINDOW_FIRST is 13 frames with one kill on EVERY active frame (runZapFrame, sim.ts:473-480), targeting the enemy nearest the rim. Our ZAP_WINDOW_SECOND = 5 is correct.",
@@ -832,7 +833,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 8,
+      "line": 81,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "NPCHARG = 8 player charge slots (NICHARG = 4 more for enemy shots). FIREPC (2661-2681) scans slots NPCHARG-1..0 for a vacancy and simply does nothing if all eight are busy. Our MAX_BULLETS = 8, enforced the same way in stepFiring (sim.ts:96).",
@@ -856,7 +857,8 @@
     "reasoning": "Originally filed CONFIRMED as 'a textbook case of the unit trap resolving to a match: 2.4 depth/s and 9 along-units/frame are the same number' — but they are only the same number if a frame is 1/60 s, so the match was manufactured by the wrong base. This is a FALSE CONFIRMED, the most dangerous defect class in the audit: the refutation pass only challenges DIVERGENCE and BOOK_WAS_WRONG findings, so this would have been printed as proof we match the arcade. Corrected for the 28.444 fps rebase (see FR-007, and FR-001, in pair-11-framerate-adjudication.json): reclassed CONFIRMED → DIVERGENCE, correct value 1.143 depth/s (= 256/224 = 8/7), true crossing time 0.875 s. [REFUTATION] Re-opened ALCOMN.MAC:890 (PCVELO=9) and ALWELG.MAC MOVCHA (2530-2554: ADC I,PCVELO at 2540, CMP I,ILINDDY at 2549) and confirmed ILINDDY=$F0 at ALCOMN.MAC:819 — all verbatim as claimed. 224/9=24.89 frames to cross the well is right, and at the now-established 256/9=28.444 fps (FR-001, which this audit correctly treats as settled) that is 0.875s, not 0.417s. Converted to depth/s: 9*(256/9)/224 = 256/224 = 1.142857 depth/s. Checked one overstatement: the claim says our BULLET_SPEED=2.4 is 'exactly 9*60/224' — that product is actually 540/224=2.4107, not 2.4 exactly (our value looks instead like 60/(224/9 rounded to 25 frames) = 60/25 = 2.4, matching the code's own comment '~25 frames/~0.42s'). This is a minor imprecision in wording, not in substance: the core ratio claim (2.4 / (256/224) = 2.4*224/256 = 2.1 exactly) is exact and correct, so 'our bullets are 2.10x too fast' holds precisely. This finding is also explicitly flagged by the auditor as a corrected FALSE-CONFIRMED from the pre-rebase pass, which is the exact kind of self-aware reclassification the ground truth rules call out as legitimate. Verdict stands, with the correction that '9*60/224' is an approximation (2.41) rather than an exact restatement of 2.4.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
   },
   {
     "id": "W-046",

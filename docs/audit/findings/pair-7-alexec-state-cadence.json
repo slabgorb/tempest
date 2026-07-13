@@ -15,7 +15,8 @@
     },
     "claim": "ALHARD.MAC:149-151 increments a single byte, $INTCT, every IRQ and the source's OWN comment treats its 8-bit wrap (every 256 increments) as \"ANOTHER SECOND\" — i.e. the ROM's IRQ rate is ~256 Hz by the author's own arithmetic. MAINLN does not run game logic on every IRQ: it spins (ALEXEC.MAC:49-52, `LDA FRTIMR / CMP I,9 / CSEND`) until FRTIMR (also incremented once per IRQ, ALHARD.MAC:149) reaches 9, resets it to 0, then runs EXSTAT+NONSTA+DISPLA exactly once (ALEXEC.MAC:53-57) — a MINIMUM of 9/256s ≈ 35ms per logic frame (256/9 = 28.44 Hz ceiling), with NO maximum: JSR DISPLA (building the vector display list) happens inline before the loop re-checks FRTIMR, so a heavier scene makes that same iteration take longer in real time. The SECOND=20 constant (ALCOMN.MAC:87, re-declared ALEXEC.MAC:312) is NOT the loop's rate and is no evidence of one: it sits under ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85), appears only as the reload unit for pause/attract countdowns, and never gates MAINLN or the IRQ — the rate the machine runs at is the 28.44 fps ceiling, which is also what the author writes beside his enemy tables (';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)', ALWELG.MAC:581). Our loop.ts hard-codes STEP=1/60 (loop.ts:9): every stepGame() call advances the sim by EXACTLY 1/60s of simulated time regardless of how expensive draw() is, and advanceFixedSteps() runs MORE steps to catch up after a slow frame rather than stretching a step's dt (loop.ts:64-69, 73-116).",
     "reasoning": "This is the deepest cadence difference between the two codebases, and it is a real behavioural divergence, not cosmetic: on real hardware, every frame-counted duration (QTMPAUS pauses, the flip/pulse timers, anything measured in QFRAME ticks) takes LONGER in real seconds whenever the vector list is busier, because DISPLA's cost is paid inline in the same loop iteration that advances those counters — the well-known \"vector arcade slows down under load\" property. Our core is deliberately built the opposite way: CLAUDE.md mandates `stepGame(state, input, dt)` produce identical output for identical input so gameplay is \"frame-rate independent\" — pacing here is invariant to render cost by design. Recommend accept: reproducing the ROM's load-dependent slowdown would be a regression for a browser port, not a fidelity win. Corrected for the 28.444 fps rebase (see FR-003, FR-004 and FR-012 in pair-11-framerate-adjudication.json): the accept covers the VARIABILITY only and must NOT be read as accepting the 60 — the BASE is a separate question with a wrong answer. The fixed timestep is right; its value is not, and it must be rebased to the 28.44 fps ceiling (9/256 s per step, or every ROM frame count converted through ROM_FPS). This finding's earlier inference that 'the author assumed ~20 real logic-frames/sec' is also withdrawn: SECOND=20 is a pause-timer authoring unit, not a measurement of the loop.",
-    "recommendation": "accept"
+    "recommendation": "accept",
+    "remediated_by": "tp1-1"
   },
   {
     "id": "P7-002",
@@ -81,7 +82,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 15,
+      "line": 88,
       "verbatim": "export const START_LIVES = 3"
     },
     "claim": "NEWGAM reads LVSGAM at the start of every game (ALEXEC.MAC:294-295, `LDA LVSGAM ;GET # LIVES` / `STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)`) — a RAM cell the cabinet operator sets via DIP-switch-derived options, so \"lives per game\" is a configurable cabinet setting, not a compile-time constant. `START_LIVES = 3` (rules.ts:15) is a fixed literal with no equivalent options/settings mechanism anywhere in state.ts or rules.ts.",
@@ -142,7 +143,7 @@
     },
     "ours": {
       "file": "src/shell/loop.ts",
-      "line": 39,
+      "line": 44,
       "verbatim": "  draw: (s: GameState, frameEvents: readonly GameEvent[]) => void,"
     },
     "claim": "ALVGUT.MAC is a library of primitives (VGADD, VGVCTR, VGHALT, VGSCAL, VGSTAT, VGHEX/VGHEXZ) that all share one contract: append a fixed-format instruction to a growing display list at (VGLIST,VGLIST+1), advance that pointer, and return — building up a retained buffer of vector-generator opcodes that the AVG hardware later scans independently of the CPU. `draw` (loop.ts:39) is the opposite shape: a single opaque callback invoked once per rendered frame, given the CURRENT state and nothing else, with no persistent list, no beam-position pointer, and no scale-factor quantization (VGSCAL's whole job, ALVGUT.MAC:277-290) — Canvas 2D's `stroke()`/`lineTo()` calls take plain floating-point coordinates directly.",
@@ -160,7 +161,7 @@
     },
     "ours": {
       "file": "src/shell/loop.ts",
-      "line": 119,
+      "line": 131,
       "verbatim": "    raf = requestAnimationFrame(frame)"
     },
     "claim": "BUFRDY (ALCOMN.MAC:521) is a hand-rolled double-buffer flag: the CPU builds the NEXT vector list into one buffer while the AVG hardware scans the CURRENT one, and BUFRDY tracks which role each buffer is playing (per ALHARD.MAC's own header comment, line 36: \"SWITCH DISPLAY BUFFER POINTER AND BUILD BUFFER POINTERS WHEN TIME\"). Our loop has no buffer-status flag at all — `requestAnimationFrame(frame)` (loop.ts:119, 125) delegates atomic frame presentation entirely to the browser's own compositor.",
@@ -178,7 +179,7 @@
     },
     "ours": {
       "file": "src/shell/loop.ts",
-      "line": 59,
+      "line": 70,
       "verbatim": "    // clears state.events each step, so the post-loop state only carries the"
     },
     "claim": "MAINLN calls JSR DISPLA exactly once per EXSTAT/NONSTA pass (ALEXEC.MAC:55-57) — logic and display are 1:1, always. Our `frame()` (loop.ts:53-120) can run the fixed sub-step callback ZERO, ONE, or SEVERAL times per `requestAnimationFrame` (via `advanceFixedSteps`'s catch-up, loop.ts:73-116) but calls `draw()` exactly once at the end regardless (loop.ts:118) — the comment at loop.ts:58-61 states outright that when 2+ sub-steps run in one rendered frame, only the LAST one's events/state are ever drawn; earlier sub-step states are computed and then never rendered.",

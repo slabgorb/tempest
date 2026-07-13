@@ -3,10 +3,15 @@ import { GameState, Mode } from '../core/state'
 import { GameEvent } from '../core/events'
 import { Input } from '../core/input'
 import { stepGame } from '../core/sim'
+import { SIM_STEP } from '../core/rules'
 import { advanceFixedSteps } from '@arcade/shared/loop'
 import { stepUnlessPaused } from '@arcade/shared/pause'
 
-const STEP = 1 / 60
+// tp1-1: the sim is ROM-PACED. One step is one ROM frame (9/256 s = 28.44 Hz), not
+// 1/60. The step is the core's to decide — the shell consumes it and does not mint
+// its own, because a second opinion about the clock is exactly how the 60 survived
+// in here for so long. See rules.ts, "FR-012: where the clock lives".
+const STEP = SIM_STEP
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 // The shell-supplied callbacks (sampleInput / draw / onModeChange) cross the IO
@@ -42,6 +47,12 @@ export function createLoop(
   // SH2-14: the shell polls this each sub-step to freeze the sim while paused.
   // Optional so existing callers/tests default to never-paused.
   isPaused?: () => boolean,
+  // tp1-1 (FR-017): fired once per sub-step that ACTUALLY advanced the sim, with the
+  // sim's own dt. Shell-side animation that must run on the game's clock rather than
+  // the display's hangs off this — the warp starfield is the first consumer. Driving
+  // it from draw() instead would tie it to requestAnimationFrame, which is both
+  // frame-rate dependent AND keeps running while the game is paused.
+  onStep?: (dt: number, s: GameState) => void,
 ): Loop {
   let state = initial
   let acc = 0
@@ -101,8 +112,9 @@ export function createLoop(
       )
       // A frozen sub-step (state unchanged) accrues no events and fires no mode
       // transition — skip the shell-side drains so nothing misfires against the
-      // held state.
+      // held state. The starfield rides here too, so a paused dive holds still.
       if (state !== prevSub) {
+        runGuarded('onStep', () => onStep?.(STEP, state))
         for (const e of state.events) frameEvents.push(e)
         // Detect mode transitions per sub-step so two transitions in one frame each
         // fire once, in order. A throwing onModeChange must not stop the loop, and

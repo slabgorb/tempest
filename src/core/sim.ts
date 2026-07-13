@@ -9,7 +9,7 @@ import {
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
-  enemyCanShoot, enemyFireChance, enemyFireHoldoffFrames,
+  enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds, ROM_FPS,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
 import { nextInt, nextFloat } from '@arcade/shared/rng'
@@ -110,7 +110,7 @@ export function makeEnemy(
   kind: EnemyKind, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
 ): Enemy {
   switch (kind) {
-    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipPattern.moveFrames / 60 }
+    case 'flipper':  return { kind, lane, depth, flipTimer: params.flipPattern.moveFrames / ROM_FPS }
     case 'tanker':   return { kind, lane, depth, contains: cargo }
     case 'spiker':   return { kind, lane, depth, direction: 1 }
     case 'fuseball': return { kind, lane, depth, jitterTimer: 0, vulnerable: false }
@@ -230,7 +230,7 @@ function stepEnemyFire(s: GameState, dt: number): void {
     }
   }
   if (!s.player.alive) return
-  const holdoffSeconds = enemyFireHoldoffFrames(s.level) / 60
+  const holdoffSeconds = enemyFireHoldoffSeconds(s.level)
   for (const e of s.enemies) {
     if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break // hard cap
     if (!enemyCanShoot(e.kind, s.level)) continue

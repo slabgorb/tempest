@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 8,
+      "line": 81,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "The ROM sizes CHARY/CHARL1 (NCHARG=NPCHARG+NICHARG slots) so exactly the first 8 charge slots are the player's (DSPCHG: `CPX I,NPCHAR` picks PTCURS for indices below that boundary). Our MAX_BULLETS gate (sim.ts:96, `if (s.bullets.length >= MAX_BULLETS) return`) caps the player at the same 8 simultaneous shots.",
@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 62,
+      "line": 141,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
@@ -84,7 +84,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 460,
+      "line": 474,
       "verbatim": "const ENEMY_BURST_COLOR = '#ffe66b'"
     },
     "claim": "All four stages of the 16-spoke enemy-kill explosion (EXPL1 line 350, EXPL2 line 358, EXPL3 line 366, EXPL4 line 374 — verified, all four say `CSTAT WHITE`) are pure white, matching ALCOMN.MAC's `EXPCOL=WHITE`. Our `ENEMY_BURST_COLOR` constant, used to stroke and glow every `EnemyBurst`, is `#ffe66b` — a warm gold, not white.",
@@ -92,7 +92,7 @@
     "recommendation": "fix",
     "size": "s",
     "verdict": "CONFIRMED",
-    "fixed_in": "tp1-3"
+    "remediated_by": "tp1-3"
   },
   {
     "id": "DA-006",
@@ -113,7 +113,7 @@
     "recommendation": "fix",
     "size": "s",
     "verdict": "CONFIRMED",
-    "fixed_in": "tp1-3"
+    "remediated_by": "tp1-3"
   },
   {
     "id": "DA-007",
@@ -327,7 +327,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 297,
+      "line": 311,
       "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
     },
     "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
@@ -367,7 +367,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 363,
+      "line": 377,
       "verbatim": "      const color = pulsarColor(e.pulsing && beat > 0.5)"
     },
     "claim": "PULPIC (ALDISP.MAC:861-867) sets the pulsar's color to WHITE for the ENTIRE duration `PULSON` is positive (the whole pulse-active window) and TURQOI otherwise — a single two-state toggle with no additional per-frame flicker in the color logic itself (the zig-zag shape does animate via PULTAB, but the color does not strobe separately). Our code instead gates white on `e.pulsing && beat > 0.5`, where `beat = 0.5 + 0.5*sin(renderTime*18)` — so while pulsing, the color additionally strobes between white and cyan roughly every half-cycle of an 18 rad/s sine, on top of whatever the pulse state is.",
@@ -375,7 +375,7 @@
     "recommendation": "fix",
     "size": "s",
     "verdict": "CONFIRMED",
-    "fixed_in": "tp1-3"
+    "remediated_by": "tp1-3"
   },
   {
     "id": "DA-021",

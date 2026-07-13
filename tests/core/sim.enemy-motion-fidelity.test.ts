@@ -33,7 +33,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
-import { levelParams } from '../../src/core/rules'
+import { levelParams, ROM_FPS } from '../../src/core/rules'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
 
@@ -49,10 +49,16 @@ const depthFromAlong = (along: number): number => (0xf0 - along) / ALONG_SPAN
 // the rim than today's SPIKE_MAX_DEPTH (0.75) reversal point.
 const SPIKER_TURN_DEPTH = depthFromAlong(0x20) // 208/224 ≈ 0.9286
 
-// Pulsar near speed: spd_pulsar = $fea0 = -82.5/s (§E l.293), hardcoded — the
-// SAME byte as the L1 flipper, so it only diverges from the far (flipper) speed
-// at the higher levels where pulsars actually appear (L17+).
-const PULSAR_NEAR_SPEED = 82.5 / ALONG_SPAN // ≈ 0.3683 depth/s
+// Pulsar near speed: spd_pulsar = $fea0, hardcoded — the SAME byte as the L1
+// flipper, so it only diverges from the far (flipper) speed at the higher levels
+// where pulsars actually appear (L17+).
+//
+// REBASED BY tp1-1: this was `82.5 / ALONG_SPAN`. The ROM byte is 1.375 along per
+// FRAME, and the ROM runs at 256/9 = 28.44 fps, not 60 (audit §3) — so 82.5 is
+// just 1.375 × 60, the invented frame rate written into a literal where no grep
+// for "60" could ever find it. The true rate is 1.375 × 28.44 = 39.1 along/s.
+const PULSAR_ALONG_PER_FRAME = 1.375 // the ROM byte, shared with the L1 flipper
+const PULSAR_NEAR_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / ALONG_SPAN // ≈ 0.1746 depth/s
 
 // Pulsar far/near boundary: L0157 = $a0 for L1-64 (§E l.311). along < $a0 is
 // "nearer than L0157" → pulsar speed; along > $a0 is farther → flipper speed.
@@ -269,27 +275,28 @@ describe('pulsar far/near dual climb speed (story 6-15)', () => {
     return (after - before) / (frames * DT)
   }
 
-  it('a NEAR pulsar climbs at the hardcoded spd_pulsar (-82.5/s ≈ 0.368 depth/s)', () => {
+  it('a NEAR pulsar climbs at the hardcoded spd_pulsar (1.375 along/frame ≈ 0.175 depth/s)', () => {
     // depth 0.60 → along ≈ $69, well inside L0157 ($a0): pulsar (near) speed.
-    // Today the pulsar climbs at flipper speed (≈0.90/s at L33) everywhere — the
-    // load-bearing RED. The constant is level-independent, so L33 must show it.
+    // The constant is level-independent, so L33 must show it.
+    // Bands rebased by tp1-1: the old 0.30–0.45 was the 60 Hz misreading.
     expect(0.6).toBeGreaterThan(PULSAR_NEAR_FAR_DEPTH) // sanity: 0.6 is on the near side
     const near = climbRate(33, 0.6)
-    expect(near).toBeGreaterThan(0.30)
-    expect(near).toBeLessThan(0.45)
-    expect(Math.abs(near - PULSAR_NEAR_SPEED)).toBeLessThan(0.06)
+    expect(near).toBeGreaterThan(0.14)
+    expect(near).toBeLessThan(0.21)
+    expect(Math.abs(near - PULSAR_NEAR_SPEED)).toBeLessThan(0.03)
   })
 
   it('a FAR pulsar climbs at the level flipper speed, strictly faster than near', () => {
     // depth 0.10 → along ≈ $d9, outside L0157: flipper (far) speed. At L33 that is
-    // ≈0.90/s — ~2.4× the near constant. Today both samples are equal, so the
-    // "far is clearly faster" relation fails.
+    // 3.375 along/frame × 28.44 fps ÷ 224 = 3/7 ≈ 0.429 depth/s — still ~2.45× the
+    // near constant. The RATIO is frame-rate invariant and was right all along;
+    // only the two absolute bands carried the invented 60.
     expect(0.1).toBeLessThan(PULSAR_NEAR_FAR_DEPTH) // sanity: 0.1 is on the far side
     const far = climbRate(33, 0.1)
     const near = climbRate(33, 0.6)
     const flipper = levelParams(33).flipperSpeed
-    expect(far).toBeGreaterThan(0.8)
-    expect(far).toBeLessThan(1.0)
+    expect(far).toBeGreaterThan(0.38)
+    expect(far).toBeLessThan(0.48)
     expect(Math.abs(far - flipper)).toBeLessThan(0.1 * flipper) // far == the flipper rate
     expect(far).toBeGreaterThan(near * 1.5) // and clearly faster than the near constant
   })
