@@ -194,23 +194,21 @@ describe('dt-independence — what the rebase must NOT break (rule guard)', () =
     // for the continuous integrators, NOT for the per-call flip animation, because
     // FR-012 answer (a) legitimately makes the flip animation step-counted. Pinning
     // that here would forbid an answer the AC explicitly permits.
-    const wall = 1.0
-
-    const coarse = (() => {
+    // Both runs must cover EXACTLY the same wall time, so the step counts are derived
+    // from a common N rather than from Math.round(wall / dt). (Originally this rounded
+    // 1.0 s into each step size — but 1.0 is not an integer multiple of 9/256, so the
+    // two runs silently covered 0.984 s and 1.002 s and compared different journeys.
+    // At the old 1/60 step both divided exactly, which is why the flaw was invisible.)
+    const N = 28
+    const climbOver = (dt: number, steps: number): number => {
       let s = isolated(11)
       s.enemies = [{ kind: 'flipper', lane: 0, depth: 0, flipTimer: 999 }]
-      const dt = SIM_STEP
-      for (let t = 0; t < Math.round(wall / dt); t++) s = stepGame(s, NEUTRAL, dt)
+      for (let t = 0; t < steps; t++) s = stepGame(s, NEUTRAL, dt)
       return s.enemies[0].depth
-    })()
+    }
 
-    const fine = (() => {
-      let s = isolated(11)
-      s.enemies = [{ kind: 'flipper', lane: 0, depth: 0, flipTimer: 999 }]
-      const dt = SIM_STEP / 4
-      for (let t = 0; t < Math.round(wall / dt); t++) s = stepGame(s, NEUTRAL, dt)
-      return s.enemies[0].depth
-    })()
+    const coarse = climbOver(SIM_STEP, N)          // N * SIM_STEP seconds
+    const fine = climbOver(SIM_STEP / 4, N * 4)    // ...the same, in quarter steps
 
     expect(coarse).toBeGreaterThan(0) // non-vacuous: it actually climbed
     expect(fine).toBeCloseTo(coarse, 6)

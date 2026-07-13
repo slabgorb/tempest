@@ -12,6 +12,8 @@
 //   descended to 0xD5, retire a plane at 0x10, at most 8 planes, 4 reused star
 //   pictures cycled across the planes.
 
+import { ROM_FPS } from '../core/rules'
+
 /** A single depth plane of stars: its current Z and which reused picture it draws. */
 export interface StarPlane {
   /** Depth: starts at STAR_SPAWN_Z, decremented by STAR_STEP each frame until it retires. */
@@ -23,8 +25,17 @@ export interface StarPlane {
 export interface Starfield {
   /** Live planes, oldest first / newest last. */
   readonly planes: readonly StarPlane[]
-  /** Advance one frame: move every plane in, retire the arrived ones, spawn the next. */
-  step(): void
+  /**
+   * Advance by `dt` SECONDS of simulation time: move every plane in, retire the
+   * arrived ones, spawn the next.
+   *
+   * This used to take no argument and advance one STAR_STEP per call, which meant
+   * the starfield's speed was a function of the player's monitor: 2.11x too fast on
+   * a 60 Hz display, 5.1x on a 144 Hz one, and stalled outright on a dropped frame.
+   * It is the only finding in the rebase that was not merely wrong but
+   * non-deterministic. Time is the input now, so the dive looks the same everywhere.
+   */
+  step(dt: number): void
   /** Drop every plane (call between dives so each warp starts from a clean centre). */
   reset(): void
 }
@@ -41,9 +52,20 @@ export function createStarfield(): Starfield {
   let planes: { z: number; picture: number }[] = []
   let spawned = 0 // total spawns ever — drives the reused-picture cycle
 
-  function step(): void {
-    // 1) Every live plane rushes in by one step.
-    for (const p of planes) p.z -= STAR_STEP
+  function step(dt: number): void {
+    // 1) Every live plane rushes in. STAR_STEP is 7 Z per ROM FRAME — ROM truth, and
+    //    deliberately NOT rebased. What was wrong was the driver: "a frame" used to
+    //    mean "a call to this function", so the dive tracked the monitor. Now it is
+    //    "how many ROM frames of game time went by", so 7 Z/frame x 28.44 frames/s =
+    //    199.1 Z/s holds however often, or unevenly, we are called.
+    //
+    //    Multiply in THIS order. ROM_FPS * SIM_STEP is exactly 1.0 in IEEE-754, so a
+    //    canonical sim step moves a plane by exactly STAR_STEP and the integer Z
+    //    lifecycle (spawn 240, retire 16) stays on exact values. Folding it the other
+    //    way — (STAR_STEP * ROM_FPS) * dt — gives 6.999999999999999 per step and lets
+    //    rounding drift into the thresholds.
+    const romFramesElapsed = ROM_FPS * dt
+    for (const p of planes) p.z -= STAR_STEP * romFramesElapsed
     // 2) Retire planes that have arrived at the rim.
     planes = planes.filter((p) => p.z > STAR_RETIRE_Z)
     // 3) Spawn the next plane when there's room AND the field is empty or the

@@ -3,8 +3,81 @@
 import { type Rng, nextFloat } from '@arcade/shared/rng'
 import type { Enemy, EnemyKind, TankerCargo } from './state'
 
+// ─── THE CLOCK (story tp1-1) ─────────────────────────────────────────────────
+//
+// The ROM does NOT run at 60 fps. Its IRQ handler treats a single-byte counter's
+// 8-bit wrap as one second (ALHARD.MAC:149-152), so the IRQ is 256 Hz by the ROM's
+// own arithmetic; MAINLN then spins until NINE of those ticks have elapsed before
+// running one game frame (ALEXEC.MAC:49-55). 256/9 = 28.44 game frames a second.
+// Theurer says so himself, in a comment above the refire table we already ship
+// byte-for-byte: "FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)" (ALWELG.MAC:581).
+//
+// This codebase was built on 60. Everything was 2.11x too fast, and the warp dive
+// — which carries the base SQUARED — was 4.45x. See the primary-source audit,
+// docs/2026-07-12-tempest-primary-source-audit.md §3.
+//
+// DO NOT be fooled by ALCOMN.MAC:87 `SECOND = 20. ;FRAMES/SECOND`. It sits under
+// ";TIMING FOR PAUSE STATE", is used only to reload pause/attract countdowns, and
+// appears nowhere in MAINLN, the IRQ handler, or any speed table. Where a constant
+// and the machine disagree, the machine wins.
+export const ROM_FPS = 256 / 9   // 28.444... — the ONLY place this number is written
+
+// ─── FR-012: where the clock lives. The decision, and why. ───────────────────
+//
+// A ROM frame count (a flip cadence, a refire holdoff, a superzapper window) has to
+// become wall-clock time somewhere. There were exactly two ways to do it:
+//
+//   (a) make one sim step BE one ROM frame — a 9/256 s fixed timestep;
+//   (b) keep a 1/60 s timestep and convert every ROM frame count through ROM_FPS
+//       by hand at each use site.
+//
+// We chose (a), and the deciding argument is not this story — it is the twenty
+// stories behind it. Epic tp1 transcribes ROM frame counts by the dozen: the CAM
+// (tp1-4/5) is a bytecode VM whose opcodes are literally "move N frames then flip";
+// tp1-7 lifts the per-wave CONTOUR tables; tp1-14 the superzapper's 19-frame window.
+// Under (b) every one of those is a hand conversion that somebody can forget, and a
+// single forgotten one silently re-bakes the 60 — the exact bug class this story
+// exists to close. Under (a) a ROM frame count is a sim step count. It cannot drift,
+// because there is nothing left to convert.
+//
+// The cost is real and accepted: the sim now samples at 28.44 Hz rather than 60, so
+// input latency is one ROM frame (35 ms) and motion updates 28 times a second. That
+// is not a regression — it is the machine. The arcade sampled its spinner at exactly
+// this rate. Render-side animation still runs at the display's rate (render.ts drives
+// its phases from the real frame dt), so only the simulation is ROM-paced.
+//
+// Consequence, and the reason AC2 can be checked by grep: src/core contains no
+// frame-rate 60 at all. Not in a constant, not in a conversion, not hidden inside a
+// literal (see PULSAR_CLIMB_SPEED below, which used to be `82.5` = 1.375 x 60).
+export const SIM_STEP = 9 / 256   // seconds per sim step == one ROM frame == 1 / ROM_FPS
+
+// The ROM's "along" axis: enemies and the warp dive run 0x10 (near rim) → 0xf0 (far),
+// a 224-unit span. Our depth 0..1 spans the same range, so one along-unit is 1/224
+// depth. Declared here, above its first use, because every ROM speed in this file is
+// "N along-units per FRAME" and converts as (N * ROM_FPS) / WARP_ALONG_SPAN.
+export const WARP_ALONG_SPAN = 0xf0 - 0x10  // 224 ROM along-units
+
+// The ROM's flipper climb bytes, in along-units per FRAME. The ROM ramps the byte
+// linearly from L1 to L33+, then holds. These are ROM data, not rates — they only
+// become depth/sec when multiplied by ROM_FPS.
+//
+// Declared up here with the clock because the PULSAR shares the L1 byte: spd_pulsar
+// is hardcoded to the same value. Both constants below derive from this one name, so
+// the "pulsar == L1 flipper" invariant is structural and cannot be broken by fixing
+// one and forgetting the other.
+const FLIPPER_ALONG_PER_FRAME_L1 = 1.375   // x 60 gave the notorious 82.5 "along/s"
+const FLIPPER_ALONG_PER_FRAME_L33 = 3.375  // x ROM_FPS = exactly 96 along/s
+const PULSAR_ALONG_PER_FRAME = FLIPPER_ALONG_PER_FRAME_L1
+
 export const SPIN_SENSITIVITY = 0.15
-export const BULLET_SPEED = 2.4       // depth units/sec (near → far); ROM rev-3 frees the slot at ~25 frames / ~0.42s
+// The ROM's player charge moves 9 along-units per FRAME. At the real clock that is
+// 9 x 28.44 / 224 = 8/7 = 1.143 depth/s.
+//
+// This constant used to read 2.4, and it was filed by an early audit pass as
+// CONFIRMED — "we match the arcade!" — because 9 along/frame and 2.4 depth/s ARE the
+// same number... if a frame is 1/60 s. The bad base did not invent a divergence here.
+// It manufactured an AGREEMENT, and an agreement is the one thing nobody re-checks.
+export const BULLET_SPEED = (9 * ROM_FPS) / WARP_ALONG_SPAN  // 1.143 depth units/sec
 export const MAX_BULLETS = 8
 export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
 export const RESPAWN_DELAY = 1.5      // seconds
@@ -38,18 +111,24 @@ export const ZAP_WINDOW_SECOND = 5
 // --- Level-clear warp dive (Story 6-1) ---------------------------------------
 // The authentic accelerating "zoom": the Claw starts slow and ramps up, so a
 // player parked on a spiked lane gets a beat to react instead of an instant
-// warp-death. ROM (rev-3) values are 60 Hz per-frame; we map them to dt-driven
-// per-second rates. ROM "along" runs 0x10 → 0xf0 (span 224) over the descent;
-// our warp progress 0 → 1 spans that same range, so 1 along-unit = 1/224 progress.
-export const WARP_ALONG_SPAN = 0xf0 - 0x10  // 224 ROM along-units across the dive
-// Initial dive speed: ROM 0x0200 = 2.0 along-units/frame at 60 Hz → progress/sec.
-export const WARP_INITIAL_SPEED = (2.0 * 60) / WARP_ALONG_SPAN
-// Per-frame ROM acceleration min(level*4, 0x30) + 0x20 is stored in 8.8 fixed
-// point (along-units/frame²); convert to progress/sec². It grows with level —
-// ~0.75s descent at level 1 down to ~0.55s by level 12+ (where it caps at 0x30).
+// warp-death. ROM values are per-FRAME; we map them to dt-driven per-second rates
+// through ROM_FPS (28.44), not 60. WARP_ALONG_SPAN is declared with the clock above.
+//
+// Initial dive speed: ROM 0x0200 = 2.0 along-units/frame → progress/sec.
+export const WARP_INITIAL_SPEED = (2.0 * ROM_FPS) / WARP_ALONG_SPAN  // 16/63 ≈ 0.254
+// Per-frame ROM acceleration min(level*4, 0x30) + 0x20 is stored in 8.8 fixed point
+// (along-units/frame²); convert to progress/sec².
+//
+// THIS IS THE SQUARED ONE. An acceleration is per-frame-PER-FRAME, so the base rate
+// enters twice — which is why the old `(60 * 60)` made the dive 4.45x too fast while
+// everything else was only 2.11x. It is the most base-sensitive expression in the
+// codebase. A rebase that replaces one 60 and leaves the other is wrong by 2.11x and
+// looks entirely plausible; rom-clock.test.ts rejects that case by name.
+//
+// At the real clock the level-1 dive takes ~1.55 s. It used to take ~0.73 s.
 export function warpAccel(level: number): number {
   const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²
-  return (perFrame8_8 / 256) * (60 * 60) / WARP_ALONG_SPAN
+  return (perFrame8_8 / 256) * (ROM_FPS * ROM_FPS) / WARP_ALONG_SPAN
 }
 // AVOID SPIKES countdown: the Claw holds at the rim for this long before the dive
 // begins, but only when a spike actually threatens AND the displayed level is low
@@ -92,13 +171,27 @@ export function enemyFireChance(liveBolts: number): number {
   return ENEMY_FIRE_CHANCE[i]
 }
 
-// Per-level refire holdoff in 60 Hz frames (shot_holdoff): L1 80, ramping down by
+// Per-level refire holdoff in ROM FRAMES (shot_holdoff): L1 80, ramping down by
 // 3/level to L20 23, then 20 for L21-64, then 10 for L65+. Never increases.
+//
+// These frame COUNTS are ROM truth and are unchanged by the rebase — the ROM's own
+// comment above this table reads "FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)"
+// (ALWELG.MAC:581), which is where the 28.44 fps finding was corroborated. Do not
+// rebase this function: it returns frames, not seconds. Only the CONVERSION was
+// wrong, and it now lives in enemyFireHoldoffSeconds below.
 export function enemyFireHoldoffFrames(level: number): number {
   if (level >= 65) return 10
   if (level >= 21) return 20
   if (level <= 1) return 80
   return 80 - 3 * (level - 1)   // L2..L20: 77 → 23
+}
+
+// The same holdoff in seconds. sim.ts used to do this conversion inline as
+// `enemyFireHoldoffFrames(level) / 60` — buried mid-tick, where it could be neither
+// seen nor tested. L1 is 80 ROM frames = 2.81 s of real time; we used to wait 1.33 s,
+// so every enemy in the game refired more than twice as often as the arcade's.
+export function enemyFireHoldoffSeconds(level: number): number {
+  return enemyFireHoldoffFrames(level) / ROM_FPS
 }
 
 export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
@@ -113,11 +206,16 @@ export const FUSEBALL_MOVE_PROB = 0.6
 // SEPARATE from SPIKE_MAX_DEPTH (0.75) so raising the turnaround does not also
 // grow spikes (which feed warp-crash balance) — see story 6-15 deviations.
 export const SPIKER_TURNAROUND_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
-// Pulsar climb speed when near (story 6-15). spd_pulsar = $fea0 = const -82.5/s
-// (rev-3 §E l.293), hardcoded and level-independent — the same byte as the L1
-// flipper, so it only diverges from the far (flipper) speed at the higher levels
-// where pulsars appear (L17+).
-export const PULSAR_CLIMB_SPEED = 82.5 / WARP_ALONG_SPAN  // ≈ 0.368 depth/s
+// Pulsar climb speed when near (story 6-15). spd_pulsar = $fea0, hardcoded and
+// level-independent — the SAME ROM byte as the L1 flipper (1.375 along/frame), so it
+// only diverges from the far (flipper) speed at the higher levels where pulsars
+// appear (L17+).
+//
+// This line used to read `82.5 / WARP_ALONG_SPAN`, and 82.5 IS 1.375 x 60 — the
+// invented frame rate baked into a literal where no grep for "60" could ever find it.
+// It is the reason AC2's grep is necessary but not sufficient. Expressed through
+// ROM_FPS, it can never silently re-acquire a frame rate again.
+export const PULSAR_CLIMB_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / WARP_ALONG_SPAN  // ≈ 0.175 depth/s
 // Pulsar far/near boundary: L0157 = $a0 for L1-64 (rev-3 §E l.311) → depth ≈0.357.
 // along > $a0 (depth < this) is "farther than L0157" → flipper speed; nearer →
 // pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
@@ -139,19 +237,22 @@ export interface LevelParams {
   tankerSpeed: number    // depth units/s climb for tankers
 }
 
-// Authentic rev-3 flipper climb speed (story 6-9). The ROM steps the flipper's
-// climb byte from -1.375 along/frame at L1 to -3.375 at L33+ (then flat), ramping
-// linearly between. The along axis spans 0x10..0xf0 = WARP_ALONG_SPAN units, so a
-// rate of `alongPerFrame` at 60 Hz is (alongPerFrame * 60) / WARP_ALONG_SPAN in
-// our depth/sec. L1 → 82.5/224 = 0.368 depth/s (~2.7 s up the tube); L33+ →
-// 202.5/224 = 0.904 depth/s. Tankers climb at flipper speed; fuseballs at 2×.
-const FLIPPER_ALONG_PER_FRAME_L1 = 1.375
-const FLIPPER_ALONG_PER_FRAME_L33 = 3.375
+// Authentic flipper climb speed (story 6-9, REBASED by tp1-1). The ROM steps the
+// flipper's climb byte from 1.375 along/frame at L1 to 3.375 at L33+ (then flat),
+// ramping linearly between. A rate of `alongPerFrame` per ROM FRAME is
+// (alongPerFrame * ROM_FPS) / WARP_ALONG_SPAN in our depth/sec.
+//
+// L1  → 39.1/224 = 0.175 depth/s (~5.7 s up the tube)
+// L33 → 96.0/224 = 3/7 = 0.429 depth/s
+//
+// Story 6-9 wrote `* 60` here and got 0.368 depth/s / a 2.7 s traverse, and it did so
+// in the name of fidelity. The value it REPLACED — an "invented approximation" of
+// 0.18 depth/s — was very nearly right. Tankers climb at flipper speed; fuseballs 2x.
 export function flipperSpeedForLevel(level: number): number {
   const t = Math.max(0, Math.min(1, (level - 1) / 32)) // 0 at L1, 1 at L33+, clamped
   const alongPerFrame =
     FLIPPER_ALONG_PER_FRAME_L1 + (FLIPPER_ALONG_PER_FRAME_L33 - FLIPPER_ALONG_PER_FRAME_L1) * t
-  return (alongPerFrame * 60) / WARP_ALONG_SPAN
+  return (alongPerFrame * ROM_FPS) / WARP_ALONG_SPAN
 }
 
 // Authentic per-level flipper flip pattern (story 6-14). The arcade ROM drives
@@ -163,7 +264,7 @@ export function flipperSpeedForLevel(level: number): number {
 // (fewer frames). We do not gold-plate the exact deep-level frame counts nobody
 // reaches — only the documented envelope and the direction of the L33 change.
 export interface FlipPattern {
-  moveFrames: number   // climb frames between flips at 60 Hz (ROM flipper_move cadence)
+  moveFrames: number   // ROM frames of climb between flips (ROM flipper_move cadence)
   flipFrames: number   // frames one flip animates over (multi-tick; >= 2)
 }
 

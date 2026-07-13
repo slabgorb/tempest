@@ -19,7 +19,8 @@
 //   }
 //   export interface Starfield {
 //     readonly planes: readonly StarPlane[]  // live planes, newest last
-//     step(): void                            // advance ONE frame (move -7, retire, spawn)
+//     step(dt: number): void                  // advance dt SECONDS of sim time.
+//         tp1-1: step(SIM_STEP) == exactly one ROM frame == the old step()'s -7.
 //     reset(): void                           // clear all planes (warp re-entry)
 //   }
 //   export function createStarfield(): Starfield
@@ -30,7 +31,7 @@
 //   export const STAR_PLANES: number        // 8   (max concurrent planes)
 //   export const STAR_PICTURES: number      // 4   (distinct, reused pictures)
 //
-// Contract for step(), one frame: (1) move every plane z -= STAR_STEP;
+// Contract for step(SIM_STEP), one ROM frame: (1) move every plane z -= STAR_STEP;
 // (2) retire planes with z <= STAR_RETIRE_Z; (3) if under the STAR_PLANES cap AND
 // the field is empty OR the newest plane has descended to <= STAR_SPAWN_NEXT_Z,
 // spawn a fresh plane at z === STAR_SPAWN_Z with the next reused picture index.
@@ -38,6 +39,7 @@
 // None of this exists yet, so the named imports below fail to resolve and the
 // whole file REDs — a clean failing state for Dev to drive green.
 import { describe, it, expect } from 'vitest'
+import { SIM_STEP } from '../../src/core/rules'
 import {
   createStarfield,
   STAR_SPAWN_Z,
@@ -56,7 +58,7 @@ function run(frames: number): ReadonlyArray<ReadonlyArray<{ z: number; picture: 
   const field = createStarfield()
   const history: { z: number; picture: number }[][] = []
   for (let i = 0; i < frames; i++) {
-    field.step()
+    field.step(SIM_STEP)
     history.push(field.planes.map((p) => ({ z: p.z, picture: p.picture })))
   }
   return history
@@ -77,15 +79,15 @@ describe('starfield — plane lifecycle (AC1)', () => {
   it('starts empty and spawns the first plane at the spawn Z on the first step', () => {
     const field = createStarfield()
     expect(field.planes).toHaveLength(0)
-    field.step()
+    field.step(SIM_STEP)
     expect(field.planes).toHaveLength(1)
     expect(field.planes[0].z).toBe(STAR_SPAWN_Z) // 240, exactly — no premature step
   })
 
   it('steps a lone plane by exactly -STAR_STEP per frame (no early second spawn)', () => {
     const field = createStarfield()
-    field.step() // [240]
-    field.step() // 240 -> 233; 233 > 213 so nothing new spawns yet
+    field.step(SIM_STEP) // [240]
+    field.step(SIM_STEP) // 240 -> 233; 233 > 213 so nothing new spawns yet
     expect(field.planes).toHaveLength(1)
     expect(field.planes[0].z).toBe(STAR_SPAWN_Z - STAR_STEP) // 233
   })
@@ -109,7 +111,7 @@ describe('starfield — plane lifecycle (AC1)', () => {
     const f = createStarfield()
     let sawSecond = false
     for (let i = 0; i < 40 && !sawSecond; i++) {
-      f.step()
+      f.step(SIM_STEP)
       if (f.planes.length === 2) {
         sawSecond = true
         const older = Math.max(...f.planes.map((p) => p.z).filter((z) => z !== STAR_SPAWN_Z))
@@ -140,11 +142,11 @@ describe('starfield — plane lifecycle (AC1)', () => {
 
   it('reset() clears every plane and restarts the lifecycle from the spawn Z', () => {
     const field = createStarfield()
-    for (let i = 0; i < 30; i++) field.step()
+    for (let i = 0; i < 30; i++) field.step(SIM_STEP)
     expect(field.planes.length).toBeGreaterThan(0)
     field.reset()
     expect(field.planes).toHaveLength(0)
-    field.step()
+    field.step(SIM_STEP)
     expect(field.planes[0].z).toBe(STAR_SPAWN_Z) // fresh dive starts at 240 again
   })
 })

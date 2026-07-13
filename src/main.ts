@@ -6,7 +6,7 @@ import { createLoop } from './shell/loop'
 import { createFx } from './shell/fx'
 import { createAudioEngine } from './shell/audio'
 import { playEventSounds } from './shell/audio-dispatch'
-import { render } from './shell/render'
+import { render, advanceStarfield } from './shell/render'
 import { makeHighScoreStorage, makeHighScoreRowGuard } from '@arcade/shared/highscore'
 import { resizeToDisplay } from '@arcade/shared/view'
 import { INITIAL_PAUSED, isPauseKey, togglePaused } from '@arcade/shared/pause'
@@ -116,6 +116,14 @@ const loop = createLoop(
   },
   // SH2-14: the loop polls this each sub-step; a paused sub-step freezes the sim.
   () => paused,
+  // tp1-1 (FR-017): the warp starfield advances on the SIM's clock, one ROM frame per
+  // sub-step. It used to be stepped from inside the draw call, which made the dive's
+  // speed a function of the player's monitor (2.11x fast at 60 Hz, 5.1x at 144 Hz)
+  // and kept it flying while the game was paused. Only the dive uses it; every other
+  // mode resets the field inside render().
+  (dt, s) => {
+    if (s.mode === 'warp') advanceStarfield(dt)
+  },
 )
 // Initials entry (SH2-13, the cabinet-wide typing flow): typed letters and
 // Backspace are edge events, not held state, so they bypass the per-frame
