@@ -29,18 +29,29 @@ const { SFX } = sfxData
 // out/ dir); Dev's green phase adds the isMain guard that makes import inert.
 import * as bake from './bake-sfx.mjs'
 
-// The 6-6 baseline: the six SFX story 6-6 delivered with a confirmed sound->ROM
-// address (verified by ear against the real machine). Story 6-11 expands the
-// catalogue past these six (see the remaining-7 block below), so this is now a
-// regression floor — every baseline sound must stay present at its address — not
-// the full set.
+// The cue->ROM baseline. Story 6-6 built this table BY EAR against the real
+// machine, and by ear it got two of the six backwards — see story tp1-2 and audit
+// findings S-008/S-009/S-010. Theurer's source names every slot (ALSOUN.MAC:88-100,
+// the 13 OFFSET macros), so the table is sourced from the ROM now, not from a
+// listening session:
+//
+//   player_fire      $cc5d -> $cbe9   LA, ";PLAYER FIRE"      (was EX, the explosion)
+//   enemy_explosion  $cc81 -> $cc5d   EX, ";ENEMY EXPLOSION"  (was T3, the thrust drone)
+//
+// The other four were right all along. The full cue mapping — including where the
+// displaced T3 record lands — is pinned in tests/audit/alsoun-cue-mapping.test.ts.
+// This stays a regression floor (every baseline cue must remain present at its
+// address), not the full set: 6-11 expanded the catalogue past these six.
+//
+// When this fails, the question is "what does ALSOUN.MAC say?" — never "what
+// address did we use before?". The old addresses ARE the bug.
 const BASELINE_6_6 = {
-  player_fire: '$cc5d',
-  enemy_fire: '$cc45',
-  enemy_explosion: '$cc81',
-  warp: '$cc75',
-  countdown_beep: '$cc69',
-  segment_tick: '$cc39',
+  player_fire: '$cbe9', // LA3F/LA3A — ALSOUN.MAC:141, dispatched from SLAUNC
+  enemy_fire: '$cc45', // ES
+  enemy_explosion: '$cc5d', // EX2F/EX2A — ALSOUN.MAC:181, dispatched from EXSNON
+  warp: '$cc75', // T2 — thrust in tube
+  countdown_beep: '$cc69', // SL (a separate by-ear mislabel; out of tp1-2's scope)
+  segment_tick: '$cc39', // LO
 }
 
 const here = (rel) => fileURLToPath(new URL(rel, import.meta.url))
