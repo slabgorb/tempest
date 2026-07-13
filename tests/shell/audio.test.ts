@@ -102,9 +102,12 @@ afterEach(() => {
 describe('audio engine sample loading (story 6-6: authentic bakes on R2)', () => {
   it('loads the authentic ROM bakes from the R2 base', () => {
     createAudioEngine().resume()
-    expect(fetched).toContain(R2 + 'player_fire.wav') // ★ ROM $cc5d
-    expect(fetched).toContain(R2 + 'enemy_explosion.wav') // ★ ROM $cc81
-    expect(fetched).toContain(R2 + 'warp.wav') // ★ ROM $cc75
+    // The ROM addresses behind two of these moved in tp1-2 (the cross-wiring), but
+    // the filenames did not — the cues were named right and filled wrong. Which ROM
+    // record each name now carries is pinned in tests/audit/alsoun-cue-mapping.test.ts.
+    expect(fetched).toContain(R2 + 'player_fire.wav') // ★ ROM $cbe9 (LA)
+    expect(fetched).toContain(R2 + 'enemy_explosion.wav') // ★ ROM $cc5d (EX)
+    expect(fetched).toContain(R2 + 'warp.wav') // ★ ROM $cc75 (T2)
   })
 
   it('loads the community-rip samples from the R2 base', () => {

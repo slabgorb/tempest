@@ -112,8 +112,8 @@
     },
     "ours": {
       "file": "tools/pokey-bake/sfx-data.mjs",
-      "line": 65,
-      "verbatim": "      audf: [0xc0, 0x02, 0xff, 0xff, 0x00, 0x00],"
+      "line": 149,
+      "verbatim": "    rom: '$cc75',"
     },
     "claim": "SOUTS2 (ALSOUN's T2) fires in MOVCUD (\"PLAY-MOVE CURSOR DOWN\") on the very first frame of the dive, while CURSY still equals ILINLI (cursor/claw still at the top of the well). This is the same moment our LevelClearEvent fires, starting the sustained 'levelClear' loop (warp.wav). T26F/T26A (0xc0,0x02,0xff,0xff / 0x28,0x02,0x00,0xf0) are byte-identical to warp.wav's baked audf/audc arrays ($cc75).",
     "reasoning": "Confirms both the trigger MOMENT (dive entry) and the exact envelope for the sound our loop starts with. See S-014 for the SECOND rumble phase (T3, thrust-in-space) the arcade plays later in the same dive that our single loop does not model."
@@ -136,7 +136,8 @@
     "reasoning": "This is one of the two most-heard cues in the entire game (every player shot). The 6-6 story locked in $cc5d as \"player_fire\" by ear before ALSOUN's own table was available to cross-check; ALSOUN proves the byte content actually belongs to the enemy-explosion slot. See S-009 for the matching enemy_explosion/thrust-in-space swap this pairs with, and S-010 for where the TRUE launch-sound bytes already sit, unshipped, in our own repo. [REFUTATION] Re-opened ALSOUN.MAC in full. ALCOMN.MAC:17 sets .RADIX 16 and is .INCLUDEd at ALSOUN.MAC:3, so the bare digit strings in the sound tables are already hex (no unit-conversion escape hatch here). PNTRS (lines 87-101) labels its OFFSET entries in file order: LO=CURSOR MOVES, EX=ENEMY EXPLOSION, LA=PLAYER FIRE, ... — confirmed by grep that EX2F/EX2A (line 181/183) is the ONLY EX-prefixed data label and LA3F/LA3A (line 141/142) is the ONLY LA-prefixed one, so there is no macro ambiguity. EX2F+terminator = hex [01,08,02,10,00,00], EX2A+terminator = [86,20,00,04,00,00] — byte-for-byte identical to tools/pokey-bake/sfx-data.mjs's 'player_fire' entry (audf/audc quoted correctly). LA3F/LA3A (the real launch-sound record) is [10,01,07,20,00,00]/[a2,01,f8,20,00,00] — completely different bytes, and never used by our clone. Checked the dispatch chain: EXSNON/CIEXPL/CCEXPL all fall through to 'LDA I,SIDEX' (line 224), while SLAUNC (the real player-fire trigger, called from ALWELG.MAC:2675) loads SIDLA (line 249) — two genuinely distinct sound-table slots. Verified src/shell/audio.ts:31 maps event 'fire' -> 'player_fire.wav' and audio-dispatch.ts:27-28 fires it on 'fire'. No downstream override. Holds exactly as claimed.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-2"
   },
   {
     "id": "S-009",
@@ -156,7 +157,8 @@
     "reasoning": "This is the counterpart half of the S-008 swap: both bogus identifications come from the same 7-entry \"clean\" bake set, cross-checked against the same 12 ALSOUN table entries (see S-001/002/003/006/007 for the 5 that DO check out correctly). Fixing 'fire' without also fixing 'enemyDeath' would just relocate the confusion. See S-014 for using these corrected T3 bytes as the missing second warp-dive phase. [REFUTATION] Companion to S-008, same file/macro verification applies. T36F/T36A (ALSOUN.MAC:193/195, the only T3-prefixed data, matching PNTRS's 'T3 = THRUST IN SPACE') decode to hex [10,0b,01,40,00,00]/[86,40,00,0b,00,00] — byte-for-byte identical to sfx-data.mjs's 'enemy_explosion' entry (confirmed both audf and audc against the file directly). SOUTS3 (loads SIDT3) is called from ALWELG.MAC:1037 exactly where the source models it: inside MOVCUD, gated on CURSY crossing the bottom-of-well threshold (line 1034 'IFCS ;IS CURSOR PAST BOTTOM?'), setting QSTATE=CENDWA ('space mode') — this is the warp-dive-end transition, not an enemy kill. Verified src/shell/audio.ts:33 maps 'enemyDeath' -> 'enemy_explosion.wav'. The claim's supporting text says 'the same 12 ALSOUN table entries' where PNTRS actually defines 13 (LO,EX,LA,PU,WP,DI,T2,T3,ES,EL,SL,S3,PO) — a trivial off-by-one in the narrative that does not touch the byte-identity claim itself. Holds. [CORRECTION] Minor: the reasoning's '12 ALSOUN table entries' should be 13 (PNTRS has 13 OFFSET calls) — does not affect the core claim.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-2"
   },
   {
     "id": "S-010",
@@ -167,11 +169,16 @@
       "line": 141,
       "verbatim": "LA3F:\t.BYTE 10,1,7,20,0,0"
     },
-    "ours": null,
+    "ours": {
+      "file": "tools/pokey-bake/sfx-data.mjs",
+      "line": 101,
+      "verbatim": "    rom: '$cbe9',"
+    },
     "claim": "LA3F/LA3A (hex 0x10,0x01,0x07,0x20,0x00,0x00 / 0xa2,0x01,0xf8,0x20,0x00,0x00) is the ONLY ALSOUN table entry SLAUNC (ALWELG.MAC:2675, the moment a charge launches from the cursor) actually dispatches. It is not among the 7 sounds in tools/pokey-bake/sfx-data.mjs's clean SFX array. The identical 12 bytes already sit, unused for this purpose, inside that same file's own ALSOUN_STREAM blob (tools/pokey-bake/sfx-data.mjs:117, \"0x10, 0x01, 0x07, 0x20, 0x00, 0x00, 0xa2, 0x01, 0xf8, 0x20, 0x00, 0x00,\") — array offset 24, which the map's own address arithmetic (addr = $cbcf + 2v) resolves to ROM $cbe9, matching the existing POKEY map's own idx2 row (\"$cbe9 | sound_Lccea ... player shot setup | player-shot variant? | no — multi-segment\"). The map's authors flagged this exact address with a \"?\" and never resolved or shipped it.",
     "reasoning": "Once S-008/S-009 are corrected, whatever currently occupies the 'fire' slot needs replacing; this IS the correct replacement, and its raw bytes are already sitting in our own tooling's verbatim ROM dump, just never extracted as its own streaming SFX entry.",
     "recommendation": "fix",
-    "size": "m"
+    "size": "m",
+    "remediated_by": "tp1-2"
   },
   {
     "id": "S-011",

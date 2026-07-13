@@ -28,9 +28,9 @@ const DEFAULT_BASE_URL = 'https://arcade-assets.slabgorb.com/tempest/sfx/'
 // POKEY bakes from the arcade ROM (story 6-6 — baked by tools/pokey-bake/ and
 // hosted on R2); the rest are the original community-rip samples.
 const SOUNDS = {
-  fire: 'player_fire.wav', // ★ authentic bake (ROM $cc5d) — player bullet fired
-  enemyFire: 'enemy_fire.wav', // ★ authentic ($cc45) — an enemy fired an energy bolt
-  enemyDeath: 'enemy_explosion.wav', // ★ authentic ($cc81) — an enemy was destroyed
+  fire: 'player_fire.wav', // ★ authentic ($cbe9 = LA ";PLAYER FIRE"; was $cc5d — tp1-2)
+  enemyFire: 'enemy_fire.wav', // ★ authentic ($cc45 = ES) — an enemy fired an energy bolt
+  enemyDeath: 'enemy_explosion.wav', // ★ authentic ($cc5d = EX; was $cc81 — tp1-2)
   playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim (community rip)
   playerDeath: 'player_explosion.wav', // ★ authentic ($cbf5) — the Claw was destroyed (6-11)
   warpSpikeCrash: 'kaboom.wav', // crashed onto a spike during the warp (community rip)
