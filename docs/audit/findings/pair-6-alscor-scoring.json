@@ -1,0 +1,197 @@
+[
+  {
+    "id": "SC-001",
+    "class": "DIVERGENCE",
+    "title": "High-score board depth: 8 ranks in ALCOMN.MAC vs 10 in @arcade/shared",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 26,
+      "verbatim": "NHISCO\t=8\t\t\t;# OF HIGH SCORES KEPT"
+    },
+    "ours": {
+      "file": "node_modules/@arcade/shared/dist/highscore.js",
+      "line": 46,
+      "verbatim": "export const MAX_HIGH_SCORES = 10;"
+    },
+    "claim": "The 1981 board keeps exactly 8 ranked entries (NHISCO=8 sizes INITAL to 3*8=24 bytes and HSCORL/M/H to 8 slots throughout ALSCOR.MAC's HISCHK/INIINI). Our shared high-score module keeps 10, and its own doc-comment calls that \"the classic 10-deep arcade ladder\" — Tempest's classic ladder is 8-deep, not 10.",
+    "reasoning": "This is a real numeric divergence, not a BCD/units artifact — NHISCO is a plain assembler constant, not a scaled score. It matters because the comment asserts authenticity (\"classic\") for a number the primary source contradicts, and because MAX_HIGH_SCORES is now a single shared constant consumed by tempest, star-wars, asteroids and battlezone (SH-4), so any correction has a multi-repo blast radius and must be judged against each game's own original board depth, not just Tempest's. [REFUTATION] ALCOMN.MAC:26 verbatim: 'NHISCO =8 ;# OF HIGH SCORES KEPT' — a plain assembler constant (value identical whether read as hex or decimal, so the .RADIX 16 at ALCOMN.MAC:17 changes nothing here; not a units/BCD artifact). ALCOMN is confirmed shipped (.INCLUDEd into ALSCOR/ALDISP/ALHARD, per the module's own header comment at lines 6-7, and per PROMPT.md's shipped-module list). Grepped ALSCOR.MAC and confirmed NHISCO is used pervasively (INITAL sizing, HSCORL/M/H indexing, INIIN2's 'START AT 8 RANK GAMES') as the actual board depth, not a decoy. Verified node_modules/@arcade/shared/dist/highscore.js:46 verbatim: 'export const MAX_HIGH_SCORES = 10;' directly preceded by the doc comment '/** Board depth — the classic 10-deep arcade ladder. */'. Confirmed this is the governing code for tempest, not overridden: src/core/sim.ts:16 imports qualifiesForHighScore/insertHighScore directly from '@arcade/shared/highscore', and src/core/state.ts:5 imports HighScoreTable from the same module — tempest has no local high-score-depth constant. Real numeric divergence (8 vs 10), correctly caveated by the finding as having multi-repo blast radius.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "SC-002",
+    "class": "NO_COUNTERPART",
+    "title": "The 99-rank percentile ranking system (HISCHK/RANKS/RNKDSP) has no equivalent in the clone",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 27,
+      "verbatim": "NRANKS\t=99."
+    },
+    "ours": null,
+    "claim": "ALSCOR.MAC implements a whole subsystem, separate from the named 8-entry high-score table, that scores every finished game against an internal 99-slot ranking ladder (HRANKL/HRANKM/HRANKH, populated/shifted in HISCHK, lines ~600-720) and displays the result as \"RANKING nn\" next to \"PLAYER X\" (RNKDSP, ALSCOR.MAC:1026-1061, driven by message MRANK) every time the high-score ladder screen (LDRDSP) is shown — regardless of whether the player made the named top-8 list. grep across src/ finds no percentile/ranking concept anywhere; the only surviving use of the word \"RANK\" in our code is the unrelated pre-game skill-select banner (see SC-006).",
+    "reasoning": "This is a whole feature, not a tuning constant: on the real cabinet every game outcome gets compared against a fixed 99-point ladder and reported back to the player even when they didn't crack the top 8. Our local top-10 list can tell a player they made the board, but never tells them how their run stacked up if they didn't. Consequential because it's the single largest chunk of ALSCOR.MAC (roughly 150 of 1399 lines) with zero footprint in the port.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "SC-003",
+    "class": "DIVERGENCE",
+    "title": "Initials-entry screen has no auto-abort timer (the ROM's runs ~108 s, not the ~32 s first reported)",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 36,
+      "verbatim": "ITIMHI=60"
+    },
+    "ours": {
+      "file": "src/core/state.ts",
+      "line": 106,
+      "verbatim": "export interface HighScoreEntryState {"
+    },
+    "claim": "ITIMHI=60 (ALSCOR.MAC:36) is HEX in this assembler — decimal literals carry a trailing period ('SECOND\t=20.', ALCOMN.MAC:87; 'CMP I,10.', ALWELG.MAC:571), cf. B-021 — so ITIMHI = 0x60 = 96, not 60. It seeds TIMHIS (INTLDR, ALSCOR.MAC:745-746), which GETINI decrements once per 32 GAME frames (`LDA QFRAME / AND I,1F / IFEQ ... DEC TIMHIS`, ALSCOR.MAC:768-772) and aborts entry (CNOTFOU) at zero: 96 * 32 = 3072 game frames, which at the ROM's 256/9 = 28.44 fps (FR-001) is ~108 seconds before an idle player's initials entry is auto-cancelled. `HighScoreEntryState` (src/core/state.ts:106-108) carries only `{ initials: string }` — no countdown field anywhere in state.ts or sim.ts — so our entry screen waits indefinitely for input.",
+    "reasoning": "On a coin-op cabinet this timeout exists to free the machine for the next paying customer; a single-player browser tab has no such contention, so waiting forever costs nothing — the verdict (no counterpart, wont_fix) is unaffected. Corrected for the 28.444 fps rebase (see FR-016 in pair-11-framerate-adjudication.json): the '~32 seconds' originally stated was TWO compounding unit errors — reading ITIMHI as decimal 60 (it is hex, = 96) and then dividing the frame count by 60 Hz — which cancelled into a number that sounds exactly like an arcade initials timeout. The ROM's real timeout is ~108 s. [REFUTATION] Verified the hex-default claim structurally rather than taking it on faith: ALCOMN.MAC:17 sets '.RADIX 16' near the top of that file, and ALSCOR.MAC:10 '.INCLUDE ALCOMN' pulls that state in before ALSCOR.MAC:36's 'ITIMHI=60' — no intervening '.RADIX' directive resets it (checked ALSCOR.MAC's own .RADIX count: only one, at line 570-574, gated by an unrelated '.IF EQ,...' far below and irrelevant here). Cross-checked the convention against ALCOMN.MAC:27 'NRANKS=99.' and :87 'SECOND=20. ;FRAMES/SECOND' — both decimal literals in the same hex-mode file carry the trailing period, confirming unmarked '60' at ALSCOR.MAC:36 is indeed hex 0x60=96, not decimal 60. Confirmed GETINI (ALSCOR.MAC:765-777): 'LDA QFRAME / AND I,1F / IFEQ / DEC TIMHIS / IFEQ / LDY I,CNOTFOU / STY QSTATE' — decrements once every 32 frames (0x1F+1=32) and aborts to CNOTFOU at 0, exactly as claimed. Confirmed INTLDR (line 745-746) seeds TIMHIS from ITIMHI. Confirmed GETINI is live, dispatched code: ROUTAD (ALEXEC.MAC:94) 'WORD GETINI-1' at the CGETINI (=0x12, ALCOMN.MAC:55) slot, unconditional, not inside any dead .IF block. Arithmetic: 96*32=3072 frames; 3072/(256/9 fps) = 3072*9/256 = 108.0s exactly — a suspiciously clean number that independently corroborates the derivation (not a coincidence of sloppy rounding). Checked our side: state.ts:106-108 HighScoreEntryState={initials:string} only, no countdown field; grepped sim.ts for any entry-screen timeout logic — none exists; the entry screen (lines ~62-80, 759-764) waits indefinitely for 'fire'. wont_fix is a reasonable recommendation for a single-tab browser game, and doesn't weaken the finding's factual accuracy.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "SC-004",
+    "class": "DIVERGENCE",
+    "title": "Initial-letter alphabet: 27 symbols (A-Z + blank) in the ROM vs 26 (A-Z only) in ours",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 37,
+      "verbatim": "CBLANK=26."
+    },
+    "ours": {
+      "file": "node_modules/@arcade/shared/dist/name-entry.js",
+      "line": 24,
+      "verbatim": "    if (buffer.length < maxLength && /^[a-zA-Z]$/.test(key))"
+    },
+    "claim": "The ROM's initial-selection cursor (GINICO/GETINI, ALSCOR.MAC:781-789) cycles a value 0-26 where 0-25 map through the ASCVG table to 'A'-'Z' and 26 (CBLANK) is an explicit blank/space glyph — 27 selectable symbols per character slot, and unfilled/default initials are seeded as blank (`LDA I,CBLANK` in HISCHK, ALSCOR.MAC:629-631). Our `stepNameEntry` regex `/^[a-zA-Z]$/` accepts only the 26 letters; there is no blank/space keystroke, and an unfilled slot is simply absent from the string rather than a stored blank character.",
+    "reasoning": "The ROM needed an explicit blank because its only correction mechanism was spinning a single physical dial back through the alphabet to a blank position; a keyboard interface has a strictly better correction primitive (Backspace, already implemented per the surrounding code), so the blank symbol has no job left to do. A real alphabet-size difference, but not a defect. [REFUTATION] Re-opened ALSCOR.MAC:37 verbatim — 'CBLANK=26.' is real, explicit trailing period so genuinely decimal 26 (no radix trick). Traced GETINI/GINICO (763-839): GINICO (821-838) inc/decs the current letter per spinner direction; GETINI's wraparound (781-789) is exactly as cited — IFMI wraps to 26 (CBLANK), CMP 27/IFCS wraps to 0 — giving a real 0-26 (27-value) cycle. Cross-checked two independent downstream uses of value 26: HISCHK (629-631) seeds two of three slots to CBLANK on init ('SET UP INITIALS (A BLANK BLANK)' — the third slot is actually seeded to 0/'A', a small imprecision in the finding's 'seeded as blank' but not one that changes the substance), and OUTINI (1005-1009) explicitly substitutes 26 for any out-of-range value with the comment 'SUBSTITUTE SPACE' — confirms 26 is a genuine rendered blank glyph, not decorative filler. SCOINI's local .ASCVG macro (567-577) confirms 0-25 map to 'A'-'Z' via char-0x41. Checked our side: name-entry.js:24 is exactly the cited regex `/^[a-zA-Z]$/`, no blank keystroke exists anywhere in the module. Not self-refuting — the finding concedes 'not a defect' in its own reasoning but that is a recommendation judgment (wont_fix), not a retraction of the technical claim, which holds. [CORRECTION] Minor: the ROM's actual freshly-seeded default is 'A, blank, blank' (TEMP2=0, TEMP1=TEMP0=CBLANK), not 'blank, blank, blank' as the parenthetical might imply — doesn't affect the core 26-vs-27-symbol claim.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "SC-005",
+    "class": "CONFIRMED",
+    "title": "Three-letter initials convention matches",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 970,
+      "verbatim": "INITAL:\t.BLKB 3*<NHISCO>"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 49,
+      "verbatim": "const MAX_INITIALS = 3"
+    },
+    "claim": "The ROM reserves exactly 3 initial-bytes per ranked entry (3*NHISCO where NHISCO=8), and our entry buffer caps at MAX_INITIALS=3 — the classic 3-character arcade initials convention is preserved exactly."
+  },
+  {
+    "id": "SC-006",
+    "class": "CONFIRMED",
+    "title": "RANK banner flanked by NOVICE/EXPERT frames the pre-game skill/start-level chooser in both",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 1227,
+      "verbatim": "MSGTAB:\t.BYTE MRATE,MPRMOV,MPRFIR\t;RATE MESSAGES"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 701,
+      "verbatim": "  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)"
+    },
+    "claim": "RQRDSP (ALSCOR.MAC:1074-1096) walks MSGTAB = {MRATE,MPRMOV,MPRFIR / MNOVIC,MEXPER,MLEVEL / MHOLE,MBONUS} (lines 1227-1229) to build the \"RATE YOURSELF\" / RANK screen with NOVICE and EXPERT flanking the level chooser. Our drawSelect() (render.ts:697-711) renders the same shape: 'RATE YOURSELF' + 'RANK' header (700-701), 'SELECT START LEVEL' chooser, 'NOVICE' at W*0.17 and 'EXPERT' at W*0.83 (708-709) flanking it — the concept and message set survive even though the presentation differs (see SC-011)."
+  },
+  {
+    "id": "SC-007",
+    "class": "STRUCTURAL",
+    "title": "Per-message color table (MSGLBS) that would confirm/deny our RED/GREEN banner claim lives outside this module",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 23,
+      "verbatim": "\t.GLOBL MHIGHS,MPLAYR,MENTER,ENGMSG,MSGLBS,LSYMBL,MPLAY,MPLYR2"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 699,
+      "verbatim": "  // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED."
+    },
+    "claim": "MSGS (ALSCOR.MAC:423-467) derives each message's actual display color from a per-message byte in MSGLBS (`LDA X,MSGLBS ... LSR*4 ... JSR NWCOLO`), but MSGLBS itself is only declared `.GLOBL` here — its data table is defined in a different module, not in ALSCOR.MAC, ALEARO.MAC, or ALCOMN.MAC. Our render.ts comment asserts a specific split (\"RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED\") that this pair's primary source cannot confirm or refute.",
+    "reasoning": "Recording this so the claim isn't mistaken for something this audit verified: the color assignment is a real, checkable fact, just not one reachable from ALSCOR.MAC/ALEARO.MAC/ALCOMN.MAC. A future audit pair with ALDISP.MAC/ALVGUT.MAC in scope should adjudicate it.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "SC-008",
+    "class": "STRUCTURAL",
+    "title": "Extra-life interval is an operator-configurable EAROM byte in the ROM, a hardcoded constant in ours",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 782,
+      "verbatim": "BLIFIN:\t.BLKB 1\t\t;BONUS LIFE INTERVAL"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 30,
+      "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
+    },
+    "claim": "BLIFIN is a 1-byte RAM variable (not a compile-time constant) that BOLOUT displays via 3-digit BCD output captioned \"OUTPUT 10K & 20K\" (ALSCOR.MAC:966-979) — i.e. its value is operator-set via the cabinet's game-play options, with no fixed default anywhere in ALSCOR.MAC/ALCOMN.MAC. `EXTRA_LIFE_INTERVAL = 10000` in rules.ts is a single, permanent, non-configurable value.",
+    "reasoning": "10000 is a plausible, in-range default consistent with the ROM's own \"10K & 20K\" display example, so this is not a wrong number — it's a collapsed design space (no operator settings screen exists in a client-only browser game, so there is nothing to configure it from).",
+    "recommendation": "accept"
+  },
+  {
+    "id": "SC-009",
+    "class": "DIVERGENCE",
+    "title": "ROM ships pre-seeded placeholder high-score entries; ours starts genuinely empty",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 579,
+      "verbatim": "\t.ASCVG\t<HEBPJMLDSTFDHPMRRRSEDDJE>"
+    },
+    "ours": {
+      "file": "node_modules/@arcade/shared/dist/highscore.js",
+      "line": 340,
+      "verbatim": "        const rows = raw === null ? [] : parseTable(raw);"
+    },
+    "claim": "INIINI (ALSCOR.MAC:513-536) seeds all 8 initial-triples from SCOINI's ASCVG string (\"HEB PJM LDS TFD HPM RRR SED DJE\") and seeds every HSCORL/M/H byte to 1 (lines 546-550) whenever the EAROM reads as blank/corrupt — a freshly-initialized board is never actually empty, it has 8 placeholder rows. Our `load()` returns `[]` whenever localStorage has no entry, so a fresh browser board has zero rows until a real qualifying score is inserted.",
+    "reasoning": "The ROM's placeholder initials are a known period detail (programmer-initial easter egg), not a functional requirement; an empty board is the expected, honest modern default for a personal per-browser table, so this is a cosmetic divergence rather than a bug. [REFUTATION] Re-opened ALSCOR.MAC:579 verbatim — '.ASCVG <HEBPJMLDSTFDHPMRRRSEDDJE>' matches exactly, decoded via the local SCOINI macro (567-577, distinct redefinition from the global one in ASCVG.MAC) into byte offsets from 'A'. Confirmed INIINI (514-536) copies SCOINI into all/most of the 24-byte INITAL table and a second loop (540-550, exact citation match) stores LDA I,1 into the HSCORL-based table for 3*NHISCO=24 bytes (NHISCO=8 confirmed at ALCOMN.MAC:26) whenever EABAD signals a bad/changed EAROM read. Checked the trigger condition (INICHK 508-513, HISCHK-adjacent EABAD tests) — reinit is gated on EAROM corruption/DIP-option-change, i.e. genuinely the 'fresh cabinet' scenario the finding describes. Verified our side verbatim: highscore.js load() (309-343) really does return [] whenever storage has no key, with no placeholder seeding anywhere in the module. Claim holds. [CORRECTION] Small nuance not stated by the finding: the full 8-triple reseed only happens when EABAD's initials-bad bit is actually set (526-531); if only game-options changed but initials read as valid, only the bottom 5 of 8 rank slots get overwritten (top 3 preserved). This doesn't undercut the claim — the worst/blank-EAROM case (the true 'freshly-initialized' scenario) still reseeds all 8 rows as described.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "SC-010",
+    "class": "STRUCTURAL",
+    "title": "Per-enemy/per-kill point values are not present in ALSCOR.MAC — they are awarded by an external module",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 14,
+      "verbatim": "\t.GLOBL BONSCO,VGSCAL"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 21,
+      "verbatim": "export const SCORE_FLIPPER = 150"
+    },
+    "claim": "ALSCOR.MAC/ALEARO.MAC/ALCOMN.MAC contain no table of per-enemy-type point values and no fuseball-depth-band or spike-shortening point logic (grepped for FLIP/TANK/SPIK/PULS/FUSE and every plausible point literal — none). Even bonus-score computation is external: BONSCO is only declared `.GLOBL` and invoked (`JSR BONSCO` at BODSPL, ALSCOR.MAC:1250-1251) — ALSCOR.MAC receives a computed score and displays/accumulates/persists it; it does not decide per-kill values. Our SCORE_FLIPPER/SCORE_TANKER/SCORE_SPIKER/SCORE_PULSAR/SCORE_FUSEBALL_BASE+STEP/SCORE_SPIKE_SEGMENT constants (rules.ts:21-27) all live in the awarding side, which this pair's primary source does not cover.",
+    "reasoning": "This module boundary means none of this pair's scope items about per-enemy scoring, fuseball depth-banding, or spike-shortening points can be confirmed, diverged, or corrected here (the book-vs-ROM comparison the task anticipates needs ALDISP.MAC, out of scope for pair-6). Flagging the boundary rather than silently skipping it, so a future ALDISP.MAC pair knows exactly what's still unaudited.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "SC-011",
+    "class": "STRUCTURAL",
+    "title": "Start-level chooser: ROM shows a scrolling 5-wide window of candidate levels, ours shows one",
+    "source": {
+      "file": "ALSCOR.MAC",
+      "line": 1226,
+      "verbatim": "XPOTAB:\t.BYTE 0BE,0E3,09,30,58"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 704,
+      "verbatim": "    ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,"
+    },
+    "claim": "XPOTAB holds 5 screen X-offsets (ALSCOR.MAC:1226); RQRDSP's inner loop (`LDX I,4 / STX INDEX1 ... MIEND`, ALSCOR.MAC:1133-1179) draws LEVEL#, BONUS points and HOLE for 5 candidate levels side-by-side, scrolling the window left/right as the spinner (CURSL1) approaches LEFSID/RITSID. Our drawSelect() renders exactly one level at a time — `s.select.selectedLevel` — with no adjacent-candidates preview.",
+    "reasoning": "The ROM's 5-wide scroll is an affordance for its analog spinner (you can see your neighbors before committing); a keyboard/discrete-step chooser doesn't need a preview window to convey the same information (current level, its bonus, its hole), so collapsing to a single value is a reasonable interaction simplification rather than a missing feature.",
+    "recommendation": "accept"
+  }
+]

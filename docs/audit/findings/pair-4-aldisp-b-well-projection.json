@@ -1,0 +1,320 @@
+[
+  {
+    "id": "DB-001",
+    "class": "CONFIRMED",
+    "title": "All 16 well X coordinate tables (NEWLIX) match ROM_X byte-for-byte",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1245,
+      "verbatim": "NEWLIX:\t.BYTE DG0,DG225,DG450,DG675,DG900\t;CIRCLE"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 137,
+      "verbatim": "const ROM_X: readonly (readonly number[])[] = ["
+    },
+    "claim": "NEWLIX (ALDISP.MAC:1245-1310) is one contiguous 16x16 byte table, part symbolic. Resolving the symbols (DG0=70+80=0xF0, DG225=0xE7, DG450=0xCF, DG675=0xAA, DG900=0x80; DI0=0xF0, DI1=0xB8, DI2=0x80, DI3=0x48, DI4=0x10; CR0=CR1=0xF0, CR2=CR3=0xB8, CR4=0x80; PX0=0xEC, PX1=0xD5, PX2=0xB1, PX3=0x90; and the unary minus as 8-bit two's complement, e.g. -DG675 = -0xAA = 0x56) yields, row by row: CIRCLE f0,e7,cf,aa,80,56,31,19,10,19,31,56,80,aa,cf,e7 / SQUARE f0,f0,f0,b8,80,48,10,10,10,10,10,48,80,b8,f0,f0 / CROSS f0,f0,b8,b8,80,48,48,10,10,10,48,48,80,b8,b8,f0 / PEANUT ec,d5,b1,90,70,4f,2b,14,14,2b,4f,70,90,b1,d5,ec, then the 12 literal rows 4 KEY, TRIANGLE, CLOVER, V, PLANE, U, JAGGED, LYING 8, HEART, STAIRCASE, STAR X, WAVE X. Every one of the 256 bytes is identical to ROM_X[0..15] in src/core/geometry.ts:138-153.",
+    "reasoning": "Our tables were ported from the rev-3 ROM disassembly (tempest.a65), not from Theurer's assembler source. This independently proves the disassembly-derived tables reproduce the original 1981 source exactly — the well SHAPES are right. It also anchors the rest of the audit: any perspective wrongness in our clone is NOT a coordinate error."
+  },
+  {
+    "id": "DB-002",
+    "class": "CONFIRMED",
+    "title": "All 16 well Z coordinate tables (NEWLIZ) match ROM_Y byte-for-byte",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1311,
+      "verbatim": "NEWLIZ:\t.BYTE DG900,DG675,DG450,DG225,DG0\t;CIRCLE"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 157,
+      "verbatim": "const ROM_Y: readonly (readonly number[])[] = ["
+    },
+    "claim": "NEWLIZ (ALDISP.MAC:1311-1361), resolved the same way (adding PZ0=0x94, PZ1=0xB0, PZ2=0xB8, PZ3=0xA7, and the PLANE row's `.REPT 10 / .BYTE 40` = sixteen 0x40 bytes), gives: CIRCLE 80,aa,cf,e7,f0,e7,cf,aa,80,56,31,19,10,19,31,56 / SQUARE 80,b8,f0,f0,f0,f0,f0,b8,80,48,10,10,10,10,10,48 / CROSS 80,b8,b8,f0,f0,f0,b8,b8,80,48,48,10,10,10,48,48 / PEANUT 94,b0,b8,a7,a7,b8,b0,94,6c,50,48,59,59,48,50,6c / PLANE 40x16 / ... all 256 bytes identical to ROM_Y[0..15] in src/core/geometry.ts:158-173. Note the source calls the tables X and Z, not X and Y: Z is the SCREEN-VERTICAL axis (VGYABS writes the Z pair first as the VG's Y delta). Our ROM_Y is the source's Z, and we negate it (geometry.ts:207) because canvas +y is down while the VG's +y is up — correct.",
+    "reasoning": "Same as DB-001: the well shapes and their vertical orientation are faithful. Confirms our y-negation is the right handedness fix, not an accident."
+  },
+  {
+    "id": "DB-003",
+    "class": "CONFIRMED",
+    "title": "Wave -> well-ID cycle order (WELSEQ) matches ROM_REMAP",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1383,
+      "verbatim": "WELSEQ:\t.BYTE 0,1,2,3,4,5,6,7,0D,9,8,0C,0E,0F,0A,0B\t;WELL ID SEQUENCE(WAVE)"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 183,
+      "verbatim": "  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0d, 0x09, 0x08, 0x0c, 0x0e, 0x0f, 0x0a, 0x0b,"
+    },
+    "claim": "WELSEQ = 0,1,2,3,4,5,6,7,D,9,8,C,E,F,A,B; ROM_REMAP = the identical 16 values. LVLWEL (ALDISP.MAC:2559-2582) takes (level-1), reduces it mod 16 (WELSEN-WELSEQ = 16), and indexes WELSEQ to get WELLID; tubeForLevel (geometry.ts:221-224) does exactly `GEOMETRIES[(level-1) mod 16]` where GEOMETRIES = ROM_REMAP.map(makeRingTube) (geometry.ts:216) — remap first, then look up the shape. Same composition, same order.",
+    "reasoning": "The level->shape cycle is right, including the deliberate D/9/8 and C/E/F/A/B reordering at waves 9-16. One caveat we do NOT implement: LVLWEL also has `CMP I,98. / IFCS / LDA RANDOM / AND I,5F` — from wave 153 (0x98 = 152, +1) the well is chosen at RANDOM (RANDOM & 0x5F, then mod 16) instead of cycling. That is outside this finding's scope but worth filing separately."
+  },
+  {
+    "id": "DB-004",
+    "class": "CONFIRMED",
+    "title": "Open/closed (planar) well flags (HOLRAP) match ROM_OPEN, including the 15-vs-16 lane count",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1389,
+      "verbatim": "HOLRAP:\t.BYTE 0,0,0,0,0,0,0,-1,-1,-1,-1,0,0,-1,0,-1\t;PLANAR(-1)/CLOSED(0) FLAG"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 178,
+      "verbatim": "  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0xff, 0x00, 0xff,"
+    },
+    "claim": "-1 assembles to 0xFF, so HOLRAP == ROM_OPEN element-for-element (wells 7,8,9,10,13,15 are planar/open). HOLRAP is indexed by WELLID (ALDISP.MAC:2484 `LDA Y,HOLRAP` with Y=WELLID), and so is ours (makeRingTube(tube) reads ROM_OPEN[tube] where tube = ROM_REMAP[level-1]) — the indexing is not confused with the wave index. The lane-count consequence also matches: OUTLIN (ALDISP.MAC:2656-2660) draws NLINES-1 = 15 rim segments for a closed well (the 16th closes the ring via the INDEX1 wrap at 2665-2674) and one fewer (14 segments over 16 points, i.e. an unclosed polyline) when WELTYP is planar; we set laneCount 16/closed and 15/open over the same 16 rim points (geometry.ts:211).",
+    "reasoning": "Topology is faithful: enemies wrap on closed wells and clamp on open sheets exactly as the cabinet does."
+  },
+  {
+    "id": "DB-005",
+    "class": "CONFIRMED",
+    "title": "perspectiveDepth() IS the arcade's 1/(depth - eye) perspective divide, exactly, once units are converted",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2049,
+      "verbatim": ";FORMULAE:\tSCREEN X = [FACTOR/(PY-EY)]*(PX-EX)+SXCENT"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 38,
+      "verbatim": "  return (FAR_RATIO * depth) / (FAR_RATIO * depth + (1 - depth))"
+    },
+    "claim": "ARCADE. WORSCR (ALDISP.MAC:2218-2333) computes MXP = PY - EY once, loads it as the math box's divisor (MXPL/MXPH), then twice sets the numerator's HIGH byte (MZLH, ALDISP.MAC:2243/2268) and starts a divide (MSZXD, 2244/2269). Numerator in the high byte = numerator*256, so:  SX = 256*(PX-EX)/(PY-EY) + XADJ  and  SZ = 256*(PZ-EZ)/(PY-EY) + ZADJ. That is the header formula at 2049/2051 verbatim, with FACTOR = 256. CASCAL (ALDISP.MAC:1453-1514) derives an object's SIZE from the same denominator: it divides YDEUNI by (PYL - EY) (1456-1479) and packs the result into the VG's binary+linear SCAL word — i.e. scale(PY) = YDEUNI/(PY - EY), a pure reciprocal. The well spans PY in [ILINLIY=0x10 (near rim), ILINDDY=0xF0 (far end)] (ALCOMN.MAC:819-820, used at ALDISP.MAC:2589/2599), and INIWLS sets EY = -HOLEYL[wellID] and YDEUNI = 0x10 - EY = 16 + HOLEYL (ALDISP.MAC:2470-2481), so scale is exactly 1.0 at the rim.\n\nOURS. project() (geometry.ts:84-89) walks the far->near segment by t = perspectiveDepth(d) = R*d/(R*d + 1 - d), R = FAR_RATIO, with our far ring built as near*R about the origin (geometry.ts:209). Substituting: screen radius(d) = |N|*(R + (1-R)*t) = |N| * R / (1 - (1-R)*d).\n\nCONVERSION. Our depth d (0=far, 1=near) is linear in the arcade's world Y: PY = 240 - 224*d. Then the arcade's screen radius from the vanishing point is 256*|W-E|/(240 + H - 224*d) with H = HOLEYL. Normalising by its rim value and writing R_a = (16+H)/(240+H):  240+H = (16+H)/R_a and 224 = (16+H)*(1-R_a)/R_a, so the arcade's radius law collapses to  R_a / (1 - (1-R_a)*d)  — ALGEBRAICALLY IDENTICAL to ours, term for term. The curve family is right; only the value of R differs (see DB-006).",
+    "reasoning": "This is the centrepiece and it clears us: our reparameterisation is not an ad-hoc easing curve, it is the cabinet's pinhole divide expressed as a fraction along the far->near segment. Any perspective wrongness in the clone therefore comes from the CONSTANTS fed to that curve (DB-006, DB-007, DB-008), not from the curve. Worth locking in with a unit test that asserts perspectiveDepth against 256*(1/(240+H-224d)) normalised."
+  },
+  {
+    "id": "DB-006",
+    "class": "DIVERGENCE",
+    "title": "FAR_RATIO is one hardcoded 0.2 for every well; the arcade's far/near ratio is per-well and is never 0.2",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1385,
+      "verbatim": "HOLEYL:\t.BYTE 18,1C,18,0F,18,18,18,18,0A,18,10,0F,18,0C,14,0A\t\t;EYE POSITION (Y)"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 18,
+      "verbatim": "export const FAR_RATIO = 60 / 300"
+    },
+    "claim": "The eye's Y distance behind the rim is a PER-WELL constant: EY = -HOLEYL[wellID] (ALDISP.MAC:2470-2474 negates the table value). With the well spanning PY 0x10..0xF0, the far-ring/near-ring screen scale ratio is R_a = (16 + H)/(240 + H), H = HOLEYL[wellID]:\n  well 0 circle   H=0x18(24) -> 40/264 = 0.1515\n  well 1 square   H=0x1C(28) -> 44/268 = 0.1642\n  well 2 cross    H=0x18(24) -> 0.1515\n  well 3 peanut   H=0x0F(15) -> 31/255 = 0.1216\n  wells 4,5,6,7,9,12 H=0x18(24) -> 0.1515\n  well 8 plane    H=0x0A(10) -> 26/250 = 0.1040\n  well 10 jagged  H=0x10(16) -> 32/256 = 0.1250\n  well 11 lying-8 H=0x0F(15) -> 0.1216\n  well 13 stair   H=0x0C(12) -> 28/252 = 0.1111\n  well 14 star    H=0x14(20) -> 36/260 = 0.1385\n  well 15 wave    H=0x0A(10) -> 0.1040\nRange 0.1040 .. 0.1642. Ours is a single FAR_RATIO = 60/300 = 0.2000 for all 16 — 22% too large on the shallowest well (0.1642) and 92% too large on the deepest (0.1040). Our far ring is therefore too BIG on every level, i.e. every tube is too shallow / under-foreshortened. Fix: make the ratio per-well, R = (16 + HOLEYL[wellID]) / (240 + HOLEYL[wellID]), and feed it to perspectiveDepth (which must then take the tube, not a module constant).",
+    "reasoning": "Because DB-005 proves the CURVE is right, this constant is the single biggest remaining lever on how the tube reads in perspective. It is also the likeliest explanation for 'the well doesn't look deep enough'. Note perspectiveDepth() currently closes over the module-level FAR_RATIO, so making R per-well is an API change (perspectiveDepth(depth, ratio) or Tube.farRatio) that touches project/boundaryRail/laneWidth/flipPivot — hence size m rather than s. [REFUTATION] Independently re-derived the projection from scratch rather than trusting the finding's formula. HOLEYL (ALDISP.MAC:1385) is indexed directly by WELLID (INIWLS, ALDISP.MAC:2469-2470: LDY WELLID; LDA Y,HOLEYL), negated into EYL/EYLDES, and YDEUNI := 0x10-EYL = 16+H (ALDISP.MAC:2476-2479). BLDWEL (ALDISP.MAC:2586-2607) calls CALOUT twice with the SAME world LINEX/LINEZ table (built once in INIWLS from NEWLIX/NEWLIZ and never touched again for the two calls) but different PYL: 0xF0 ('BOTTOM OF WELL', ILINDDY=0F0 per ALCOMN.MAC:819) and 0x10 ('TOP OF WELL', ILINLIY=010 per ALCOMN.MAC:820). Storage offsets (LDX I,4F vs LDX I,0F into CALOUT) resolve via ALCOMN.MAC:902-909 (LINSXH..'NEAR PT.' at base+0, LIFSXH..'FAR PT.' at base+0x40) to: PYL=0x10 -> NEAR array, PYL=0xF0 -> FAR array. WORSCR (ALDISP.MAC:2218-2243) computes screen delta = worldDelta/(PYL-EYL), a true perspective divide, so r_near = worldRadius/(16+H), r_far = worldRadius/(240+H), giving exactly R_a=(16+H)/(240+H) — the finding's formula, independently reproduced. Checked the finding's arithmetic against the raw HOLEYL bytes (18,1C,18,0F,18,18,18,18,0A,18,10,0F,18,0C,14,0A) — every one of the 16 per-well H values and resulting ratios (0.1515, 0.1642, 0.1216, 0.1040, 0.1250, 0.1111, 0.1385) checks out exactly. Confirmed our side: src/core/geometry.ts:18 `FAR_RATIO = 60/300 = 0.2000` is a single module-level constant applied identically to all 16 tubes in makeRingTube (geometry.ts:199-212, line 209 `far.push({x:x*FAR_RATIO,...})`), with no per-tube parameter — real divergence, not a unit trap (pure spatial ratio, no frame-rate involved), not dead code (ALDISP.MAC/INIWLS/BLDWEL are the live display path). Holds. [CORRECTION] None to the math; size 'm' for the fix is reasonable given perspectiveDepth/project/boundaryRail/laneWidth/flipPivot all close over the module constant.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DB-007",
+    "class": "DIVERGENCE",
+    "title": "The eye sits OFF the tube axis in Z (HOLEZL != world centre on 15 of 16 wells); we scale the far ring about the ring centroid",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1386,
+      "verbatim": "HOLEZL:\t.BYTE 50,50,50,68,50,50,68,0B0,0A0,50,90,80,20,0B0,60,0A0\t;EYE POSITION (Z)"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 209,
+      "verbatim": "    far.push({ x: x * FAR_RATIO, y: y * FAR_RATIO })"
+    },
+    "claim": "The eye's world position is (EX, EY, EZ) = (0x80, -HOLEYL, HOLEZL) — EX is hardcoded to the world centre 0x80 (INIDSP, ALDISP.MAC:2338-2339) but EZ is a PER-WELL table value that is NOT the world centre. World Z centre is 0x80 = 128; HOLEZL is 0x50(80), 0x68(104), 0xB0(176), 0xA0(160), 0x90(144), 0x80(128), 0x20(32), 0x60(96), so (128 - EZ) = +48, +48, +48, +24, +48, +48, +24, -48, -32, +48, -16, 0, +96, -48, +32, -32 for wells 0..15. Only well 11 (LYING 8) has the eye on the tube axis.\n\nConsequence: the near and far rings project to DIFFERENT screen centres. For well 0 (circle), the projection of the world centre (0x80,0x80) lands at screen Z = 256*(128-80)/(16+24) + ZADJ = +307.2 + ZADJ at the rim and 256*(128-80)/(240+24) + ZADJ = +46.5 + ZADJ at the far end — a 260.7-unit vertical displacement, against a near-rim radius of 256*112/40 = 716.8 units. The far well is displaced ~36% of the near rim's radius. We instead build far = near * FAR_RATIO about (0,0) (geometry.ts:206-209), so our far ring is exactly CONCENTRIC with the near ring. Fix: far[i] = VP + (near[i] - VP) * R, where VP is the projected vanishing point rather than the ring centroid.",
+    "reasoning": "This is the 'looking down into the well from slightly above' cue, and it is completely absent from our tube. It is what makes the arcade's far well sit visibly off the near rim's centre rather than nested inside it. Cheap to add once the ring builder takes a vanishing point (it is the same code change as DB-006 and DB-008 — do them together). [REFUTATION] Re-opened ALDISP.MAC:1386 (HOLEZL) and INIWLS (ALDISP.MAC:2482-2483: LDA Y,HOLEZL; STA EZL — stored RAW, unlike HOLEYL which is negated). Confirmed EXL is hardcoded to 0x80 in INIDSP (ALDISP.MAC:2338-2339) with no per-well variation, while EZL varies per well and is NOT 0x80 except at index 11 (HOLEZL[11]=0x80 exactly, per the raw byte table 50,50,50,68,50,50,68,0B0,0A0,50,90,80,20,0B0,60,0A0 — index 11 is the only 0x80). Verified the consequence mathematically via WORSCR (ALDISP.MAC:2218-2243): screen Z-position of a world point = (PZL-EZL)/(PYL-EYL) + ZADJ (true perspective, same math box divide as DB-006). For the ring's own centre (PZL=0x80), a nonzero (128-EZ) numerator combined with the DIFFERENT near/far divisors ((16+H) vs (240+H), per DB-006) means the two rings' effective screen centres are displaced from each other by an amount proportional to (128-EZ), not equal (unlike DB-006's magnitude claim, this is a genuinely distinct effect — off-axis center, not ring size). Re-derived the percentage independent of the finding's assumed '256' fixed-point constant, since it cancels in a ratio: displacement/near-radius = (128-EZ)*(1/(16+H) - 1/(240+H)) / (112/(16+H)) = (128-EZ)*(1-R_a)/112. For well 0 (EZ=0x50=80,H=24,R_a=0.1515): (48)*(0.8485)/112 = 0.364 ≈ 36% — matches the finding's ~36% claim exactly, and is invariant to the unverified '256' scale assumed in the finding's raw-unit walkthrough. Confirmed our side is concentric: geometry.ts:209 scales the far ring as `x*FAR_RATIO, y*FAR_RATIO` about the same origin as the near ring (both centered at 0,0 after ROM_CENTER subtraction) — genuinely concentric, no per-well Z-eye offset applied anywhere in the file. Not dead code, not a unit trap, not self-refuting. Holds. [CORRECTION] The finding's absolute pixel figures (307.2, 46.5, 716.8) depend on an unverified '256' scale constant, but the load-bearing 36% ratio claim is scale-invariant and independently reproduced, so the conclusion stands regardless.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DB-008",
+    "class": "NO_COUNTERPART",
+    "title": "Per-well screen-Z vanishing point (ZADJL from HOLZAD/HOLZDH), and its slide-in on a new wave",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1387,
+      "verbatim": "HOLZAD:\t.BYTE 40,20,40,80,40,40,70,60,0,20,40,0,0A0,40,40,0;CENTER ADJUST"
+    },
+    "ours": null,
+    "claim": "ZADJL is declared as 'SCREEN Z VANISH PT' (ALCOMN.MAC:543) and is the additive term in WORSCR's SZ (ALDISP.MAC:2274 `ADC ZADJL`). It is loaded per-well from HOLZAD (low byte) + HOLZDH (high byte) (ALDISP.MAC:1387-1388, read at 2489-2498), giving signed 16-bit screen offsets: well 0 0xFF40 = -192, well 1 0xFF20 = -224, well 2 -192, well 3 0xFF80 = -128, wells 4,5 -192, well 6 0xFF70 = -144, well 7 +0x0060 = +96, well 8 +0x0100 = +256, well 9 -224, well 10 +0x0040 = +64, well 11 0, well 12 0xFEA0 = -352, well 13 +0x0140 = +320, well 14 -192, well 15 +256. The X vanishing point is always 0 (ALDISP.MAC:2507 `LDA I,0 ;X SCREEN CENTER`). Furthermore the value is ANIMATED: on a new life it snaps to the table value, but on a new WAVE it eases in — ZADEST = (target - current) >> 3 per step (ALDISP.MAC:2494-2505, applied at ALWELG.MAC:80-84) — so the well slides into place at the start of each level. We have neither the per-well offset nor the slide: our tube is always centred on the canvas origin.",
+    "reasoning": "This is a whole-well screen translation (both rings move together), so it is less optically important than DB-007 — but it is why in the cabinet the tall wells (staircase +320, heart -352) sit high or low in frame rather than dead centre, and the slide-in is a signature level-start beat. Implement it as a screen-space translate of the whole Tube plus a per-level tween in the shell; it does not need to touch the core's projection.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "DB-009",
+    "class": "NO_COUNTERPART",
+    "title": "The eye TRAVELS down the well; we have a fixed camera",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2767,
+      "verbatim": "\tLDA EYH"
+    },
+    "ours": null,
+    "claim": "The eye is not static. CHKDEP ('CHECK FOR EYE PAST OBJECT ON WELL', ALDISP.MAC:2766-2788) exists purely to cope with the eye having moved INTO the well: if EYH == 0 (eye Y has gone positive, i.e. past the rim at Y=0x10 and inside the tube), any point closer than 0x0C to the eye is nudged out to EYL+0x0F, clamped at 0xF0 ('BUT NOT PAST END OF WELL'). DSPENL likewise aborts drawing the spikes entirely once EYL >= 0xF0 (ALDISP.MAC:3000-3006 — the eye has passed the far end). ALWELG.MAC:85-91 is the driver: `LDA EYL ;MOVE EYE CLOSER TO WELL / CLC / ADC I,18` — the eye advances 0x18 = 24 world units per step toward EYLDES. We have no camera at all: depth is a fixed [0,1] parameter and the tube's screen points never move.",
+    "reasoning": "This IS the warp dive — the reason the tube rushes past you at the end of a level and the reason CHKDEP and the starfield (DB-016) exist. Our warp fakes it by moving the claw's depth instead of moving the camera, so the well itself never grows or streams past. Big, high-visibility gap; also structurally significant, because a moving eye means the ring screen positions are per-frame, not per-level.",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "DB-010",
+    "class": "DIVERGENCE",
+    "title": "Well colour: WELCOL is BLUE and the palette cycles every 16 waves through 6 sets — one of which makes the well INVISIBLE",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2447,
+      "verbatim": "\t.BYTE ZBLACK"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 20,
+      "verbatim": "  '#1f8fff', '#ff2f4f', '#ffd400', '#23e8a6',"
+    },
+    "claim": "The well (rim AND spokes) is drawn in a single colour INDEX, WELCOL = BLUE = 6 (ALCOMN.MAC:359, used at ALDISP.MAC:2612 and 2630). What that index resolves to is set by INICOL (ALDISP.MAC:2353-2378): X = ((min(CURWAV & 0x70, 0x5F)) >> 1) | 0x07, i.e. COLTAB is SIX 8-byte colour sets and the set advances every 16 waves. Slot 6 of each set (ALDISP.MAC:2405-2456): set 0 = ZBLUE, set 1 = ZRED, set 2 = ZYELLO, set 3 = ZTURQOI, set 4 = ZBLACK (ALDISP.MAC:2447 — the famous invisible-well waves), set 5 = ZGREEN. So: waves 1-16 blue, 17-32 red, 33-48 yellow, 49-64 turquoise, 65-80 INVISIBLE, 81-96 green, then it saturates at set 5. Ours: LEVEL_COLORS is 8 arbitrary hex hues indexed by (level-1) mod 8 (render.ts:19-22) — wrong period (8 vs 16), wrong count (8 vs 6), wrong hues, and no invisible-well levels at all.",
+    "reasoning": "The 16-wave colour period is a core piece of Tempest's identity, and the black-well levels (65-80) are one of the game's best-known difficulty spikes — we simply do not have them. This is a pure shell change: replace LEVEL_COLORS with the 6-set COLTAB slot-6 sequence keyed on floor((level-1)/16) clamped to 5. [REFUTATION] Fully re-derived INICOL (ALDISP.MAC:2353-2361) independent of the finding's stated formula: X = min(CURWAV&0x70, 0x5F) >> 1 | 0x07. Walked all 8 possible (CURWAV&0x70) values through the clamp/shift/or and got index bases {7,15,23,31,39,47,47,47} for wave-groups 0-7 (16 waves each) — i.e. exactly 6 distinct group bases, saturating at the 6th from group 5 onward, matching the finding's '16-wave period, saturates at set 5' claim. Independently read all 6 COLTAB groups (ALDISP.MAC:2405-2456) and pulled slot 6 (the WELL slot, confirmed via WELCOL=BLUE=6 at ALCOMN.MAC:359 and the loop structure at ALDISP.MAC:2362-2377 that walks 8 bytes per group from the computed index downward) from each group myself: group0(idx7)=ZBLUE, group1(idx15)=ZRED, group2(idx23)=ZYELLO, group3(idx31)=ZTURQOI, group4(idx39)=ZBLACK (line 2447, exact match to the cited line), group5(idx47)=ZGREEN. This exactly reproduces the finding's 6-color sequence and the wave-65-80 invisible-well claim without relying on the finding's own arithmetic. Confirmed our side: render.ts:19-22 LEVEL_COLORS is 8 arbitrary hex colors indexed `(s.level-1) % LEVEL_COLORS.length` (render.ts:917) — wrong period (8 vs 16), wrong count (8 vs 6), and structurally cannot ever render an invisible well (no black/transparent entry, no mechanism for one). Not dead code (INICOL runs from INIDSP, the live init path), not a unit/frame-rate trap (this is a wave-count cycle, not fps-based), not self-refuting. Holds. [CORRECTION] None — this is the most precisely verifiable finding in the batch and reproduces exactly.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DB-011",
+    "class": "DIVERGENCE",
+    "title": "Far rim and spokes are drawn at the SAME brightness as the near rim (RATS = 0xC0); we fade both toward the far end",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2625,
+      "verbatim": "\tLDA I,RATS\t\t;SPOKE INTENSITY"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 206,
+      "verbatim": "    { stroke: 'rgba(150,190,255,0.28)', width: 1.5, blur: 6, color }, tube.closed,"
+    },
+    "claim": "RATS = 0xC0 (ALDISP.MAC:33). WELPIC drives every spoke at that constant intensity (ALDISP.MAC:2625) and OUTLIN drives the rim polylines at the same constant (ALDISP.MAC:2661 `LDA I,RATS` -> VGBRIT), and OUTLIN is called TWICE with the same COLOR and the same VGBRIT — once for the far rim (Y=0x4F) and once for the near rim (Y=0x0F) (ALDISP.MAC:2634-2638). There is no depth cue on the well: the routine that would have added one, SETINT ('SET INTENSITY AS FUNC OF PYL'), is commented out (ALDISP.MAC:1566). The only beam-off in the whole well is the near-to-adjacent-near hop inside SPOKE (ALDISP.MAC:2731-2732), a pen-up move, not a dim line. We instead draw the far ring at alpha 0.28 / width 1.5 versus the near ring's full-alpha width 3.5 (render.ts:206 vs 212), and gradient each spoke from rgba(255,255,255,0.04) at the far end to full colour at the near end (render.ts:192-193).",
+    "reasoning": "Our depth fade is a modern reading of a vector display; the cabinet's well is uniformly lit, and the sense of depth comes entirely from the geometry (DB-006/DB-007). Because our perspective is under-foreshortened, the fade is probably compensating for it — fixing DB-006 first may make the fade look wrong anyway. Reasonable to keep as a deliberate glow-styling choice, but it should be recorded as a divergence, not mistaken for fidelity. [REFUTATION] Re-opened ALDISP.MAC:33 'RATS=0C0' and traced both consumers. WELPIC (line ~2624-2626): 'LDA I,RATS ;SPOKE INTENSITY / JSR SPOKE' inside the per-line loop — every spoke gets the same constant intensity byte, no per-index variation. SPOKE (2715-2740): confirmed the far-to-near leg is drawn with VGBRIT restored to the passed RATS constant just before 'JSR LINTOS ;DRAW FROM FAR PT TO NEAR PT' (2725-2732ish) — i.e. one flat intensity along the whole spoke length, not a fade; the ONLY beam-off (VGBRIT=0) segment is the adjacent-near hop ('DRAW FROM NEAR PT. TO ADJ NEAR PT.'), which is a pen-up move between separate rim segments, not a dim line, exactly as claimed. OUTLIN (2634-2662): confirmed it is entered via JSR once (for Y=4F / far rim, LEVELY+1) then falls straight through into its own label a second time (for Y=0F / near rim, LEVELY) with COLOR unchanged (WELCOL set once at 2630) and VGBRIT set to the same RATS constant (2661-2662) on both passes — both rims really do get identical intensity. Checked SETINT (ALDISP.MAC:1566, ';JSR SETINT ;SET INTENSITY AS FUNC OF PYL') — confirmed commented out; this is inside ONELN2 (enemy-picture drawing), not directly inside WELPIC/OUTLIN/SPOKE, so it's supporting/contextual evidence for 'no depth-based intensity anywhere in this display code' rather than direct proof for the well routines specifically — a minor looseness in the citation, but the well-specific proof (WELPIC/OUTLIN/SPOKE all using the flat RATS constant) stands independently and is airtight. Checked none of this falls inside the dead '.IF NE,0' block at ALDISP.MAC:2057-2217 (cited lines are both before and after that range). Checked our side: render.ts:191-193 (gradient stop rgba(255,255,255,0.04) → color), :206 (far ring rgba(150,190,255,0.28), width 1.5) vs :212 (near ring full color, width 3.5) — confirmed the depth fade exists exactly as described. [CORRECTION] The SETINT citation (line 1566) is inside ONELN2, the enemy-sprite-picture routine, not inside WELPIC/OUTLIN/SPOKE (the well-rim/spoke routines) — it's suggestive context, not direct proof, for the well specifically. Doesn't change the verdict since WELPIC/OUTLIN/SPOKE's own flat-RATS behavior already proves the claim without it.",
+    "recommendation": "accept",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DB-012",
+    "class": "CONFIRMED",
+    "title": "Spike geometry: far lane-centre up to a tip at the lane's mid-point, projected at world depth LINEY",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 3184,
+      "verbatim": "\tJSR WORSCR\t\t;PROJECT ENEMY LIVE NEAR PT."
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 256,
+      "verbatim": "    const a = project(s.tube, lane, 0)"
+    },
+    "claim": "An 'enemy line' (spike) runs from the FAR end of its lane to its tip. FIXSTU (ALDISP.MAC:3100-3128) builds the far endpoint by averaging the screen coords of far rim points i and i+1 (LIFSXL[X] + LIFSXL[Y], Y = (X+1) & 0x0F, then >>1) — i.e. the lane centre at the far ring. TIPACT (ALDISP.MAC:3160-3186) then takes PYL = LINEY[i] (the spike's height, 0 = inactive, ALDISP.MAC:3162-3163), sets PXL/PZL = LINEXM[i]/LINEZM[i] (the pre-computed mid-point between grid lines i and i+1, built at ALDISP.MAC:2534-2552), projects it with WORSCR, and FCONNECs a vector from the far point to it. We do exactly this: a = project(tube, lane, 0) (the far lane-centre) to b = project(tube, lane, h) (render.ts:256-260). Same two endpoints, same lane-centre convention, same 'grows from the far end toward the rim' direction — and, per DB-005, through the same projection curve.",
+    "reasoning": "Spike placement and direction are faithful. The one representational difference is the unit: LINEY is a world Y depth in [0x10, 0xF0] where SMALLER = taller, while our s.spikes[lane] is a depth fraction where LARGER = taller. Same quantity, inverted and normalised — not a divergence."
+  },
+  {
+    "id": "DB-013",
+    "class": "CONFIRMED",
+    "title": "Spike body is colour index 5 (GREEN in the wave-1 palette) with a WHITE dot at the tip",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 3099,
+      "verbatim": "ENLFIX:\t.BYTE 80,40,68,05"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 251,
+      "verbatim": "  ctx.strokeStyle = '#39ff14'"
+    },
+    "claim": "DSPENL emits ENLFIX in REVERSE byte order (ALDISP.MAC:3024-3031 counts X down from 3), so VGLIST receives 05, 68, 40, 80. VGSTAT stores the colour index as the LSB and 0x60|flags as the MSB (ALVGUT.MAC:226-230), so 05/68 is 'STAT colour = 5'. Colour 5 = GREEN (ALCOMN.MAC: GREEN=5); the source's own comment at ALDISP.MAC:3095 names it CSTATGREEN. 40/80 is the CNTR opcode (VGCNTR, ALVGUT.MAC:239-240). The tip: when the line is not shattered, WHITIP writes 'STAT colour = WHITE' then a JSRL to the DOT picture (ALDISP.MAC:3208-3219, `LDA I,WHITE ;COLOR (SET STAT WHITE)`). Ours: green line #39ff14 (render.ts:251) with a single white dot at b (render.ts:263-266). Match.",
+    "reasoning": "Confirms Story 10-7's green-spike/white-tip call was right. Caveat for later: like the well (DB-010) the spike colour is an INDEX, so it too repalettes every 16 waves — COLTAB slot 5 is ZGREEN, ZTURQOI, ZRED, ZRED, ZGREEN, ZBLUE across the six sets. Our #39ff14 is hardcoded, so it is only correct for waves 1-16 (and 81-96)."
+  },
+  {
+    "id": "DB-014",
+    "class": "NO_COUNTERPART",
+    "title": "Spike SHATTERED tip: a random sparkle picture, depth-scaled, instead of the white dot",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 3191,
+      "verbatim": "\tJSR CASCAL\t\t;SHATTERED"
+    },
+    "ours": null,
+    "claim": "LINSTA[i] carries a per-line status byte (ALCOMN.MAC:910: 'D7=1:NEW NEAR PT.; D6=1=SHATTERED'). When bit 6 is set, TIPACT does NOT draw the white dot — it calls CASCAL to derive a depth-appropriate VG scale for the tip, then splices in a JSRL to one of the SPARKLE pictures chosen at random: `LDA RANDOM / AND I,2 / CLC / ADC I,PTSPAR` (ALDISP.MAC:3193-3206), i.e. PTSPAR or PTSPAR+2. So a spike being shot shows a scaled, flickering sparkle at its tip for that frame. Our spikes have no shattered state at all — s.spikes[lane] is a bare number and the tip is unconditionally a 2px white dot (render.ts:263-266).",
+    "reasoning": "Purely cosmetic, but it is the visual feedback that tells the player a spike is taking damage — without it, shooting a spike reads as nothing happening until it shortens. Needs a transient per-lane flag in GameState (set on spike hit, cleared on the next step), which is why it is not a shell-only change.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "DB-015",
+    "class": "CONFIRMED",
+    "title": "Starfield plane lifecycle constants all match: 8 planes, spawn 0xF0, step -7, next-spawn below 0xD5, retire below 0x10, 4 pictures",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2922,
+      "verbatim": "DSTARF:"
+    },
+    "ours": {
+      "file": "src/shell/starfield.ts",
+      "line": 32,
+      "verbatim": "export const STAR_SPAWN_Z = 0xf0 // 240 — a fresh plane spawns here, far at the centre"
+    },
+    "claim": "NPLANE = 8 (ALCOMN.MAC:808) == STAR_PLANES (starfield.ts:36). PRSTAR (ALWELG.MAC:3431-3480) steps each active plane with `SBC I,07` == STAR_STEP 7 (starfield.ts:33); retires/recycles it once it drops below `CMP I,10` == STAR_RETIRE_Z 0x10 (starfield.ts:35); and activates the next INACTIVE plane at 0x0F0 only once the PREVIOUS plane has come closer than `CMP I,0D5` == STAR_SPAWN_NEXT_Z 0xD5 (starfield.ts:34) — the same stagger rule, and the same 0xF0 spawn point (INSTAR, ALWELG.MAC:3421-3422). DSPENL's sibling DSTARF picks the plane's picture with `LDA INDEX1 / AND I,3` (ALDISP.MAC:2965-2968) == STAR_PICTURES 4 (starfield.ts:37). Our `<= 0xd5` vs the arcade's strict `< 0xD5` can never differ, since z descends 240, 233, 226, 219, 212 and never lands on 213.",
+    "reasoning": "The pure Z bookkeeping is exact — the book's numbers check out against the source, and every constant here is a frame-INDEPENDENT quantity that the frame-rate rebase does not touch. Corrected for the 28.444 fps rebase (see FR-017 in pair-11-framerate-adjudication.json): the closing claim that 'only the RENDERING of the planes diverges (DB-016, DB-017)' is too generous and is withdrawn — the CADENCE also diverges. The ROM steps -7 once per GAME frame (7 * 28.44 = 199 along-units/s), while starfield.step() is driven from drawStarfield (render.ts:144) once per RENDERED frame: 420 units/s at 60 Hz and 1008 units/s on a 144 Hz display. This CONFIRMED covers the constants and the stagger rule only; see B-003 and FR-017 for the cadence defect."
+  },
+  {
+    "id": "DB-016",
+    "class": "DIVERGENCE",
+    "title": "Star planes are projected through the same perspective divide; we spread them LINEARLY from screen centre",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2936,
+      "verbatim": "\tSTA YDEUNI"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 153,
+      "verbatim": "    const r = t * reach"
+    },
+    "claim": "DSTARF temporarily swaps the eye to a starfield-specific one — EYL = 0xE8 / EYH = 0xFF (eye Y = -24) and YDEUNI = 0x28 = 40 (ALDISP.MAC:2931-2936) — then, for each active plane, sets PXL = PZL = 0x80 ('CENTER OF WORLD', ALDISP.MAC:2945-2948), PYL = PLANEY[i], and calls SCAPI2 (ALDISP.MAC:2970). SCAPI2 projects that centre point with WORSCR and then calls CASCAL (ALDISP.MAC:1423) to SCALE the star picture by YDEUNI/(PY - EY) = 40/(PY + 24). So a plane's stars expand hyperbolically: 40/(240+24) = 0.152 at spawn, through 40/(128+24) = 0.263 at mid-flight, to 40/(16+24) = 1.000 at retirement — a 6.6x expansion that is slow at first and violently fast at the end. Our drawStarfield maps the SAME z LINEARLY to a radius: t = (0xF0 - z)/(0xF0 - 0x10), r = t * reach (render.ts:152-153). At spawn our stars are at r = 0 (all piled on the centre point, invisible); the arcade's are already at 15% of full reach. And ours accelerate outward at a constant rate instead of whipping past at the end.",
+    "reasoning": "Same UNIT TRAP caution applies and it is not one: both are functions of the same z over the same range, and they are genuinely different curves (t vs 1/(264-224t)). The hyperbolic law is what makes the arcade's warp read as diving down a tunnel rather than as dots drifting outward. Cheap fix in the shell — reuse the projection: r = reach * (40/(z + 24) - 0.1515)/(1 - 0.1515), or just scale the picture by 40/(z+24) directly. [REFUTATION] Re-opened DSTARF (ALDISP.MAC:2922-2980). Confirmed EYL:=0xE8 (signed -24), EYH:=0xFF, YDEUNI:=0x28=40 (lines 2931-2936, exact match), PXL=PZL=0x80 'CENTER OF WORLD' (lines 2945-2948, exact match), and SCAPI2 (ALDISP.MAC:1416-1445) does WORSCR then CASCAL — the same YDEUNI/(PYL-EYL) scale-factor math verified independently for DB-006 — to size the star picture. This is a genuine hyperbolic law: scale=40/(PYL+24), giving 1.0 at PYL=0x10 (retirement) and 40/264=0.152 at PYL=0xF0 (spawn) — reproduced independently, matches the finding's numbers. Confirmed our side: src/shell/starfield.ts:32,35 define STAR_SPAWN_Z=0xF0, STAR_RETIRE_Z=0x10 (same depth convention as the ROM), and render.ts:148,152-153 compute `t=(STAR_SPAWN_Z-z)/span` LINEARLY, then `r=t*reach` — confirmed this makes r=0 exactly at spawn (t=0), which is a real, verified divergence from the ROM's 0.152-of-full-reach start (not an invisible pile-up in the original). The finding is honest about the apparent unit-trap risk (same z domain, different curve shape) and correctly resolves it — not self-refuting, not dead code (DSTARF/SCAPI2 are the live warp-starfield display routines), not a frame-rate issue (this is a spatial scale law). Holds. [CORRECTION] None.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DB-017",
+    "class": "DIVERGENCE",
+    "title": "Star planes are only blue for waves 1-4; from wave 5 each plane takes its own colour",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 2952,
+      "verbatim": "\tLDA I,BLUE\t\t;BLUE STARS IN WAVES 1-4"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 129,
+      "verbatim": "const STAR_COLOR = '#7fc3ff' // blue star dots"
+    },
+    "claim": "DSTARF (ALDISP.MAC:2949-2961): `LDA CURWAV / CMP I,5 / IFCC / LDA I,BLUE ... ELSE / TXA / AND I,7 / CMP I,7 / IFEQ / LDA I,4 / ENDIF`. So for waves 1-4 every plane is BLUE (colour index 6); from wave 5 on, each plane's colour index is its own plane index (X & 7), with index 7 remapped to 4 — giving a multi-coloured, per-plane starfield (white, yellow, purple, red, turquoise, green, blue, turquoise under the wave-1 palette). We hardcode every dot of every plane to a single blue #7fc3ff (render.ts:129, 149-150).",
+    "reasoning": "The rainbow starfield is what the warp looks like for all but the first four waves — i.e. almost always. Purely a shell change: colour each plane by (planeIndex & 7, 7 -> 4) through the same COLTAB set used for the well (DB-010), and keep blue only while level < 5. [REFUTATION] Re-opened ALDISP.MAC:2949-2961 exactly as cited: LDA CURWAV; CMP I,5; IFCC -> LDA I,BLUE (comment 'BLUE STARS IN WAVES 1-4', line 2952 verbatim match); ELSE -> TXA; AND I,7; CMP I,7; IFEQ -> LDA I,4; ENDIF. X here is INDEX1, the per-plane loop index (0..NPLANE-1, NPLANE=8 per ALCOMN.MAC:808), so for wave>=5 every plane's color index is literally its own index (0-7), with index 7 remapped to 4. Cross-checked this against COLTAB group 0 (ALDISP.MAC:2406-2413, the wave-1 palette): slots 0-7 = WHITE,YELLO,PURPL,RED,TURQOI,GREEN,BLUE,BLUE — since STAR color feeds the same COLRAM/group mechanism as the well (INICOL), and slot 7 is unreachable for stars (remapped to 4=TURQOI), the 8 planes render as white/yellow/purple/red/turquoise/green/blue/turquoise under wave 1-16's palette — this reproduces the finding's specific color list exactly, independently derived rather than taken on faith. Confirmed our side: render.ts:129 `STAR_COLOR = '#7fc3ff'` is a single module constant used unconditionally at render.ts:149-150 (`ctx.fillStyle = STAR_COLOR; ctx.shadowColor = STAR_COLOR`) inside drawStarfield, which is called (render.ts:949) without ever receiving `s.level` or a per-plane index — it is structurally impossible for this function to vary color by level or plane. Not dead code, not a unit trap, not self-refuting. Holds. [CORRECTION] None.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DB-018",
+    "class": "STRUCTURAL",
+    "title": "Rim-segment angles are a hand-authored 16-direction table (ILINANG); we derive them exactly with atan2",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1362,
+      "verbatim": "ILINANG:.BYTE 5,6,7,8,9,10.,11.,12.,13.,14.,15.,0,1,2,3,4\t;CIRCLE"
+    },
+    "ours": {
+      "file": "src/core/geometry.ts",
+      "line": 269,
+      "verbatim": "  const rotation = Math.atan2(anchor.y - far.y, anchor.x - far.x) + Math.PI / 2"
+    },
+    "claim": "ILINANG (ALDISP.MAC:1362-1379) is a 16x16 companion to NEWLIX/NEWLIZ: one byte per rim segment, copied into LINANG at INIWLS (ALDISP.MAC:2527-2528) and documented as 'INDEX=ANGLE FROM GRID LINE TO NEXT CCW LINE' (ALCOMN.MAC:923). It is a 4-bit direction index — 1/16 of a turn, 22.5 degrees per step — used to orient objects that ride the rim. We store no such table; render/geometry recover the same tangent exactly, at full float precision, from the very coordinates the table was authored against (clawTransform's rotation = the lane's far->near radial + pi/2, geometry.ts:269, and render.ts:320-324 leans on it for the flipper's rim-tangent axis).",
+    "reasoning": "Not a divergence: the arcade quantised to 16 directions because a 6502 cannot afford an arctangent, and its table is a lossy encoding of the shapes we already have exactly. Our derivation is strictly more accurate and stays in sync with the coordinates by construction. Recording it so no one later 'ports' ILINANG and reintroduces the 22.5-degree quantisation as if it were fidelity.",
+    "recommendation": "wont_fix"
+  }
+]

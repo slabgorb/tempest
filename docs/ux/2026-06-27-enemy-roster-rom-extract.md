@@ -1,3 +1,13 @@
+> **Caution — this document has been proven wrong on its wave numbers.** It was extracted from a
+> third-party disassembly, not from Theurer's original source. Finding **W-035** of the
+> [primary-source audit](../2026-07-12-tempest-primary-source-audit.md) shows the ROM's own
+> per-wave min/max tables put the first **tanker on wave 3** and the first **spiker on wave 4** —
+> not both on level 5, as `rules.ts` currently gates them *citing this document*. The tables are
+> also non-monotonic in ways a weight model cannot express (tankers vanish again on wave 4; spikers
+> disappear entirely on waves 17–19, 33–34 and 40–42). The "60 Hz" note in the header below is also
+> wrong: the ROM runs at **28.44 fps**. Treat every number here as unverified until it is
+> re-checked against the primary source.
+
 # Enemy roster — verbatim ROM extract (rev-3 `tempest.a65`, VER=3)
 
 > Raw reverse-engineering extract for Wave 6 stories **6-5** (enemy fire), **6-8** (shapes),

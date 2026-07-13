@@ -1,0 +1,333 @@
+[
+  {
+    "id": "WD-001",
+    "class": "CONFIRMED",
+    "title": "WARP_ALONG_SPAN = 224 is the exact ROM dive span (ILINLIY 0x10 -> ILINDDY 0xF0)",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 819,
+      "verbatim": "ILINDDY=0F0"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 44,
+      "verbatim": "export const WARP_ALONG_SPAN = 0xf0 - 0x10  // 224 ROM along-units across the dive"
+    },
+    "claim": "The Claw ('cursor') starts a level at CURSY = ILINLIY (ALCOMN.MAC:820 'ILINLIY=010', set by INICUR at ALWELG.MAC:296-297 'LDA I,ILINLIY / STA CURSY', and re-set for each new wave by NEWAV2 at ALWELG.MAC:57-58). MOVCUD ends the dive when CURSY reaches ILINDDY = 0xF0 (ALWELG.MAC:1032 'CMP I,ILINDDY', 1034 'IFCS ;IS CURSOR PAST BOTTOM?'). The traversed span is therefore exactly 0xF0 - 0x10 = 224 along-units. We ship WARP_ALONG_SPAN = 0xf0 - 0x10 = 224.",
+    "reasoning": "This is the denominator every other warp constant is normalised against, so it had to be right before anything else could be. It is right, and it is derived from the same two named ROM constants rather than from a rounded number."
+  },
+  {
+    "id": "WD-002",
+    "class": "CONFIRMED",
+    "title": "Initial dive speed 2.0 along-units/frame (CURSVH=2, CURSVL=0) matches our 2.0 numerator",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3148,
+      "verbatim": "\tLDA I,2"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 46,
+      "verbatim": "export const WARP_INITIAL_SPEED = (2.0 * 60) / WARP_ALONG_SPAN"
+    },
+    "claim": "INDROP (ALWELG.MAC:3137-3149) zeroes the velocity's fractional byte ('LDA I,0 / STA CURSVL', 3143-3144) and loads the integer byte with 2 ('LDA I,2 / STA CURSVH', 3148-3149). CURSVH:CURSVL is an 8.8 fixed-point along-units/frame value, so the dive starts at 0x0200/256 = 2.0 along-units per frame. Our WARP_INITIAL_SPEED = (2.0 * 60) / WARP_ALONG_SPAN uses exactly that 2.0 as the per-frame rate. (The '60' in that expression is a separate problem - see WD-008.)",
+    "reasoning": "The book-derived per-frame magnitude is correct: the dive really does begin at 2.0 along-units per frame, i.e. 2/224 = 0.89% of the tube per frame. INDROP also zeroes CURSYL and EYLL ('TO PREVENT JERKING', ALWELG.MAC:3145-3146), which our float model gets for free."
+  },
+  {
+    "id": "WD-003",
+    "class": "CONFIRMED",
+    "title": "warpAccel's shape - min(wave*4, 0x30) + 0x20 in 8.8 fixed point - is byte-for-byte the ROM's",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1064,
+      "verbatim": "\tLDA CURWAV\t\t;WAVE ACCELERATION +"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 51,
+      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+    },
+    "claim": "MOVCUD's 'CONSTANT ACCELERATION FOR VELOCITY' block (ALWELG.MAC:1063-1078) is: LDA CURWAV / ASL / ASL (wave*4) / CMP I,30 / IFCS / LDA I,30 (cap at 0x30) / CLC / ADC I,20 (base 0x20) / CLC / ADC CURSVL / STA CURSVL / LDA CURSVH / ADC I,0 / STA CURSVH. The accel byte is added to the velocity's LOW byte, i.e. it is in units of 1/256 along-units per frame squared. Our perFrame8_8 = Math.min(level * 4, 0x30) + 0x20, divided by 256, is the identical expression - including the *4, the 0x30 cap and the 0x20 base, and including the 8.8 scaling.",
+    "reasoning": "Every literal in this formula survives contact with the primary source. The dive is a constant-acceleration ramp with a per-wave accel that saturates - exactly as we model it. (The level BASE fed into it is off by one - WD-010 - and the seconds conversion is wrong - WD-008 - but the formula itself is correct and should not be touched.)"
+  },
+  {
+    "id": "WD-004",
+    "class": "CONFIRMED",
+    "title": "AVOID SPIKES fires on ANY live spike anywhere in the well, not just the player's lane",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3154,
+      "verbatim": "\tINC ELICNT\t\t;COUNT LIVE SPIKES"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 546,
+      "verbatim": "    const spikeThreat = s.spikes.some((h) => h > 0)"
+    },
+    "claim": "INDROP counts live enemy lines across ALL 16 lanes before deciding to warn: 'LDX I,NLINES-1 / BEGIN / LDA X,LINEY / IFNE / INC ELICNT ;COUNT LIVE SPIKES / ENDIF / DEX / MIEND' (ALWELG.MAC:3150-3157), then 'LDA ELICNT / IFNE ;ENEMY LINES?' (3158-3159). It does NOT check whether the spike is on the player's own lane. Our spikeThreat = s.spikes.some((h) => h > 0) is the same any-lane predicate.",
+    "reasoning": "A tempting 'improvement' would have been to warn only when the player is actually parked on a spiked lane. The ROM does not, and neither do we: the warning means 'there are spikes down there', which is why it reads as an instruction rather than an alarm."
+  },
+  {
+    "id": "WD-005",
+    "class": "CONFIRMED",
+    "title": "WARP_AVOID_SPIKES_MAX_LEVEL = 7 is the correct boundary once CURWAV's 0-base is accounted for",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3161,
+      "verbatim": "\tCMP I,7"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 58,
+      "verbatim": "export const WARP_AVOID_SPIKES_MAX_LEVEL = 7"
+    },
+    "claim": "INDROP warns only when 'LDA CURWAV / CMP I,7 / IFCC ;WARN PLAYER?' (ALWELG.MAC:3160-3162) - carry-clear means CURWAV < 7, i.e. CURWAV in 0..6. CURWAV is 0-based: ALSCOR.MAC:296-299 draws the level number as 'LDA CURWAV / CLC / ADC I,1 / JSR DSP1HX', and the start-level table is commented 'TABLE OF LEVEL #S(-1)' (ALWELG.MAC:280). So the ROM warns on DISPLAYED levels 1..7. Our gate is `s.level <= WARP_AVOID_SPIKES_MAX_LEVEL` with s.level 1-based and the constant 7 - levels 1..7. Identical.",
+    "reasoning": "This is the one place in the warp block where the off-by-one between CURWAV and our 1-based level was handled correctly (compare WD-010, where it was not). Worth recording precisely because the naive read of 'CMP I,7' would have produced levels 1..8."
+  },
+  {
+    "id": "WD-006",
+    "class": "CONFIRMED",
+    "title": "The AVOID SPIKES warning is a hold at the rim BEFORE the dive, with the spinner still live",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3166,
+      "verbatim": "\tLDA I,CPAUSE\t\t;PAUSE FIRST"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 599,
+      "verbatim": "  if (s.warp.warning > 0) {"
+    },
+    "claim": "When it warns, INDROP does not enter drop mode: it sets 'LDA I,CPAUSE / STA QSTATE ;PAUSE FIRST' then 'LDA I,CDROP / STA QNXTSTA ;THEN DROP MODE' (ALWELG.MAC:3166-3169), so the Claw sits at CURSY = ILINLIY for the whole timer with no descent and no spike check. The PAUSE state handler still rotates the player - it ends with 'JMP MOVCUR ;UPDATE CURSOR (IF ALIVE)' (ALEXEC.MAC:129). Our stepWarp returns early while s.warp.warning > 0 (no velocity integration, no resolveWarpSpikeHit), and stepPlayer still runs every warp frame (src/core/sim.ts:748).",
+    "reasoning": "The whole point of the warning is a free window to rotate off a spiked lane, and both the 'nothing descends' and 'you can still steer' halves of that are faithful. Only its DURATION is wrong (WD-009)."
+  },
+  {
+    "id": "WD-007",
+    "class": "CONFIRMED",
+    "title": "Spike crash test - own lane only, triggered when the descending Claw passes the spike tip",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1090,
+      "verbatim": "\tIFEQ\t\t\t;SAME LINE AS CURSOR?"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 580,
+      "verbatim": "  if (height > 0 && warpClawDepth(s.warp.progress) <= height) {"
+    },
+    "claim": "MOVCUD's collision loop (ALWELG.MAC:1082-1103) runs only while CURSY < ILINDDY, and per lane requires the line to be alive ('LDA X,LINEY / IFNE ;ACTIVE LINE?'), to be the player's lane ('CPX CURSL1 / IFEQ ;SAME LINE AS CURSOR?', 1089-1090) and then 'CMP CURSY / IFCC' (1091-1092), i.e. LINEY < CURSY - the cursor's along-coordinate has passed the spike's tip. Mapping the ROM's along axis to our depth (depth = (0xF0 - along)/224), LINEY < CURSY is exactly clawDepth <= spikeHeight. Our check is `height > 0 && warpClawDepth(s.warp.progress) <= height` on currentLane only. Same predicate, same lane restriction, boundary differs only by strict-vs-inclusive on an exact float tie.",
+    "reasoning": "The geometry of the crash - which lane, and at what point in the descent - is right. That is the part that decides whether a given dive kills you, so it is the part most worth confirming."
+  },
+  {
+    "id": "WD-008",
+    "class": "STRUCTURAL",
+    "title": "The dive's frames-to-seconds base is wrong: the ROM's logic frame runs at 256/9 = 28.44 fps — not 60, and not the '~20' this finding first read off SECOND",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 87,
+      "verbatim": "SECOND\t=20.\t\t\t;FRAMES/SECOND"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 46,
+      "verbatim": "export const WARP_INITIAL_SPEED = (2.0 * 60) / WARP_ALONG_SPAN"
+    },
+    "claim": "Our warp constants convert ROM per-frame values with a 60 Hz base: WARP_INITIAL_SPEED = (2.0 * 60) / 224 and warpAccel multiplies by (60 * 60). That base is invented — but so is the 20 this finding originally took from 'SECOND\t=20.\t\t\t;FRAMES/SECOND' (ALCOMN.MAC:87, re-declared ALEXEC.MAC:312). SECOND sits under the header ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85) and is used in exactly one role, as the reload unit for pause/attract countdowns (QUASEC = SECOND/4, ALCOMN.MAC:88); it never appears in MAINLN, in the IRQ, or in any speed table, so it cannot set the frame rate (FR-004). The machine settles it: the mainloop gates each frame on 'LDA FRTIMR / CMP I,9' (ALEXEC.MAC:50-51), FRTIMR is bumped once per IRQ ('INC FRTIMR ;UPDATE FRAME TIMER', ALHARD.MAC:149), and the IRQ handler treats a wrap of the 8-bit $INTCT as one second ('INC $INTCT ;INTERRUPT COUNTER / IFEQ ;ANOTHER SECOND?', ALHARD.MAC:150-151) — so the IRQ is ~256 Hz, one logic frame is nine ticks = 35.16 ms, and the rate is 256/9 = 28.44 fps, exactly what Theurer writes beside the enemy tables (';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)', ALWELG.MAC:581). Concretely for the dive at displayed level 1 (CURWAV=0, accel = 0x20/256 = 0.125 along/frame^2, v0 = 2.0 along/frame): 224 = 2t + 0.0625t^2 gives t ≈ 46 frames = 1.62 s at 28.44 fps — not the 2.35 s computed here from SECOND=20. Our model produces ~0.73 s, so our dive is 2.2x too fast.",
+    "reasoning": "This is the root cause of WD-009 and it scales the entire dive, which is why the 'AVOID SPIKES' grace had to be shortened to 0.5 s to stay proportionate. The per-frame ROM values we extracted (2.0, 0x20, 0x30, 224) are all correct — only the base is invented. The acceleration term carries the base SQUARED, making warpAccel the most base-sensitive expression in the codebase: it must become (perFrame8_8 / 256) * ROM_FPS^2 / WARP_ALONG_SPAN. Filed as STRUCTURAL because the same assumption is hard-coded across rules.ts (flipperSpeedForLevel, PULSAR_CLIMB_SPEED, the enemy-bolt speeds) and in every frame-counted timer the sim ticks at 1/60, so fixing it for the warp alone would desynchronise the dive from the rest of the game; the base must be decided once, globally, and the whole family re-derived together. Corrected for the 28.444 fps rebase (see FR-011 and FR-004 in pair-11-framerate-adjudication.json): the 'not 60' half of this finding is confirmed and is the seed of the whole rebase, but its '~20 fps' reading is REFUTED — the corrected dive target is ~1.62 s at level 1, not 2.35 s, and 20 must not be adopted as the project's frames-per-second base.",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "WD-009",
+    "class": "BOOK_WAS_WRONG",
+    "title": "AVOID SPIKES hold is 30 frames ≈ 1.06 s in the ROM (6 quarter-seconds by the author's own arithmetic), not the 0.5 s we ship",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3164,
+      "verbatim": "\tLDA I,6*QUASEC\t\t;WARNING DELAY"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 57,
+      "verbatim": "export const WARP_AVOID_SPIKES_SECONDS = 0.5"
+    },
+    "claim": "INDROP loads the pause timer with 'LDA I,6*QUASEC\t\t;WARNING DELAY' (ALWELG.MAC:3164) into QTMPAUS (3165). QUASEC is defined as 'QUASEC\t=SECOND/4\t\t;QUARTER SECOND FACTOR' (ALCOMN.MAC:88) with SECOND = 20 (ALCOMN.MAC:87), so 6*QUASEC = 30 FRAMES — the multiplier 6 is six quarter-seconds by the author's assumed rate. QTMPAUS is decremented once per frame here: the PAUSE handler gates on 'LDA QFRAME / AND PSCALE / IFEQ' (ALEXEC.MAC:115-117) and PSCALE is reset to 0 at the end of every pause (ALEXEC.MAC:125-126, 'RESET STANDARD TIMER SCALE'), and INDROP never sets it — so the mask is 0 and every frame ticks. The frame COUNT is 30 and is certain; the SECONDS are not 1.5 (which would require SECOND=20 to be the real frame rate — it is a pause-timer unit, not the machine's rate, FR-004) but 30/28.44 = 1.055 s. We ship WARP_AVOID_SPIKES_SECONDS = 0.5 — exactly the correct 30 frames divided by the wrong 60 Hz — less than half the arcade's warning.",
+    "reasoning": "0.5 s is barely above human reaction time; ~1.06 s is a genuine 'you have a beat to move' window, which is what the message is for. Note the shipped 0.5 is not a mis-transcribed byte — the frame count 30 is right — it is the 60 Hz conversion (WD-008) applied to it; the constant should be expressed as 30 ROM frames / ROM_FPS, not as a bare literal. Corrected for the 28.444 fps rebase (see FR-004 in pair-11-framerate-adjudication.json): the target is 1.055 s, not the 1.5 s derived here from SECOND=20. The verdict is unchanged — the ROM's hold is still more than twice what we ship. [REFUTATION] Re-opened ALWELG.MAC:3164-3171: 'LDA I,6*QUASEC ;WARNING DELAY / STA QTMPAUS / LDA I,CPAUSE / STA QSTATE / LDA I,CDROP / STA QNXTSTA' — verbatim as claimed, and QUASEC=SECOND/4, SECOND=20 (ALCOMN.MAC:87-88) so 6*QUASEC=30 is exact. Decoded the decrement gate: PAUSE (ALEXEC.MAC:114-129) does 'LDA QFRAME / AND PSCALE / IFEQ' then DEC QTMPAUS; PSCALE is a plain byte (ALCOMN.MAC:798) reset to 0 at the end of every prior pause (ALEXEC.MAC:125-126) and the only place it's ever set to nonzero is DLADR's unrelated hi-score-ladder pause (ALEXEC.MAC:467-468, 'DOUBLE TIME'), so by the time INDROP's own pause runs PSCALE=0 and 'AND PSCALE' is 0 unconditionally, making IFEQ always true — QTMPAUS decrements on every call. Confirmed PAUSE is dispatched exactly once per outer-loop iteration (EXSTAT's jump-table trampoline, called once per MAINLN loop, ALEXEC.MAC:48-59), and that outer loop is gated at FRTIMR>=9 (256/9=28.444fps, the ground-truth rate) — so the 30-count is 30 real 28.444fps frames, not 30 of some other cadence. Attacked the unit conversion specifically per the ground-truth's SECOND=20 warning: the finding does NOT use SECOND as the frame rate for the final answer — it explicitly converts 30 frames / 28.44 fps = 1.055s and calls out that 1.5s (which SECOND=20 would imply) is wrong. That is exactly the correct move. ours-side citation verified verbatim: rules.ts:57 is exactly 'export const WARP_AVOID_SPIKES_SECONDS = 0.5', and 0.5 = 30/60, i.e. the 30-frame count divided by the wrong 60Hz clock (matches the file's own comment at rules.ts:41 admitting 'ROM (rev-3) values are 60 Hz per-frame'). No self-refutation, no dead-code citation, no radix error. Holds solidly.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-010",
+    "class": "DIVERGENCE",
+    "title": "warpAccel is fed a 1-based level where the ROM feeds 0-based CURWAV - the whole ramp is one level early",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 280,
+      "verbatim": "LEVEL:\t;TABLE OF LEVEL #S(-1) FOR RATING DISPLAY"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 51,
+      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+    },
+    "claim": "The ROM's accel input is CURWAV, which is 0-based: the displayed level is CURWAV+1 (ALSCOR.MAC:296-298 'LDA CURWAV / CLC / ADC I,1'), the start-level table is 'TABLE OF LEVEL #S(-1)' (ALWELG.MAC:280), and INIRAT seeds it with 0 (ALWELG.MAC:192-193). Our warpAccel(level) takes the DISPLAYED 1-based level straight from GameState.level. Concretely at displayed level 1: ROM accel = min(0*4, 0x30) + 0x20 = 0x20 = 32/256 = 0.125 along/frame^2; ours = min(1*4, 0x30) + 0x20 = 0x24 = 36/256 = 0.1406 - 12.5% too much. The saturation point moves too: the ROM caps once CURWAV >= 12, i.e. displayed level 13; we cap at displayed level 12. Every level's dive accelerates as if it were the next level.",
+    "reasoning": "The error is small at high levels (both saturate) but largest exactly where it is felt - level 1, where the dive is the slowest and the AVOID SPIKES window matters most. One-character fix: pass level - 1. [REFUTATION] Re-opened ALWELG.MAC:1064-1078 (MOVCUD's acceleration block): 'LDA CURWAV / ASL / ASL / CMP I,30 / IFCS / LDA I,30 / ENDIF / CLC / ADC I,20' — this is literally min(CURWAV*4, 0x30)+0x20 added to CURSVL every frame, and it operates on CURWAV directly, not CURWAV+1. Verified CURWAV is 0-based: INIRAT sets 'LDA I,0 / STA CURWAV' (ALWELG.MAC:192-193) and ALSCOR.MAC:296-298 displays 'CURWAV+1' via 'LDA CURWAV / CLC / ADC I,1'. Checked our side is the governing code: sim.ts:603 calls 'warpAccel(s.level) * dt' inside stepWarp, and state.ts/sim.ts initialize 'level: 1' (1-based) and increment via 's.level += 1' in advanceLevel — so warpAccel does receive the displayed (1-based) level unmodified, exactly as the finding says, and rules.ts:51 is verified verbatim ('Math.min(level * 4, 0x30) + 0x20'). Recomputed the arithmetic independently: at displayed level 1 (CURWAV=0) ROM gives min(0,0x30)+0x20=0x20=32; ours gives min(4,0x30)+0x20=0x24=36 → 36/32=1.125, a 12.5% overshoot, matching the claim exactly. Saturation-point claim also checks out: ROM saturates once CURWAV>=12 (displayed 13), ours saturates once level>=12 (displayed 12) — off by one level, consistent with the whole-ramp-one-level-early framing. No unit trap here (this is a level-index question, not a frame-rate one), no dead module cited, not self-refuting. Holds.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-011",
+    "class": "DIVERGENCE",
+    "title": "The ROM's wave*4 is an 8-bit ASL pair that wraps at wave 64, collapsing the dive accel back to the base",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 665,
+      "verbatim": "CURWAV:\t.BLKB 1\t\t;CURRENT WAVE"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 51,
+      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+    },
+    "claim": "'LDA CURWAV / ASL / ASL' (ALWELG.MAC:1064-1066) is two 8-bit shifts with no carry capture, so for CURWAV >= 0x40 (displayed level 65) the product wraps: CURWAV=0x40 -> 0x00, giving accel = 0x00 + 0x20 = 0x20 - the same acceleration as level 1 - and it climbs from there again (displayed levels 65..76 before re-saturating). Our Math.min(level * 4, 0x30) is arbitrary-precision and never wraps, so from level 65 up our dive is faster than the arcade's.",
+    "reasoning": "A genuine 8-bit artefact of the shipped ROM rather than a design choice, and it only bites past displayed level 65 - deeper than the project's own ratchet rule cares about (compare PULSAR_NEAR_FAR_DEPTH, where the L65+ tier was deliberately not modelled). Recording it so the next person who reads 'min(level*4, 0x30)' against the source does not think we missed it. [REFUTATION] Re-opened ALWELG.MAC:1064-1066 exactly: 'LDA CURWAV / ASL / ASL / CMP I,30 / IFCS / LDA I,30 / ENDIF / CLC / ADC I,20'. ALWELG.MAC has no own .RADIX directive but .INCLUDEs ALCOMN.MAC at its top, whose line 17 sets .RADIX 16 and is never reset afterward — so 'I,30' and 'I,20' are hex 0x30/0x20, matching our own 0x30/0x20 constants in rules.ts:51 exactly (agreement, not a radix trap). CURWAV is confirmed 0-indexed relative to displayed level: ALEXEC.MAC:366-367 increments WAVEN1 ('# OF ENEMY WAVE WHICH PLAYER IS BATTLING -1') and CURWAV together each level-clear, and ALWELG.MAC:3160 uses 'CMP CURWAV,I,7' as the warp-warning gate, which corresponds 1:1 to our WARP_AVOID_SPIKES_MAX_LEVEL=7 only if CURWAV = level-1 -- confirms the indexing the finding relies on. LDA/ASL/ASL is genuinely an 8-bit accumulator-only shift (no ROL into a second byte anywhere nearby) -- CURWAV*4 truly wraps mod 256. Did the arithmetic myself: CURWAV=0x40 (level 65) -> 0x40*4=0x100 mod 256=0x00, which is < 0x30 so the IFCS cap does NOT fire, giving 0x00+0x20=0x20 -- identical to level 1's accel. Continuing the arithmetic: the pre-cap value climbs again and re-saturates when CURWAV*4 mod 256 hits 0x30, which happens at CURWAV=0x4C=76 decimal (level 77): 76*4=304, mod256=48=0x30, IFCS true (CMP sets carry on >=). So the climbing window is exactly displayed levels 65..76 as claimed, re-saturating at level 77. Our warpAccel(level) uses a plain JS number with Math.min -- verified in src/core/rules.ts:50-52, it never wraps, so at level 65 our code computes min(260,0x30)+0x20=0x50 (80) vs the ROM's wrapped 0x20 (32) -- a real, correctly-computed divergence past level 65. Checked self-consistency: no contradiction between claim text and title. Holds. [CORRECTION] None needed -- the finding's numeric window (levels 65..76 climbing, level 77 re-saturating) is exactly right down to the boundary.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-012",
+    "class": "DIVERGENCE",
+    "title": "The ROM dives the CAMERA with the Claw - the Claw's size is constant and the well expands; we shrink the Claw down a static tube",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1049,
+      "verbatim": "\tLDA EYLL\t\t;UPDATE EYE POSITION"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 570,
+      "verbatim": "function warpClawDepth(progress: number): number {"
+    },
+    "claim": "MOVCUD advances the eye by the SAME velocity as the cursor, every frame: 'LDA EYLL ;UPDATE EYE POSITION / CLC / ADC CURSVL / STA EYLL / LDA EYL / ADC CURSVH / IFCS / INC EYH / ENDIF' (ALWELG.MAC:1049-1057), and forces the well to be re-projected whenever the eye moves ('CMP EYL / IFNE ;EYE POSITION CHANGE? / INC ROTDIS ;YES. REQUEST NEW WELL DISPLAY', 1058-1061). EYL/EYH is the camera: the projection routine is documented ';INPUT: PYL = OBJECT DEPTH\t;EYL,H=EYEPOSITION' (ALDISP.MAC:1449) and scales every object by (PYL - EY). Because the cursor is drawn at PYL = CURSY (ALDISP.MAC:604-608) and BOTH CURSY and EY advance by exactly CURSVH:CURSVL each frame, (CURSY - EY) is INVARIANT across the dive - the Claw's projected size and screen position do not change at all. What changes is the well: its rim (fixed at 0x10) and bottom (fixed at 0xF0) get nearer to the advancing eye, so the tube expands and streams past the stationary Claw. Our model is the inverse: warpClawDepth(progress) = 1 - progress marches the Claw down a STATIC tube, and render.ts:876 shrinks it ('const size = 6 + clawDepth * 14') toward the vanishing point.",
+    "reasoning": "This is the single biggest structural difference in the subsystem and it explains why our dive does not look like the arcade's: in Tempest the Claw stays big and locked in place while the well rushes outward around it. The core is what encodes the wrong model (warpClawDepth), so this is not purely a render fix - the depth the shell projects from has to come from a camera that moves, not a Claw that recedes. Note the arithmetic also means the ROM's dive cannot crash the Claw into a spike 'visually shrinking onto it' - the spike grows up to meet a Claw that never moves on screen. [REFUTATION] Re-opened ALWELG.MAC:1049-1062: 'LDA EYLL ;UPDATE EYE POSITION / CLC / ADC CURSVL / STA EYLL / LDA EYL / ADC CURSVH / ... CMP EYL / IFNE ;EYE POSITION CHANGE? / INC ROTDIS ... / STA EYL' immediately follows the CURSY update at 1024-1030 ('LDA CURSYL / CLC / ADC CURSVL / STA CURSYL / LDA CURSY / ADC CURSVH / STA CURSY') using the SAME CURSVL/CURSVH — both CURSY and EYL/EYH are incremented by an identical velocity every frame, verbatim as claimed. Verified the projection dependency: CASCAL's header comment 'INPUT: PYL = OBJECT DEPTH ;EYL,H=EYEPOSITION' (ALDISP.MAC:1449) and its body 'LDA PYL / CMP I,10 / IFCS / SEC / SBC EYL' (ALDISP.MAC:1456-1460) computes scale from (PYL-EYL), and DSPCUR feeds the cursor's own depth into that pipeline: 'LDA CURSY / ... / STA PYL ;NO. DEPTH' (ALDISP.MAC:604-608, exact verbatim match). Since CURSY and EYL share both a common increment and (from CURSY holding steady at ILINLIY=0x10 throughout ordinary play, confirmed — CURSY is written only at INICUR/NEWAV2 init, inside MOVCUD's own dive, and in the unrelated post-death corpse-drop in ANALYZ) a fixed relationship at drop-start, (CURSY-EYL) is invariant across the whole dive — the projected claw literally does not move on screen. Checked our side is governing: sim.ts:570-572 'function warpClawDepth(progress) { return 1 - progress }' and render.ts:876 'const size = 6 + clawDepth * 14' — confirmed clawDepth shrinks 1→0 as progress advances, i.e. the Claw visibly recedes; drawTube (render.ts:179-200) draws the tube from fixed per-level screen coordinates unaffected by warp progress, and drawWarp (render.ts:826+) only overlays streaks/claw on those same static points — so the tube truly is static in our renderer, confirming the inversion is real and structural, not merely a render nit. No unit trap, no dead-code citation, not self-refuting. Holds; this is the strongest finding in the batch.",
+    "recommendation": "fix",
+    "size": "l",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-013",
+    "class": "DIVERGENCE",
+    "title": "The starfield does not appear until the dive is ~29% down the tube (CURSY >= 0x50)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1042,
+      "verbatim": "\tCMP I,50"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 949,
+      "verbatim": "    drawStarfield(pctx, W, H)"
+    },
+    "claim": "MOVCUD only kicks the starfield off once the Claw has descended past 0x50: 'LDA CURSY / CMP I,50 / IFCS / LDA PLAGRO / IFEQ / JSR INSTAR / ENDIF / ENDIF' (ALWELG.MAC:1041-1048). CURSY starts at 0x10, so INSTAR fires only after (0x50 - 0x10) / 224 = 64/224 = 28.6% of the dive has elapsed, and INSTAR then activates a single plane at 0xF0 (ALWELG.MAC:3421-3424). Our renderer draws the starfield unconditionally for every frame the mode is 'warp' (render.ts:946-949), i.e. from progress 0 - including during the AVOID SPIKES hold, when the ROM's Claw has not moved at all and PLAGRO is still 0.",
+    "reasoning": "The delay is what sells the transition: you commit to the tube first, and space only opens up once you are through it. Starting the stars at progress 0 (and during a stationary warning hold) leaks the 'you are already in space' payoff before the dive has begun. A one-line gate on progress >= 64/224. [REFUTATION] Re-opened ALWELG.MAC:1041-1048: 'LDA CURSY / CMP I,50 / IFCS / LDA PLAGRO / IFEQ / JSR INSTAR / ENDIF / ENDIF' — verbatim as claimed, CMP I,50 at line 1042 exactly. Verified ILINLIY=0x10 (ALCOMN.MAC:820, drop-start depth) so (0x50-0x10)/(0xF0-0x10)=64/224=0.286, matching the '~29%' claim under the finding's own along-unit→progress mapping (0x10→0xF0 span 224, which is also this codebase's own convention per rules.ts:42-44). Verified the PLAGRO gate is not vacuous: INSTAR sets PLAGRO to 0xFF (ALWELG.MAC:3421-3424) and PRSTAR decays it back to 0 only once every star plane deactivates ('IFEQ / STA PLAGRO', ALWELG.MAC:3481-3484) — so by the time normal wave-play is underway (after the wave-entrance star cutscene in NEWAV2 finishes), PLAGRO is genuinely 0 and the CURSY>=0x50 gate is live, not permanently blocked. Checked our side is governing: render.ts:946-950 draws 'drawStarfield(pctx, W, H)' unconditionally whenever 's.mode === \"warp\"', with no gate on s.warp.progress or s.warp.warning, and drawStarfield (render.ts:143+) is entirely self-driven with no progress-dependent suppression that would accidentally reproduce the ROM's delay. So stars do appear at progress 0, including during the AVOID SPIKES hold, exactly as claimed. No unit trap, no dead-code citation. Holds.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-014",
+    "class": "DIVERGENCE",
+    "title": "The player can still FIRE during the drop, and in-flight charges keep moving; we disable firing and clear the bullets",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 891,
+      "verbatim": "\tJSR FIREPC\t\t;FIRE PLAYER CHARGES"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 748,
+      "verbatim": "      stepPlayer(s, input) // the Claw may still rotate during the warp; firing is disabled"
+    },
+    "claim": "The drop-mode mainline PLDROP (ALWELG.MAC:884-897) calls, every frame: MOVCUR (rotate), MOVCUD (descend), PROEXP (explosions), FIREPC ('JSR FIREPC\t\t;FIRE PLAYER CHARGES', 891) and MOVCHA ('JSR MOVCHA', 892). FIREPC in a real game reads the fire button ('LDA SWSTAT / AND I,MFIRE', ALWELG.MAC:2657-2658) and launches a charge from CURSY - the Claw's CURRENT depth - (ALWELG.MAC:2667-2668), so you can shoot all the way down the tube. Our warp branch runs only stepPlayer + stepWarp, with firing explicitly disabled, and checkLevelClear wipes any in-flight bullets on entry ('s.bullets = []', src/core/sim.ts:549).",
+    "reasoning": "Firing during the dive is not cosmetic: it is how you shorten a spike you are about to land on. Removing it removes the last out the arcade gives a player who is stuck on a spiked lane, which makes the AVOID SPIKES window the ONLY escape - and we shortened that too (WD-009). Restoring fire + charge motion during 'warp' is a small, contained change in stepWarp's caller. [REFUTATION] Re-opened PLDROP (ALWELG.MAC:884-897): 'JSR MOVCUR / JSR MOVCUD / JSR PROEXP / JSR FIREPC / JSR MOVCHA / LDA CURSL2 / IFMI / JSR ANALYZ / ENDIF / RTS' — line 891 'JSR FIREPC ;FIRE PLAYER CHARGES' verified verbatim, and it runs unconditionally every drop-mode frame, identically to the normal PLAY mainline's own FIREPC call (line 870). Decoded FIREPC itself (ALWELG.MAC:2629-2683): gated only on 'LDA CURSL2 / IFPL ;PLAYER ALIVE' (2630-2631, i.e. cursor not dead — true throughout a normal, uncrashed drop) then reads 'LDA SWSTAT / AND I,MFIRE' (2657-2658, verbatim as cited) and on a hit spawns a charge at 'LDA CURSY ;START AT CURSOR / STA X,CHARY' (2667-2668, verbatim as cited) — so firing from the Claw's live descending depth is real ROM behavior, not a misread. Checked our side is governing: sim.ts's 'warp' case (around line 747-750) calls only 'stepPlayer(s, input)' then 'stepWarp(s, dt)' — stepFiring and stepBullets are called exclusively from stepPlaying (lines 631/633), never reached in warp mode — and checkLevelClear clears 's.bullets = []' on entry to warp (line 549). So firing truly is disabled and in-flight charges truly are wiped, exactly as claimed, with no downstream code that re-enables it. No unit trap, no dead-code citation, not self-refuting. Holds.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-015",
+    "class": "DIVERGENCE",
+    "title": "Landing on a spike replays the SAME wave in the ROM; we award the level anyway",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3075,
+      "verbatim": "\tLDA I,CENDLI\t\t;YES. GO TO END OF LIFE STATE"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 411,
+      "verbatim": "    advanceLevel(s)"
+    },
+    "claim": "A spike hit in MOVCUD kills the cursor (INPPSQ, ALWELG.MAC:1094). PLDROP then routes to ANALYZ ('LDA CURSL2 / IFMI ;CURSOR DEAD? / JSR ANALYZ', ALWELG.MAC:893-895), whose dead-cursor branch drags the corpse to the bottom of the well and enters 'LDA I,CENDLI\t\t;YES. GO TO END OF LIFE STATE' (ALWELG.MAC:3075). CENDLI -> ENDLIF spends a life. The wave counter is bumped in exactly ONE place - ENDWAV ('INC CURWAV', ALEXEC.MAC:367) - which is reached only via QSTATE = CENDWAV, and MOVCUD sets that only on a SUCCESSFUL arrival at the bottom (ALWELG.MAC:1035). So a warp crash costs a life AND the wave: you replay the same level, and BONSCO (the end-of-wave bonus, ALEXEC.MAC:371-373) never runs. Our respawn() does the opposite: 'if (s.warp.progress > 0) { advanceLevel(s); return }' (src/core/sim.ts:410-412) - you die, lose a life, and are still promoted to the next geometry.",
+    "reasoning": "This inverts the stakes of the entire subsystem. In the arcade, dying on a spike is a double punishment (life + the wave you just cleared) and is precisely why AVOID SPIKES exists; in ours it costs a life but you keep the level, so the warning is advisory. The comment on our branch shows it was a deliberate workaround for a re-crash loop (Story 3-6) - the ROM avoids that loop differently: the respawned wave re-runs INIENE, which re-initialises the enemy lines, so the spike the player died on is gone. [REFUTATION] Re-opened ANALYZ's dead-cursor branch: 'LDA CURSY ;MOVE CURSOR DOWN / ... IFCS ;CURSOR AT BOTTOM? / LDA I,CENDLI ;YES. GO TO END OF LIFE STATE / STA QSTATE' (ALWELG.MAC:3065-3076) — line 3075 verbatim as cited. Decoded the state codes (ALCOMN.MAC:45-52): CENDLI=6 -> ROUTAD index 3 = ENDLIF; CENDWAV(spelled CENDWA at the 6-char truncation ALWELG.MAC:1035, same symbol)=0E -> index 7 = ENDWAV. Confirmed ENDWAV is the ONLY place CURWAV is incremented: 'INC CURWAV' (ALEXEC.MAC:367, verbatim as cited), reachable only via a SUCCESSFUL MOVCUD arrival ('IFCS ;IS CURSOR PAST BOTTOM? / LDA I,CENDWA', ALWELG.MAC:1034-1036), never via the crash path. Confirmed ENDLIF (ALEXEC.MAC:386-425) only decrements LIVES1 and routes to NEWLIF/ENDGAM — it never touches CURWAV, and NEWLIF (ALEXEC.MAC:313-344) explicitly restores 'LDA X,WAVEN1 / STA CURWAV' (342) — i.e. resumes the SAME wave. So the ROM's wave counter genuinely only advances on a clean arrival, and a spike crash costs a life without advancing the wave, exactly as claimed. Checked our side is governing: sim.ts:410-412 's.warp.progress > 0 ... advanceLevel(s); return' verified verbatim inside respawn(), and it is unconditional on HOW dying happened (warp crash is the only way s.mode==='dying' with warp.progress>0, per the comment at line 404) — so a ROM-authentic crash-to-death maps straight to advanceLevel(), promoting the player exactly as the finding says. Core divergence holds firmly. [CORRECTION] One factual error in the finding's own supporting reasoning: it claims 'the ROM avoids that [re-crash] loop differently: the respawned wave re-runs INIENE, which re-initialises the enemy lines, so the spike the player died on is gone.' This is false. INIENE (which resets LINEY, the spike heights) is called only from INEWAV (ALWELG.MAC:24-27), which is reached only via ENDWAV->INEWAV on a genuine new wave. A life-loss respawn on the SAME wave goes NEWLIF->INEWLI (ALEXEC.MAC:343, ALWELG.MAC:37-44), which calls INICHA/INIINV/ININYM/INIEXP/CLRPOT/INIDSP — never INIENE. So the enemy lines (spikes) are NOT reset on a same-wave respawn; a persistent spike remains exactly where it was. The ROM's actual defense against an instant re-crash loop is structural, not data-reset: a warp-crash death returns the player to normal PLAY of the SAME wave (with any surviving enemies), not directly back into another drop attempt — the player must clear the wave a second time before re-entering drop mode, during which the spike layout can change (via Spikers or the player's own shots) or not. The primary claim (advanceLevel() is wrong; the ROM replays the wave) is unaffected by this correction and remains confirmed.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-016",
+    "class": "DIVERGENCE",
+    "title": "The dive starts with live enemies still parked at the rim; our gate needs an empty board",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3111,
+      "verbatim": "\tBCS LINER\t\t;EXIT IF LINER (NOT AT TOP)"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 538,
+      "verbatim": "  if (s.enemies.length === 0 && s.spawn.remaining === 0) {"
+    },
+    "claim": "ANALYZ decides to start the drop (ALWELG.MAC:3101-3117) when the cursor is alive and at the top, all nymphs are converted and all explosions are done ('LDA NYMCOU / ORA EXPCOU / IFEQ', 3103-3105), and no invader is still down the well: the loop tests 'LDA Y,INVAY / IFNE / CMP I,11 / BCS LINER ;EXIT IF LINER (NOT AT TOP)' (3108-3111) - only invaders with INVAY >= 0x11 abort the drop. An invader sitting AT the rim (INVAY <= 0x10 = ILINLIY) does not, so the ROM will warp out from under a still-living flipper or fuseball that has reached the top. Our gate is 'if (s.enemies.length === 0 && s.spawn.remaining === 0)' - any living enemy anywhere, including one at the rim, blocks the warp indefinitely.",
+    "reasoning": "In practice our PLAYER_RIM_DEPTH grab resolves most rim enemies before this can matter, and a fuseball loitering at the rim is the only realistic case. Recording it because it is literally 'how the dive starts' and the two conditions are not the same predicate; the behavioural delta is small enough that changing it risks more than it buys. [REFUTATION] Re-opened ALWELG.MAC:3101-3117 (ANALYZ) in full context. Confirmed .RADIX 16 is in effect throughout ALWELG.MAC (same inheritance from ALCOMN.MAC as above), so 'CMP I,11' is hex 0x11 (17 decimal) and ILINLIY (ALCOMN.MAC:820, 'ILINLIY=010') is hex 0x10 (16 decimal) -- exactly as the finding states. Verified the gating chain: this branch only runs when CURMOD==0 (top mode) and NYMCOU|EXPCOU==0 (line 3103-3105, roughly our spawn.remaining check), then loops invaders Y=WINVMX down to 0: 'LDA Y,INVAY / IFNE / CMP I,11 / BCS LINER' -- only fires on active invaders (INVAY!=0) with INVAY>=0x11, aborting via LINER. If the loop runs to completion without any invader tripping that branch, it falls through (MIEND) straight into 'JSR INDROP' (start the drop). Confirmed which end 0x10/0xF0 correspond to by cross-checking ALDISP.MAC:2589 ('LDA I,ILINDDY ;BOTTOM OF WELL Y') and ALDISP.MAC:2599 ('LDA I,ILINLIY ;TOP OF WELL Y'), plus ALWELG.MAC INICUR/NEWAV2 both setting CURSY (the cursor/player's own Y) to ILINLIY -- ILINLIY is unambiguously the RIM position (where the player sits), not the spawn/far end. So the finding has the geometry right: an invader with INVAY<=0x10 is genuinely sitting at/near the rim and does NOT block INDROP; only ones deeper in the well (INVAY>=0x11) do. Checked our side: sim.ts:536-540 checkLevelClear is the sole writer of the level-clear/warp transition (grepped for other 'enemies.length === 0' gates -- none), and it requires literally zero live enemies anywhere on the board, a strictly stronger condition than the ROM's Y-threshold test. This is a real, precisely-cited predicate mismatch, not a unit or radix artifact. Self-consistency check passed -- the claim's own text states the narrow scope and the finding does not overstate impact. Holds. [CORRECTION] None needed.",
+    "recommendation": "accept",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-017",
+    "class": "DIVERGENCE",
+    "title": "The dive's thrust rumble starts on the first DESCENDING frame, not at level-clear",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1022,
+      "verbatim": "\tJSR SOUTS2\t\t;YES. START RUMBLE"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 49,
+      "verbatim": "        audio.startLoop('levelClear')"
+    },
+    "claim": "MOVCUD starts the rumble only once, on the frame the Claw is still exactly at the top and about to move: 'LDA CURSY / CMP I,ILINLI / IFEQ ;STILL AT TOP? / JSR SOUTS2 ;YES. START RUMBLE' (ALWELG.MAC:1019-1023). MOVCUD does not run at all during the AVOID SPIKES pause (QSTATE is CPAUSE, not CDROP), so the rumble is silent for the entire warning hold — 30 ROM frames ≈ 1.06 s (WD-009, FR-004) — and begins the instant the descent does. Our sustained warp cue is started from the 'level-clear' event - i.e. at warp ENTRY, before the countdown - so it hums under the whole AVOID SPIKES hold. Separately, the ROM starts a NEW sound at the bottom ('JSR SOUTS3 ;START SPACE SOUND', ALWELG.MAC:1037) where we only stop ours ('warp-end').",
+    "reasoning": "The silence under the warning is what makes the warning land - the rumble spooling up IS the 'you are committed now' cue. Moving the start from the 'level-clear' event to the first frame where warp.warning has reached 0 is a small shell/event change. Corrected for the 28.444 fps rebase (see FR-004 in pair-11-framerate-adjudication.json): the verdict is untouched; only the quoted length of the silent warning hold changes, from the SECOND=20-derived 1.5 s to 30 frames / 28.44 fps = 1.055 s. [REFUTATION] Re-opened ALWELG.MAC:1009-1040 (MOVCUD). Confirmed verbatim: 'LDA CURSY / CMP I,ILINLI / IFEQ / JSR SOUTS2' at 1019-1022 (ILINLI is the truncated-to-6-significant-chars form of ILINLIY, same symbol used at lines 57/296/2694 — this assembler's symbol table collides 7-char names at 6, same pattern as CGETIN/CGETINI in ALWELG.MAC:3211 vs ALCOMN.MAC:55). CURSY is set to ILINLIY during normal PLAY (lines 57-58, 296-297) and is left untouched by INDROP (3137-3176), so the very first MOVCUD call after CDROP begins finds CURSY still at the top value before line 1024 updates it — the rumble fires exactly once, on the first descending frame. Verified the dispatch split: ROUTAD (ALEXEC.MAC:85-103) sends QSTATE=CPAUSE to PAUSE (line 90, which only JMPs to MOVCUR, never PLDROP/MOVCUD) and QSTATE=CDROP to PLDROP (line 101, which alone calls MOVCUD at ALWELG.MAC:889). INDROP (3135-3177) puts the AVOID SPIKES case into CPAUSE with QNXTSTA=CDROP and QTMPAUS=6*QUASEC=30 (QUASEC=SECOND/4=5, ALCOMN.MAC:88), confirming MOVCUD structurally cannot run during that hold. Attacked on the frame-rate axis: PAUSE (ALEXEC.MAC:114-129) decrements QTMPAUS once per frame when PSCALE=0 (its default/reset state, ALCOMN.MAC:798), so 30 ROM frames / (256/9 fps) = 1.0549s — survives; this is not a 60fps- or 20fps-tainted number. Checked our side: sim.ts checkLevelClear (536-551) pushes 'level-clear' and sets s.warp.warning in the same call that enters warp mode, and audio-dispatch.ts:45-50 starts the sustained 'levelClear' (audio.ts: voice 'zoom') loop on that same event — confirmed via audio.ts:73-77 that this is a genuine sustained loop, not a one-shot. The claim holds on every axis attacked. [CORRECTION] Trivial: the title states the warning hold as '~1.06 s'; 30/(256/9) = 1.0549s, which rounds to 1.05s (the reasoning body itself correctly says 1.055s). Title is off by 0.01s — cosmetic only, does not affect the verdict.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "WD-018",
+    "class": "NO_COUNTERPART",
+    "title": "After the dive the ROM flies the eye INTO the new well over many frames; we swap geometry instantly",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 85,
+      "verbatim": "\tLDA EYL\t\t\t;MOVE EYE CLOSER TO WELL"
+    },
+    "ours": null,
+    "claim": "Reaching the bottom does not start the next wave. MOVCUD sets QSTATE = CENDWAV ('LDA I,CENDWA \t;YES. INITIALIZE SPACE MODE', ALWELG.MAC:1035) and pins CURSY at 0xFF. That runs ENDWAV (wave increment + bonus) and then NEWAV2 (ALWELG.MAC:56-121), which each frame walks the eye toward the new well - 'LDA EYL\t\t;MOVE EYE CLOSER TO WELL / CLC / ADC I,18 / STA EYL' (ALWELG.MAC:85-88), 0x18 = 24 units per frame - kills the starfield when the eye passes 0xFC ('LDA I,1 / STA PLAGRO ;TURN OFF STAR FIELD', 94-95), and only hands control back with 'LDA I,CPLAY ;GO PLAY GAME' (109) once the eye reaches EYLDES. The starfield keeps running through all of it (PRSTAR is driven from EXSTAT every frame while PLAGRO != 0). We have no counterpart: stepWarp calls advanceLevel(s) the frame progress crosses 1, and 'warp' mode ends immediately.",
+    "reasoning": "The arcade's between-wave sequence is two movements - dive out of the old well, then fly into the new one - and only the first exists in our clone. That is where the BONUS/TIME banners actually live (ENDWAV runs BONSCO before NEWAV2), which is why our banners currently have to be painted over the dive itself (render.ts:992-995) instead of over their own beat. Filed as NO_COUNTERPART rather than DIVERGENCE because there is no line of ours that is even trying to do this; it is a missing phase, not a wrong value.",
+    "recommendation": "fix",
+    "size": "l"
+  }
+]

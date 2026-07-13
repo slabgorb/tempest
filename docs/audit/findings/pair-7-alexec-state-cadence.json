@@ -1,0 +1,238 @@
+[
+  {
+    "id": "P7-001",
+    "class": "STRUCTURAL",
+    "title": "MAINLN is an IRQ-tick-gated, self-paced loop whose ceiling is 256/9 = 28.4 fps; ours is a fixed 1/60s timestep decoupled from draw",
+    "source": {
+      "file": "ALHARD.MAC",
+      "line": 151,
+      "verbatim": "\tIFEQ\t\t\t;ANOTHER SECOND?"
+    },
+    "ours": {
+      "file": "src/shell/loop.ts",
+      "line": 9,
+      "verbatim": "const STEP = 1 / 60"
+    },
+    "claim": "ALHARD.MAC:149-151 increments a single byte, $INTCT, every IRQ and the source's OWN comment treats its 8-bit wrap (every 256 increments) as \"ANOTHER SECOND\" — i.e. the ROM's IRQ rate is ~256 Hz by the author's own arithmetic. MAINLN does not run game logic on every IRQ: it spins (ALEXEC.MAC:49-52, `LDA FRTIMR / CMP I,9 / CSEND`) until FRTIMR (also incremented once per IRQ, ALHARD.MAC:149) reaches 9, resets it to 0, then runs EXSTAT+NONSTA+DISPLA exactly once (ALEXEC.MAC:53-57) — a MINIMUM of 9/256s ≈ 35ms per logic frame (256/9 = 28.44 Hz ceiling), with NO maximum: JSR DISPLA (building the vector display list) happens inline before the loop re-checks FRTIMR, so a heavier scene makes that same iteration take longer in real time. The SECOND=20 constant (ALCOMN.MAC:87, re-declared ALEXEC.MAC:312) is NOT the loop's rate and is no evidence of one: it sits under ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85), appears only as the reload unit for pause/attract countdowns, and never gates MAINLN or the IRQ — the rate the machine runs at is the 28.44 fps ceiling, which is also what the author writes beside his enemy tables (';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)', ALWELG.MAC:581). Our loop.ts hard-codes STEP=1/60 (loop.ts:9): every stepGame() call advances the sim by EXACTLY 1/60s of simulated time regardless of how expensive draw() is, and advanceFixedSteps() runs MORE steps to catch up after a slow frame rather than stretching a step's dt (loop.ts:64-69, 73-116).",
+    "reasoning": "This is the deepest cadence difference between the two codebases, and it is a real behavioural divergence, not cosmetic: on real hardware, every frame-counted duration (QTMPAUS pauses, the flip/pulse timers, anything measured in QFRAME ticks) takes LONGER in real seconds whenever the vector list is busier, because DISPLA's cost is paid inline in the same loop iteration that advances those counters — the well-known \"vector arcade slows down under load\" property. Our core is deliberately built the opposite way: CLAUDE.md mandates `stepGame(state, input, dt)` produce identical output for identical input so gameplay is \"frame-rate independent\" — pacing here is invariant to render cost by design. Recommend accept: reproducing the ROM's load-dependent slowdown would be a regression for a browser port, not a fidelity win. Corrected for the 28.444 fps rebase (see FR-003, FR-004 and FR-012 in pair-11-framerate-adjudication.json): the accept covers the VARIABILITY only and must NOT be read as accepting the 60 — the BASE is a separate question with a wrong answer. The fixed timestep is right; its value is not, and it must be rebased to the 28.44 fps ceiling (9/256 s per step, or every ROM frame count converted through ROM_FPS). This finding's earlier inference that 'the author assumed ~20 real logic-frames/sec' is also withdrawn: SECOND=20 is a pause-timer authoring unit, not a measurement of the loop.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-002",
+    "class": "CONFIRMED",
+    "title": "The concept of recording the wave/level reached alongside the score is preserved",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 742,
+      "verbatim": "HIWAVE:\t.BLKB 1\t\t;HIGHEST WAVE REACHED IN LAST GAME"
+    },
+    "ours": {
+      "file": "src/core/state.ts",
+      "line": 125,
+      "verbatim": "  highScoreTable: HighScoreTable<'level'>  // in-memory top scores (persistence is 4-6)"
+    },
+    "claim": "ENDGAM (ALEXEC.MAC:429-446) computes HIWAVE — the highest wave any player reached that game — every time a game ends, immediately before the state machine requests HISCHK (the hi-score ladder check, ALEXEC.MAC:450). Our `GameState.highScoreTable` is explicitly typed `HighScoreTable<'level'>` (state.ts:125), i.e. the shared high-score module is parameterised to carry a level/wave reached alongside each score entry, the same pairing the ROM computes at end-of-game.",
+    "reasoning": "Recorded as a match because it would have been easy to drop: a bare top-score list only needs a number, but both the 1981 source and this port went out of their way to also carry how far the run got. This is exactly the kind of quiet, correct correspondence the audit should surface, not just the divergences."
+  },
+  {
+    "id": "P7-003",
+    "class": "STRUCTURAL",
+    "title": "Player-dead is a sentinel value packed into the position field (CURSL1=0x80), not a separate flag",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 832,
+      "verbatim": "\t\t\t\t; 80 MEANS PLAYER IS DEAD"
+    },
+    "ours": {
+      "file": "src/core/state.ts",
+      "line": 17,
+      "verbatim": "  alive: boolean"
+    },
+    "claim": "CURSL1 (ALCOMN.MAC:830-832) is the Claw's own position (one of the two tube-edge line numbers it straddles); the ROM overloads that SAME byte with the sentinel value 0x80 to mean \"player is dead\" instead of adding a separate status bit anywhere else in the RAM map. Our `Player` type (state.ts:15-23) keeps `lane: number` and `alive: boolean` as two independent fields — the dead/alive fact is never encoded by corrupting the position value.",
+    "reasoning": "Same fact (is the Claw currently controllable), two different encodings: a magic-number-in-the-position-field on the 6502 (saves a byte of RAM) versus an explicit tagged field in a TypeScript object (costs nothing extra on modern hardware). This is a different spelling of the same behaviour — accept, no reason to port the sentinel-value trick.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-004",
+    "class": "STRUCTURAL",
+    "title": "The warp/dive state is 3 packed RAM scalars (sign-flag + two fixed-point byte-pairs) vs our 2 plain floats",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 707,
+      "verbatim": "CURMOD:\t.BLKB 1\t\t\t;CURSOR MODE (-:DROPPING)"
+    },
+    "ours": {
+      "file": "src/core/state.ts",
+      "line": 93,
+      "verbatim": "  progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level"
+    },
+    "claim": "The ROM represents \"is the Claw currently diving down the well, how far along, and how fast\" with: CURMOD (ALCOMN.MAC:707), whose SIGN bit alone flags dropping-mode; CURSY/CURSYL (ALCOMN.MAC:833, 708), an integer+fractional byte pair for depth; and CURSVL/CURSVH (ALCOMN.MAC:705-706), an integer+fractional byte pair for acceleration/velocity down the well — 5 bytes across 3 named variables. Our `WarpState` (state.ts:92-96) covers the same three facts with `mode === 'warp'` (a tagged union member, state.ts:8) plus two IEEE-754 doubles, `progress` and `velocity`.",
+    "reasoning": "Same three facts (diving?/how far?/how fast?), packed as a sign-bit flag plus two 8.8-style fixed-point byte pairs on the 6502 versus a discriminated-union tag plus two floats in JS. Different spelling of the same behaviour — accept.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-005",
+    "class": "DIVERGENCE",
+    "title": "Starting lives-per-game is an operator-configurable RAM value (LVSGAM) in the ROM; ours is a hard-coded constant with no settings surface",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 785,
+      "verbatim": "LVSGAM:\t.BLKB 1\t\t\t;LIVES/GAME"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 15,
+      "verbatim": "export const START_LIVES = 3"
+    },
+    "claim": "NEWGAM reads LVSGAM at the start of every game (ALEXEC.MAC:294-295, `LDA LVSGAM ;GET # LIVES` / `STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)`) — a RAM cell the cabinet operator sets via DIP-switch-derived options, so \"lives per game\" is a configurable cabinet setting, not a compile-time constant. `START_LIVES = 3` (rules.ts:15) is a fixed literal with no equivalent options/settings mechanism anywhere in state.ts or rules.ts.",
+    "reasoning": "A real divergence, not cosmetic: the original lets an arcade operator dial starting lives up or down (commonly 2/3/4/5 across cabinets); a browser build has no operator role and no coin door, so there is nothing to configure it FOR. Recommend wont_fix rather than accept, because this is a deliberate removal of a real feature (operator configurability) rather than an equivalent restatement of it. [REFUTATION] All three citations verified verbatim: ALCOMN.MAC:785 'LVSGAM: .BLKB 1 ;LIVES/GAME' exact match; ALEXEC.MAC:294-295 'LDA LVSGAM ;GET # LIVES' / 'STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)' exact match inside NEWGAM. Traced LVSGAM's producer: ALLANG.MAC INILIT (271-278) decodes OPTIN2 bits through a 4-entry table GAMLVS (line 290: '.BYTE 3,4,5,2') into LVSGAM — genuinely a DIP-switch-derived RAM cell, not a constant, confirming both the 'operator-configurable' framing and the '2/3/4/5' value set cited in the reasoning. Checked our side: rules.ts:15 'export const START_LIVES = 3' is a bare literal; grepped rules.ts/state.ts for any options/settings surface — none exists. Claim is accurate and the citations are exact.",
+    "recommendation": "wont_fix",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "P7-006",
+    "class": "NO_COUNTERPART",
+    "title": "The coin/credit economy ($$CRDT + PROCRE) has no counterpart",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 409,
+      "verbatim": "$$CRDT:\t.BLKB 1\t\t\t;# OF CREDITS"
+    },
+    "ours": null,
+    "claim": "PROCRE (ALEXEC.MAC:132-199) is a full credit-processing state machine gating whether a game may start: it decrements $$CRDT on each START press, enforces a \"2 game minimum\" option (NONSTA, ALEXEC.MAC:210-238), and forces $$CRDT to 2 in free-play mode (NOSTART, ALEXEC.MAC:244-249). None of state.ts, loop.ts or rules.ts has a credits/coin field, a start-gate, or a free-play concept.",
+    "reasoning": "Correctly and unsurprisingly absent — a browser tab has no coin door and no operator economy to protect. Recorded for completeness of the RAM-map-vs-GameState comparison this pair owns, not because anything should change.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-007",
+    "class": "NO_COUNTERPART",
+    "title": "Two-player alternating turns and cocktail-cabinet screen flip have no counterpart",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 454,
+      "verbatim": "PLAYUP:\t.BLKB 1\t\t\t;PLAYER UP (0=LEFT, 1=RIGHT)"
+    },
+    "ours": null,
+    "claim": "PLAYUP/NUMPLA/NEWPLA (ALCOMN.MAC:454-456) track whose turn it is across a 2-player game, and COCFLI (ALEXEC.MAC:481-500) flips the physical video output (MFLIP/MVINVX/MVINVY, ALCOMN.MAC:263-264, 285) for player 2 on a cocktail cabinet. Our `Player` (state.ts:15-23) and `GameState` (state.ts:110-132) model exactly one player and have no second-player, turn-order, or screen-orientation concept anywhere.",
+    "reasoning": "Expected and appropriate: this is a single-player-at-a-time browser game with a fixed screen orientation, so there is no \"other player's turn\" or \"upside-down cabinet\" to model. Recorded for scope completeness.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-008",
+    "class": "NO_COUNTERPART",
+    "title": "Per-IRQ ROM checksum + stack-depth/frame-overrun watchdog reset has no counterpart",
+    "source": {
+      "file": "ALHARD.MAC",
+      "line": 33,
+      "verbatim": "CHKSMA::\t.BYTE QCHKSA"
+    },
+    "ours": null,
+    "claim": "Every IRQ, before anything else runs, ALHARD.MAC:44-52 checks the stack pointer against 0xD0 and FRTIMR's high bit; if the stack is too deep AND FRTIMR looks overrun it falls straight into a hardware RESET (`BRK` / `JMP RESET`, line 51-52). CHKSMA (line 33) plants a per-module checksum byte (one of QCHKS0-QCHKSB, lines 17-28) that is part of the same self-defense/anti-tamper scheme, alongside scattered \"SECURITY\" RAM cells (e.g. QT2, ALCOMN.MAC:799, consulted every logic frame at ALEXEC.MAC:262-269). None of loop.ts or state.ts has any checksum, stack-depth check, or watchdog-reset concept.",
+    "reasoning": "A JS engine running in a sandboxed browser tab has no ROM to checksum, no runaway-stack failure mode that a game-logic reset would fix, and no piracy threat model this would defend against. Correctly absent — recorded for completeness of the IRQ-handler comparison this pair owns.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-009",
+    "class": "STRUCTURAL",
+    "title": "ALVGUT's persistent vector-display-list API has no analogue; our draw callback is an opaque, stateless per-frame hook",
+    "source": {
+      "file": "ALVGUT.MAC",
+      "line": 268,
+      "verbatim": "VGADD:\tTYA\t\t\t;ADD 1+(Y) TO VGLIST"
+    },
+    "ours": {
+      "file": "src/shell/loop.ts",
+      "line": 39,
+      "verbatim": "  draw: (s: GameState, frameEvents: readonly GameEvent[]) => void,"
+    },
+    "claim": "ALVGUT.MAC is a library of primitives (VGADD, VGVCTR, VGHALT, VGSCAL, VGSTAT, VGHEX/VGHEXZ) that all share one contract: append a fixed-format instruction to a growing display list at (VGLIST,VGLIST+1), advance that pointer, and return — building up a retained buffer of vector-generator opcodes that the AVG hardware later scans independently of the CPU. `draw` (loop.ts:39) is the opposite shape: a single opaque callback invoked once per rendered frame, given the CURRENT state and nothing else, with no persistent list, no beam-position pointer, and no scale-factor quantization (VGSCAL's whole job, ALVGUT.MAC:277-290) — Canvas 2D's `stroke()`/`lineTo()` calls take plain floating-point coordinates directly.",
+    "reasoning": "This is not a missing feature, it is a different rendering technology entirely: a hand-built instruction stream for a dedicated analog vector chip versus immediate-mode floating-point drawing calls into a rasterizer. The visual output (glowing vector lines) is the target either way. Accept — there is nothing to port here, only a different pipeline underneath the same picture.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-010",
+    "class": "STRUCTURAL",
+    "title": "Manual dual-buffer swap (BUFRDY) vs the browser's own compositor/requestAnimationFrame",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 521,
+      "verbatim": "BUFRDY:\t.BLKB 1\t\t\t;BUFFER STATUS (0-DISPLAY IT, <>0:BUILD IT)"
+    },
+    "ours": {
+      "file": "src/shell/loop.ts",
+      "line": 119,
+      "verbatim": "    raf = requestAnimationFrame(frame)"
+    },
+    "claim": "BUFRDY (ALCOMN.MAC:521) is a hand-rolled double-buffer flag: the CPU builds the NEXT vector list into one buffer while the AVG hardware scans the CURRENT one, and BUFRDY tracks which role each buffer is playing (per ALHARD.MAC's own header comment, line 36: \"SWITCH DISPLAY BUFFER POINTER AND BUILD BUFFER POINTERS WHEN TIME\"). Our loop has no buffer-status flag at all — `requestAnimationFrame(frame)` (loop.ts:119, 125) delegates atomic frame presentation entirely to the browser's own compositor.",
+    "reasoning": "Same guarantee (the viewer never sees a half-built frame), achieved by manually toggling a RAM flag on custom hardware versus trusting a platform API that does the equivalent job for free. Different spelling of the same behaviour — accept.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-011",
+    "class": "STRUCTURAL",
+    "title": "DISPLA runs exactly once per completed logic frame; our draw() runs once per rendered frame regardless of how many fixed sub-steps ran inside it",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 57,
+      "verbatim": "\tJSR DISPLA\t\t;EXECUTE CODE TO DISPLAY NEW SCREEN"
+    },
+    "ours": {
+      "file": "src/shell/loop.ts",
+      "line": 59,
+      "verbatim": "    // clears state.events each step, so the post-loop state only carries the"
+    },
+    "claim": "MAINLN calls JSR DISPLA exactly once per EXSTAT/NONSTA pass (ALEXEC.MAC:55-57) — logic and display are 1:1, always. Our `frame()` (loop.ts:53-120) can run the fixed sub-step callback ZERO, ONE, or SEVERAL times per `requestAnimationFrame` (via `advanceFixedSteps`'s catch-up, loop.ts:73-116) but calls `draw()` exactly once at the end regardless (loop.ts:118) — the comment at loop.ts:58-61 states outright that when 2+ sub-steps run in one rendered frame, only the LAST one's events/state are ever drawn; earlier sub-step states are computed and then never rendered.",
+    "reasoning": "A genuine behavioural difference (the ROM never computes a game state it doesn't also display; ours sometimes does, e.g. after a stall causes 2 catch-up steps), but not a defect: it's the standard, well-understood fixed-timestep-with-render-decoupled-from-simulation pattern, chosen specifically to avoid the ROM's opposite problem (letting slow frames elongate simulated time). Accept.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-012",
+    "class": "STRUCTURAL",
+    "title": "QSTATE is a 19-way per-frame dispatch table; our Mode is a 7-value union plus continuous per-feature timers",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 85,
+      "verbatim": "ROUTAD:\t.WORD NEWGAM-1\t\t;NEW GAME"
+    },
+    "ours": {
+      "file": "src/core/state.ts",
+      "line": 8,
+      "verbatim": "export type Mode = 'attract' | 'select' | 'playing' | 'dying' | 'gameover' | 'warp' | 'highscore'"
+    },
+    "claim": "ROUTAD (ALEXEC.MAC:85-103) lists exactly 19 `.WORD` entries — one dedicated routine address per QSTATE code (NEWGAM, NEWLIF, PLAY, ENDLIF, ENDGAM, PAUSE, an unused NEWAV slot, ENDWAV, HISCHK, GETINI, DLADR, PRORAT, NEWAV2, LOGINI, INIRAT, NEWLF2, PLDROP, SYSTEM, PRBOOM) — and EXSTAT (ALEXEC.MAC:66-81) dispatches every logic frame purely by indexing this table with QSTATE (ALCOMN.MAC:396). Our `Mode` (state.ts:8) has 7 values; the finer-grained ROM states are instead folded into continuous per-feature countdowns living alongside mode (`player.respawnTimer`, `warp.progress`/`velocity`/`warning`, `spawn.timer`, `player.zapTimer`).",
+    "reasoning": "Different shape for the same job: a flat, explicit 19-way jump table indexed once per frame, versus a small coarse mode tag plus several independent continuous sub-state fields that a `switch` or `if` can read directly. Both let the code ask \"what should happen this frame\" unambiguously. Different spelling of the same behaviour — accept.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-013",
+    "class": "STRUCTURAL",
+    "title": "The ROM stores the wave number zero-based (\"-1\"); we store level 1-based, matching the displayed number",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 464,
+      "verbatim": "WAVEN1:\t.BLKB 1\t\t\t;# OF ENEMY WAVE WHICH PLAYER IS BATTLING -1"
+    },
+    "ours": {
+      "file": "src/core/state.ts",
+      "line": 112,
+      "verbatim": "  level: number"
+    },
+    "claim": "WAVEN1's own comment says the stored byte is the wave number MINUS 1 — i.e. wave 1 (what the player sees) is stored as 0. `GameState.level` (state.ts:112) is initialised to `level: 1` (state.ts:138) and incremented directly (`s.level += 1` in advanceLevel) to match the number actually shown to the player — no off-by-one offset anywhere.",
+    "reasoning": "Same quantity (which wave/level is being played), stored zero-based on the 6502 (a common assembly convention when the value indexes a 0-based table) versus stored 1-based to match the displayed number directly in ours. Purely an encoding-offset difference with no behavioural consequence — a different spelling of the same fact. Accept.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "P7-014",
+    "class": "NO_COUNTERPART",
+    "title": "EAROM (non-volatile settings) writes are throttled to every other logic frame; our persisted state has no analogous write-throttle",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 254,
+      "verbatim": "\tAND I,1"
+    },
+    "ours": null,
+    "claim": "NONSTA masks QFRAME's low bit and only calls JSR EAUPD (the EAROM-writing routine) on odd logic frames (ALEXEC.MAC:252-257: `LDA QFRAME` / `AND I,1` / `IFNE` / `JSR EAUPD`) — a deliberate write-rate limiter for the EAROM's wear-limited storage. None of state.ts, loop.ts or rules.ts contains any comparable write-throttling logic for persisted data (the in-memory `highScoreTable`, state.ts:125, and its actual localStorage persistence live outside these files entirely, per the story-4-6 note at state.ts:125).",
+    "reasoning": "EAROM is a hardware component with a limited write-cycle lifetime, so the ROM throttles writes to protect it; `localStorage` has no such physical wear constraint, so there is nothing to protect and no reason to invent an equivalent throttle. Correctly absent — accept.",
+    "recommendation": "accept"
+  }
+]

@@ -1,0 +1,330 @@
+[
+  {
+    "id": "S-001",
+    "class": "CONFIRMED",
+    "title": "segment-tick trigger and bytes match ALSOUN's LO (\"CURSOR MOVES\"/SBOING)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 967,
+      "verbatim": "\tJSR SBOING\t\t;YES. MAKE SOUND"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 65,
+      "verbatim": "        audio.play('segmentTick') // ★ authentic POKEY tick as the Claw crosses a lane (6-10)"
+    },
+    "claim": "SBOING (ALSOUN's LO entry, comment \"CURSOR CROSSED A LINE\") fires from ALWELG's cursor-position update exactly when CURSL1 (the cursor's/claw's current lane) changes to a new value — i.e. a lane crossing. Our 'segment-cross' GameEvent -> 'segmentTick' fires on the identical condition (crossing into a new lane). LO5F/LO5A (0x0f,0x04,0x00,0x01 / 0xa2,0x04,0x40,0x01) are also byte-identical to the ROM data baked as segment_tick.wav ($cc39) in tools/pokey-bake/sfx-data.mjs.",
+    "reasoning": "Vocabulary: cursor = player/claw. This is one of the most frequently-heard cues in the game (every lane crossing) and it is both correctly triggered and correctly baked — good evidence the audit's trust in this sound is warranted."
+  },
+  {
+    "id": "S-002",
+    "class": "CONFIRMED",
+    "title": "enemy-fire trigger and bytes match ALSOUN's ES (\"ENEMY SHOT\"/ESLSON)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2721,
+      "verbatim": "\tJSR ESLSON"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 31,
+      "verbatim": "        audio.play('enemyFire') // 6-5 hook; authentic bake wired in 6-6"
+    },
+    "claim": "ESLSON is called from FIREIC (\"PLAY - FIRE INVADER CHARGE\") the moment an invader launches a charge at the cursor. Our EnemyFireEvent -> enemyFire fires on the identical moment (an enemy fired an energy bolt). ES8F/ES8A (0x00,0x03,0x02,0x09 / 0x08,0x03,0xff,0x09) are byte-identical to the ROM data baked as enemy_fire.wav ($cc45).",
+    "reasoning": "Vocabulary: invaders = active enemies, charges = bullets. Clean trigger + byte match with no caveats."
+  },
+  {
+    "id": "S-003",
+    "class": "CONFIRMED",
+    "title": "spike-shot trigger and bytes match ALSOUN's EL (\"ENEMY LINE DESTRUCTION\"/SELICO)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2607,
+      "verbatim": "\tJSR SELICO\t\t;MAKE SOUND"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 68,
+      "verbatim": "        audio.play('spikeShot') // ★ authentic spike_shot bake (ROM cc51, 10-11)"
+    },
+    "claim": "SELICO fires exactly when a player charge lands on an active enemy line (LINEY nonzero) at or past the line's current height, immediately followed by UPSCORE for the hit. Whether the hit fully retires the line (LINEY forced to 0 past ILINDDY) or merely shortens it, SELICO plays either way. Our SpikeShotEvent -> spikeShot fires on \"a player bullet shortened a standing spike\" — the same condition. EL7F/EL7A (0x80,0x01,0xe8,0x05 / 0xa1,0x01,0x01,0x05) are byte-identical to the ROM data baked as spike_shot.wav ($cc51).",
+    "reasoning": "Vocabulary: enemy lines = spikes, charges = bullets. Confirms the map's existing spike-shot identification independently via the raw ALSOUN table plus its real ALWELG call site."
+  },
+  {
+    "id": "S-004",
+    "class": "CONFIRMED",
+    "title": "player-death plays one sound for every death cause, matching ALSOUN's single DI entry",
+    "source": {
+      "file": "ALSOUN.MAC",
+      "line": 214,
+      "verbatim": "CPEXPL:\tLDA I,SIDDI\t\t;PLAYER DIES"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 40,
+      "verbatim": "        audio.play('playerDeath')"
+    },
+    "claim": "IPEXPL and CPEXPL are both aliases that fall straight into the same \"LDA I,SIDDI / JMP SNDON\" (ALSOUN.MAC:214-215), so the ONE DI sound plays regardless of which death path (grab, pulse, spike, bolt) killed the cursor. DEADCU (ALWELG.MAC:2790, \"JSR CPEXPL ;START NOISE\") is the single kill-cursor routine every death path funnels through. Our PlayerDeathEvent carries a `cause: 'grab' | 'pulse' | 'spike' | 'bolt'` field, but audio-dispatch.ts's 'player-death' case ignores it and always calls audio.play('playerDeath') — exactly matching ALSOUN's one-sound-for-all-causes behaviour.",
+    "reasoning": "Worth recording explicitly because our own code carries a `cause` discriminant that LOOKS like it should vary the sound — the primary source confirms it correctly does not. player_explosion.wav's stream bytes (audfStart 0x13/audcStart 0x1a) are also byte-identical to ALSOUN's DI1F/DI1A."
+  },
+  {
+    "id": "S-005",
+    "class": "CONFIRMED",
+    "title": "pulsar-hum start/stop trigger and bytes match ALSOUN's PU/PO (PULSTR/PULSTO)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1552,
+      "verbatim": "\tJSR PULSTR\t\t;ACTIVE SO TURN ON"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 74,
+      "verbatim": "        audio.startLoop('pulsarHum') // ★ loop the authentic pulsar_hum (ROM cc99, 10-11)"
+    },
+    "claim": "PULSTR (ALSOUN's PU) is called when `FLIPCO+ZABPUL` (active pulsars) is nonzero and the cursor is alive — the rising edge of \"a pulsar exists\". PULSTO (ALSOUN's PO) is called both on the falling edge (ALWELG.MAC:1546, \"JSR PULSTO ;YES. TURN OFF\") and defensively when the cursor dies on a line (ALWELG.MAC:1093). Our PulsarHumStartEvent/PulsarHumStopEvent fire on the identical 0→>0 / >0→0 transitions of the pulsar population. PU6F (0xb0,0x02,0x00,0xff, delta 0 = constant pitch) plus PU6A's repeated (0xc8,0x01,0x02,0xff) throb are byte-identical to pulsar_hum.wav's stream bytes (audfStart 0x65/audcStart 0x68).",
+    "reasoning": "A constant-pitch/throbbing-amplitude envelope is exactly what the label \"PULSATION\" describes, and it matches a sustained loop rather than a one-shot — consistent with our startLoop/stopLoop implementation."
+  },
+  {
+    "id": "S-006",
+    "class": "CONFIRMED",
+    "title": "extra-life trigger and bytes match ALSOUN's WP (\"SPECIAL SCORE SOUND\"/SAUSON) at the bonus-life award",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 586,
+      "verbatim": "\tJSR SAUSON\t\t;MAKE BONUS SOUND"
+    },
+    "ours": {
+      "file": "src/shell/audio-dispatch.ts",
+      "line": 71,
+      "verbatim": "        audio.play('extraLife') // ★ authentic extra_life bake (ROM cc11, 10-11)"
+    },
+    "claim": "GIVBON (ALEXEC.MAC:580-589) increments LIVES1 (capped at 6) when a score-threshold interval is crossed, then calls SAUSON. Our ExtraLifeEvent -> extraLife fires on \"the score crossed one (or more) EXTRA_LIFE_INTERVAL boundaries\" — the same condition. WP4F/WP4A's 8-step descending arpeggio (0x40,0x01,0x00,0x01 ... 0x10,0x01,0xff,0x10 / 0xa8,0x93,0x00,0x02) is byte-identical to extra_life.wav's stream bytes (audfStart 0x21/audcStart 0x32).",
+    "reasoning": "Confirms both the trigger condition and the exact multi-note envelope. See S-015 for the SECOND, currently-unwired SAUSON trigger (end-of-wave bonus score) that this same WP entry also covers in the arcade."
+  },
+  {
+    "id": "S-007",
+    "class": "CONFIRMED",
+    "title": "levelClear/warp.wav trigger timing and bytes match ALSOUN's T2 (\"THRUST SOUND ON TUBE\"/SOUTS2)",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1022,
+      "verbatim": "\tJSR SOUTS2\t\t;YES. START RUMBLE"
+    },
+    "ours": {
+      "file": "tools/pokey-bake/sfx-data.mjs",
+      "line": 65,
+      "verbatim": "      audf: [0xc0, 0x02, 0xff, 0xff, 0x00, 0x00],"
+    },
+    "claim": "SOUTS2 (ALSOUN's T2) fires in MOVCUD (\"PLAY-MOVE CURSOR DOWN\") on the very first frame of the dive, while CURSY still equals ILINLI (cursor/claw still at the top of the well). This is the same moment our LevelClearEvent fires, starting the sustained 'levelClear' loop (warp.wav). T26F/T26A (0xc0,0x02,0xff,0xff / 0x28,0x02,0x00,0xf0) are byte-identical to warp.wav's baked audf/audc arrays ($cc75).",
+    "reasoning": "Confirms both the trigger MOMENT (dive entry) and the exact envelope for the sound our loop starts with. See S-014 for the SECOND rumble phase (T3, thrust-in-space) the arcade plays later in the same dive that our single loop does not model."
+  },
+  {
+    "id": "S-008",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Our 'fire' sound (player_fire.wav) is byte-identical to ALSOUN's ENEMY EXPLOSION data, not the LAUNCH SOUND",
+    "source": {
+      "file": "ALSOUN.MAC",
+      "line": 181,
+      "verbatim": "EX2F:\t.BYTE 1,8,2,10\t\t;ENEMY EXPLOSION"
+    },
+    "ours": {
+      "file": "tools/pokey-bake/sfx-data.mjs",
+      "line": 34,
+      "verbatim": "      audf: [0x01, 0x08, 0x02, 0x10, 0x00, 0x00],"
+    },
+    "claim": "sfx-data.mjs's 'player_fire' entry (ROM $cc5d per the existing POKEY map) stores audf=[0x01,0x08,0x02,0x10,0x00,0x00] / audc=[0x86,0x20,0x00,0x04,0x00,0x00]. These are byte-for-byte identical to ALSOUN.MAC's EX2F (line 181, hex 0x01,0x08,0x02,0x10) and EX2A (line 183, \".BYTE 86,20,0,4\" = hex 0x86,0x20,0x00,0x04) — the table entry ALSOUN itself labels \"ENEMY EXPLOSION\" and dispatches ONLY from EXSNON (fed by CCEXPL/CIEXPL on enemy/charge kills, e.g. ALWELG.MAC:2839 \"JSR CIEXPL ;BANG SOUND\"), never from SLAUNC (the actual player-fire trigger, ALWELG.MAC:2675). Our audio-dispatch.ts plays this exact sample on every 'fire' event — i.e. every time the player shoots.",
+    "reasoning": "This is one of the two most-heard cues in the entire game (every player shot). The 6-6 story locked in $cc5d as \"player_fire\" by ear before ALSOUN's own table was available to cross-check; ALSOUN proves the byte content actually belongs to the enemy-explosion slot. See S-009 for the matching enemy_explosion/thrust-in-space swap this pairs with, and S-010 for where the TRUE launch-sound bytes already sit, unshipped, in our own repo. [REFUTATION] Re-opened ALSOUN.MAC in full. ALCOMN.MAC:17 sets .RADIX 16 and is .INCLUDEd at ALSOUN.MAC:3, so the bare digit strings in the sound tables are already hex (no unit-conversion escape hatch here). PNTRS (lines 87-101) labels its OFFSET entries in file order: LO=CURSOR MOVES, EX=ENEMY EXPLOSION, LA=PLAYER FIRE, ... — confirmed by grep that EX2F/EX2A (line 181/183) is the ONLY EX-prefixed data label and LA3F/LA3A (line 141/142) is the ONLY LA-prefixed one, so there is no macro ambiguity. EX2F+terminator = hex [01,08,02,10,00,00], EX2A+terminator = [86,20,00,04,00,00] — byte-for-byte identical to tools/pokey-bake/sfx-data.mjs's 'player_fire' entry (audf/audc quoted correctly). LA3F/LA3A (the real launch-sound record) is [10,01,07,20,00,00]/[a2,01,f8,20,00,00] — completely different bytes, and never used by our clone. Checked the dispatch chain: EXSNON/CIEXPL/CCEXPL all fall through to 'LDA I,SIDEX' (line 224), while SLAUNC (the real player-fire trigger, called from ALWELG.MAC:2675) loads SIDLA (line 249) — two genuinely distinct sound-table slots. Verified src/shell/audio.ts:31 maps event 'fire' -> 'player_fire.wav' and audio-dispatch.ts:27-28 fires it on 'fire'. No downstream override. Holds exactly as claimed.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "S-009",
+    "class": "BOOK_WAS_WRONG",
+    "title": "Our 'enemyDeath' sound (enemy_explosion.wav) is byte-identical to ALSOUN's THRUST-IN-SPACE data, not an explosion",
+    "source": {
+      "file": "ALSOUN.MAC",
+      "line": 193,
+      "verbatim": "T36F:\t.BYTE 10,0B,1,40\t;THRUST SOUND IN SPACE"
+    },
+    "ours": {
+      "file": "tools/pokey-bake/sfx-data.mjs",
+      "line": 55,
+      "verbatim": "      audf: [0x10, 0x0b, 0x01, 0x40, 0x00, 0x00],"
+    },
+    "claim": "sfx-data.mjs's 'enemy_explosion' entry (ROM $cc81) stores audf=[0x10,0x0b,0x01,0x40,0x00,0x00] / audc=[0x86,0x40,0x00,0x0b,0x00,0x00] — byte-for-byte identical to ALSOUN.MAC's T36F (line 193, hex 0x10,0x0b,0x01,0x40) and T36A (line 195, \".BYTE 86,40,0,0B\" = hex 0x86,0x40,0x00,0x0b), labelled \"THRUST SOUND IN SPACE\" and dispatched ONLY from SOUTS3 (ALWELG.MAC:1037, \"JSR SOUTS3 ;START SPACE SOUND\") — fired when the cursor passes the bottom of the well and the game switches to starfield/\"space\" mode at the end of the warp dive, not when an invader dies.",
+    "reasoning": "This is the counterpart half of the S-008 swap: both bogus identifications come from the same 7-entry \"clean\" bake set, cross-checked against the same 12 ALSOUN table entries (see S-001/002/003/006/007 for the 5 that DO check out correctly). Fixing 'fire' without also fixing 'enemyDeath' would just relocate the confusion. See S-014 for using these corrected T3 bytes as the missing second warp-dive phase. [REFUTATION] Companion to S-008, same file/macro verification applies. T36F/T36A (ALSOUN.MAC:193/195, the only T3-prefixed data, matching PNTRS's 'T3 = THRUST IN SPACE') decode to hex [10,0b,01,40,00,00]/[86,40,00,0b,00,00] — byte-for-byte identical to sfx-data.mjs's 'enemy_explosion' entry (confirmed both audf and audc against the file directly). SOUTS3 (loads SIDT3) is called from ALWELG.MAC:1037 exactly where the source models it: inside MOVCUD, gated on CURSY crossing the bottom-of-well threshold (line 1034 'IFCS ;IS CURSOR PAST BOTTOM?'), setting QSTATE=CENDWA ('space mode') — this is the warp-dive-end transition, not an enemy kill. Verified src/shell/audio.ts:33 maps 'enemyDeath' -> 'enemy_explosion.wav'. The claim's supporting text says 'the same 12 ALSOUN table entries' where PNTRS actually defines 13 (LO,EX,LA,PU,WP,DI,T2,T3,ES,EL,SL,S3,PO) — a trivial off-by-one in the narrative that does not touch the byte-identity claim itself. Holds. [CORRECTION] Minor: the reasoning's '12 ALSOUN table entries' should be 13 (PNTRS has 13 OFFSET calls) — does not affect the core claim.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "S-010",
+    "class": "NO_COUNTERPART",
+    "title": "ALSOUN's true LAUNCH SOUND (LA, the real player-fire cue) has no shipped counterpart",
+    "source": {
+      "file": "ALSOUN.MAC",
+      "line": 141,
+      "verbatim": "LA3F:\t.BYTE 10,1,7,20,0,0"
+    },
+    "ours": null,
+    "claim": "LA3F/LA3A (hex 0x10,0x01,0x07,0x20,0x00,0x00 / 0xa2,0x01,0xf8,0x20,0x00,0x00) is the ONLY ALSOUN table entry SLAUNC (ALWELG.MAC:2675, the moment a charge launches from the cursor) actually dispatches. It is not among the 7 sounds in tools/pokey-bake/sfx-data.mjs's clean SFX array. The identical 12 bytes already sit, unused for this purpose, inside that same file's own ALSOUN_STREAM blob (tools/pokey-bake/sfx-data.mjs:117, \"0x10, 0x01, 0x07, 0x20, 0x00, 0x00, 0xa2, 0x01, 0xf8, 0x20, 0x00, 0x00,\") — array offset 24, which the map's own address arithmetic (addr = $cbcf + 2v) resolves to ROM $cbe9, matching the existing POKEY map's own idx2 row (\"$cbe9 | sound_Lccea ... player shot setup | player-shot variant? | no — multi-segment\"). The map's authors flagged this exact address with a \"?\" and never resolved or shipped it.",
+    "reasoning": "Once S-008/S-009 are corrected, whatever currently occupies the 'fire' slot needs replacing; this IS the correct replacement, and its raw bytes are already sitting in our own tooling's verbatim ROM dump, just never extracted as its own streaming SFX entry.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "S-011",
+    "class": "DIVERGENCE",
+    "title": "'superzapper' (kzap.wav) has no basis anywhere in ALSOUN's 13-sound table",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3531,
+      "verbatim": "\tJSR KILENE\t\t;WIPE OUT INVADERS & CHARGES"
+    },
+    "ours": {
+      "file": "src/shell/audio.ts",
+      "line": 38,
+      "verbatim": "  superzapper: 'kzap.wav', // superzapper fired (community rip)"
+    },
+    "claim": "PROSUZ (ALWELG.MAC:3499-3537) processes a superzapper press by starting SUZTIM and calling KILENE every CSUINT+1 frames. KILENE's only sound-producing action is EXIKIL -> INCISQ -> GEXIFU -> CIEXPL (ALWELG.MAC:2839, \"JSR CIEXPL ;BANG SOUND\") — the SAME EX (\"ENEMY EXPLOSION\") cue an ordinary kill plays. Neither PROSUZ, KILENE, nor EXIKIL ever loads one of the 13 SIDxx codes for a dedicated \"zap\" tone, and ALSOUN's 13-entry PNTRS table (LO,EX,LA,PU,WP,DI,T2,T3,ES,EL,SL,S3,PO) has no such entry either. Our audio.ts nonetheless ships a distinct one-shot 'kzap.wav' (a community rip, not an authentic bake) played once on every 'superzapper-activate' event.",
+    "reasoning": "The authentic effect is a rapid-fire burst of the (corrected, per S-008/009) enemy-explosion cue, one per invader vaporised, exactly as our own sim already times it — see S-012. Layering an extra invented one-shot tone on top has no primary-source support, though it is a harmless embellishment players may already associate with the superzapper. [REFUTATION] Read PROSUZ (ALWELG.MAC:3499-3537) and its callees in full. On activation PROSUZ only sets SUZCNT/SUZTIM and clears switch flags (lines 3509-3520) — no sound call anywhere in that branch. While active it unconditionally calls KILENE (line 3531) every frame; KILENE's only effect that reaches sound is EXIKIL (line 3562) -> JMP INCISQ (line 3566) -> JSR GEXIFU (ALWELG.MAC:2830) -> JSR CIEXPL (line 2839, ';BANG SOUND') -> CIEXPL falls through into EXSNON (ALSOUN.MAC:222-224), which loads SIDEX — the SAME 'ENEMY EXPLOSION' slot an ordinary kill uses (verified independently in S-008/S-009). Grepped ALSOUN.MAC's full PNTRS table (13 entries: LO,EX,LA,PU,WP,DI,T2,T3,ES,EL,SL,S3,PO) and there is no 'superzap'/'zap' entry. Confirmed our src/shell/audio.ts:38 ships 'kzap.wav' and audio-dispatch.ts:54-55 plays it on 'superzapper-activate' with no primary-source basis. Minor imprecision: the claim says 'calling KILENE every CSUINT+1 frames' but PROSUZ actually calls KILENE every active frame (ALWELG.MAC:3531, unconditional) — it is KILENE's own CSUSTA/CSUINT gate (verified in S-012) that only fires the wipeout every other frame. This is a wording slip, not a substantive error; the core claim (no dedicated superzap tone exists) is fully verified. [CORRECTION] Minor: KILENE is called by PROSUZ every active frame, not 'every CSUINT+1 frames' — it's KILENE's internal gate that skips alternate frames (see S-012). Doesn't change the finding's conclusion.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "S-012",
+    "class": "DIVERGENCE",
+    "title": "Superzapper's per-frame kill cadence already mirrors KILENE's timing",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 3542,
+      "verbatim": "KILENE:\tLDA SUZTIM"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 487,
+      "verbatim": "//     non-tanker per active frame (KILENE) until none remain. Charge → used-once."
+    },
+    "claim": "KILENE (ALWELG.MAC:3542-3546) gates its kill on `CMP I,CSUSTA` (SUZTIM must first reach CSUSTA=3) then `AND I,CSUINT` (the result must be even) — so it eliminates one invader on a GATED cadence, roughly every OTHER active frame (every CSUINT+1=2 IRQ ticks), not on every frame. Our stepZap/runZapFrame/zapKillAt (src/core/sim.ts:473-531) instead vaporises one non-tanker on EVERY active frame of the zap window — sim.ts:487's own comment claims this 'mirrors KILENE', but it kills at up to double the ROM's authentic rate.",
+    "reasoning": "This means the authentic \"burst\" character of a superzapper kill is already structurally faithful at the core-sim level, independent of the kzap.wav critique in S-011 — worth recording separately so a future fix to S-011 (dropping the invented zap tone) doesn't have to re-derive this timing; it's already correct. CORRECTION (coverage review): this finding was originally filed as a self-refuting CONFIRMED — its own claim already described the ROM's gated every-other-frame cadence while asserting that our every-frame kill 'already models this.' Reclassed to DIVERGENCE. See W-043 (pair-1-alwelg-sim-enemies.json) and B-019 (pair-8-book-reconciliation.json), which independently document this same CSUSTA/CSUINT kill-cadence gap. [REFUTATION] Traced KILENE (ALWELG.MAC:3542-3560) precisely: CMP I,CSUSTA (=3, line 3543) then IFCS (carry set, i.e. SUZTIM>=3), then AND I,CSUINT (=1, line 3545) then IFEQ (SUZTIM even). Hand-simulated the SUZTIM sequence from PROSUZ (called once per game frame from PLAY, ALWELG.MAC:868-878, confirming this is a game-frame cadence, not the 256Hz IRQ): press frame sets SUZTIM=1 with no kill; frame2 SUZTIM=2 (<3, no kill); frame3 SUZTIM=3 (odd, no kill); frame4 SUZTIM=4 (>=3, even -> KILL); frame5 SUZTIM=5 (no kill); frame6 SUZTIM=6 (KILL). Confirms a real every-other-active-frame cadence once armed. Read src/core/sim.ts:473-480 (runZapFrame): while s.player.superzapper==='used-once' it calls zapKillAt on EVERY invocation, and stepZap (line 516) already fires one kill on window-open frame 1, then every subsequent active frame via the zapTimer>0 branch (line 494-497) also kills — i.e. every frame, not every other. The claim's own comment quote (sim.ts:487, part of the block comment 'vaporises one non-tanker per active frame (KILENE) until none remain') is real. This is legitimately a self-refuting-as-CONFIRMED finding correctly reclassed to DIVERGENCE by the audit itself, and the underlying technical claim (double-rate kill cadence vs. ROM) holds up independently.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "S-013",
+    "class": "DIVERGENCE",
+    "title": "Charge-charge collisions (a player bullet shooting down an enemy bullet) are silent in our clone",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 2797,
+      "verbatim": "INCCSQ:\tJSR CCEXPL\t\t;CHARGE-CHARGE"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 245,
+      "verbatim": "function resolveEnemyBulletHits(s: GameState): void {"
+    },
+    "claim": "INCCSQ plays the EX (\"ENEMY EXPLOSION\") cue via CCEXPL whenever a player charge destroys an enemy charge in flight, then deactivates the enemy shot and decrements ESHCOU. Our resolveEnemyBulletHits (src/core/sim.ts:245-261) implements the identical collision rule — its own comment says \"player shots can destroy enemy bolts\" (src/core/sim.ts:638) — but the function pushes no GameEvent at all, so no sound plays and no other system (particles, score) reacts either.",
+    "reasoning": "Vocabulary: charges = bullets. This is a real, non-rare gameplay moment (a defensive shot-down of an incoming bolt) with zero audio feedback in our clone, distinct from an ordinary enemy kill. Reclassified from NO_COUNTERPART to DIVERGENCE because resolveEnemyBulletHits (sim.ts:245) already implements this exact collision rule — the code path exists, it simply never plays the cue the ROM assigns it. [REFUTATION] Confirmed INCCSQ (ALWELG.MAC:2797-2809): JSR CCEXPL (falls through to SIDEX/EXSNON, same 'ENEMY EXPLOSION' cue as S-008/S-009), then JSR GENEXP for the explosion sprite, deactivates the enemy shot (STA Y,CHARY+NPCHAR = 0) and DEC ESHCOU. Read src/core/sim.ts:245-262 (resolveEnemyBulletHits) in full: it correctly implements the lane+depth-overlap collision rule (matching bolt.lane===bullet.lane && |depth diff|<=HIT_DEPTH) and removes both the bullet and the bolt, but the function body contains zero `s.events.push(...)` calls anywhere — confirmed by re-reading lines 245-262 line by line and by grepping for the function's only call site (sim.ts:638, no wrapper adds an event either). So no sound, no particle event, no score reaction fires on this collision in our clone, exactly as claimed. Vocabulary check (charges=bullets) is used correctly by the finding.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "S-014",
+    "class": "NO_COUNTERPART",
+    "title": "No second, distinct \"arrival in space\" cue at the end of the warp dive",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1037,
+      "verbatim": "\tJSR SOUTS3\t\t;START SPACE SOUND"
+    },
+    "ours": null,
+    "claim": "SOUTS3 (ALSOUN's T3, \"THRUST SOUND IN SPACE\") fires in MOVCUD the exact frame the cursor passes ILINDDY (the well's/tube's bottom) and \"INITIALIZE SPACE MODE\" begins — a second, distinct engine drone that takes over from T2's rumble (S-007, which starts the dive) for the remainder of the warp, ending only when the starfield (PRSTAR/INSTAR) itself is dismissed. Our clone plays exactly one loop ('levelClear'/warp.wav, started on 'level-clear') for the entire dive and stops it outright on 'warp-end' — there is no second phase, the sound just ends.",
+    "reasoning": "Vocabulary: well = tube. T3's actual bytes are the ones currently mislabeled 'enemy_explosion.wav' (S-009); once corrected per that finding they are the natural asset for this missing second phase, triggered partway through the existing warp-dive window rather than requiring an entirely new bake.",
+    "recommendation": "fix",
+    "size": "m"
+  },
+  {
+    "id": "S-015",
+    "class": "NO_COUNTERPART",
+    "title": "End-of-wave BONUS score award never plays the special-score chime",
+    "source": {
+      "file": "ALEXEC.MAC",
+      "line": 376,
+      "verbatim": "\tJSR SAUSON\t\t;MAKE NOISE"
+    },
+    "ours": null,
+    "claim": "ENDWAV (ALEXEC.MAC:361-377, \"PREP-END OF WAVE SETUP STATE\") computes a per-player bonus score via BONSCO/UPSCOR at the end of every wave that has its BONUS flag set, then calls SAUSON — the SAME \"SPECIAL SCORE SOUND\" (WP) our clone already ships correctly as extra_life.wav (S-006). This is a SECOND, independent SAUSON trigger, distinct from the score-threshold extra-life award at GIVBON (ALEXEC.MAC:586). Our GameEvent union has no wave-clear-bonus variant, so this trigger never fires.",
+    "reasoning": "No new sample is needed — extra_life.wav's bytes are already proven correct in S-006; this is purely a missing GameEvent + trigger wire for the end-of-level bonus tally, reusing an asset we already ship.",
+    "recommendation": "fix",
+    "size": "s"
+  },
+  {
+    "id": "S-016",
+    "class": "NO_COUNTERPART",
+    "title": "3-second skill-select warning beep has no equivalent feature",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 217,
+      "verbatim": "\tJSR S3SWAR\t\t;3 SECONDS WARNING"
+    },
+    "ours": null,
+    "claim": "S3SWAR (ALSOUN's S3 entry) fires from PRORAT's (ALWELG.MAC:200-234, \"INITIALIZE-SET SKILL LEVEL\") pre-game countdown when QTMPAUS reaches exactly 3 seconds left before the game auto-selects a difficulty/wave for the player. Our clone has no skill-select screen or countdown timer of any kind, so there is no analogous moment to wire this to.",
+    "reasoning": "Out of scope for an audio fix: this is a title-screen/attract feature entirely absent from the clone by design, not a missing sound wire.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "S-017",
+    "class": "NO_COUNTERPART",
+    "title": "Cabinet slam/coin-door switch sound has no browser equivalent (confirms existing map's deferral)",
+    "source": {
+      "file": "ALSOUN.MAC",
+      "line": 258,
+      "verbatim": "\tBNE FSNDON"
+    },
+    "ours": null,
+    "claim": "SSLAMS (ALSOUN.MAC:257-258) branches to FSNDON, not SNDON — skipping the \"ATTRACT MODE?\" BIT QSTATUS gate (ALSOUN.MAC:225) every other trigger goes through — so the slam sound uniquely plays even during attract mode. It is driven from ALEXEC.MAC's LMTIM check (\"SLAM SWITCH ON?\", ALEXEC.MAC:258-260), a physical coin-door slam-switch input a browser clone has no equivalent for.",
+    "reasoning": "This independently confirms, via ALSOUN.MAC itself rather than the ROM disassembly, the existing POKEY map's own note that this record (shipped by an earlier story as countdown_beep.wav) 'runs in attract' and has 'no slam/tilt switch in a browser clone -> no trigger.' No action needed; recorded so the audit's coverage of all 13 ALSOUN table entries is complete.",
+    "recommendation": "wont_fix"
+  },
+  {
+    "id": "S-018",
+    "class": "STRUCTURAL",
+    "title": "ALSOUN multiplexes 4 distinct sounds onto one shared POKEY channel; we give each an independent voice",
+    "source": {
+      "file": "ALSOUN.MAC",
+      "line": 200,
+      "verbatim": "PU6F:"
+    },
+    "ours": {
+      "file": "src/shell/audio.ts",
+      "line": 80,
+      "verbatim": "  pulsarHum: 'pulsar',"
+    },
+    "claim": "ALSOUN's label suffixes show T2 (T26F/T26A), T3 (T36F/T36A), PU (PU6F/PU6A) and PO (PO6F/PO6A) all end in the same channel digit \"6\" — THRUST-ON-TUBE, THRUST-IN-SPACE, PULSATION-ON and PULSATION-OFF are hard-multiplexed onto one shared physical POKEY audio channel, so on real hardware only one of them can ever sound at a time. Our shell instead gives 'levelClear' its own 'zoom' channel (audio.ts:77) and 'pulsarHum' its own independent 'pulsar' channel (audio.ts:80), so in our clone a warp dive and a ringing pulsar hum can overlap freely, whereas the arcade would always let one cut off the other.",
+    "reasoning": "A byproduct of 1981 hardware's channel scarcity (2 POKEY chips, ~5 usable voices total) versus WebAudio's abundant polyphony. Giving every logical sound an independent voice is a reasonable simplification with no audible authenticity cost worth re-introducing artificial channel contention for.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "S-019",
+    "class": "STRUCTURAL",
+    "title": "ALSOUN's \"FRAMES\" counts a ~256 Hz sound IRQ tick, not the 60 Hz game frame",
+    "source": {
+      "file": "ALHARD.MAC",
+      "line": 150,
+      "verbatim": "\tINC $INTCT\t\t;INTERRUPT COUNTER"
+    },
+    "ours": {
+      "file": "tools/pokey-bake/sfx-data.mjs",
+      "line": 16,
+      "verbatim": "// The engine ticks at the ~246-250 Hz sound interrupt (NOT the 60 Hz game frame),"
+    },
+    "claim": "ALHARD.MAC's IRQ handler calls MODSND (ALHARD.MAC:148, unconditionally, every interrupt) then increments the single-byte $INTCT (line 150); $INTCT wrapping to 0 after 256 increments is treated as \"ANOTHER SECOND?\" (line 151), meaning this IRQ — and therefore every FRAMES/COUNT decrement inside ALSOUN's MODSND — fires roughly 256 times per second, not 60. ALSOUN.MAC's own naming (\"FRAMES: FRAMES UNTIL NEXT CHANGE\") invites reading its byte values as 60 Hz game-frame counts; they are not.",
+    "reasoning": "This independently confirms, from the IRQ handler rather than from tooling comments, that our own bake tool's documented ~246-250 Hz assumption is correct — so none of this audit's or the bake tool's duration math (e.g. LA3F's 20-step launch envelope, or T2/T3's 255/64-step rumbles) is falling into the 60 Hz/float-seconds unit trap the audit brief warns about. No code change needed; recorded because it is load-bearing for interpreting every FRAMES-based duration claim elsewhere in this file and in sfx-data.mjs.",
+    "recommendation": "accept"
+  }
+]

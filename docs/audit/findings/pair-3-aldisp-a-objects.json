@@ -1,0 +1,414 @@
+[
+  {
+    "id": "DA-001",
+    "class": "CONFIRMED",
+    "title": "Player charge cap: NPCHARG=8 matches MAX_BULLETS=8",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 812,
+      "verbatim": "NPCHARG=8"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 8,
+      "verbatim": "export const MAX_BULLETS = 8"
+    },
+    "claim": "The ROM sizes CHARY/CHARL1 (NCHARG=NPCHARG+NICHARG slots) so exactly the first 8 charge slots are the player's (DSPCHG: `CPX I,NPCHAR` picks PTCURS for indices below that boundary). Our MAX_BULLETS gate (sim.ts:96, `if (s.bullets.length >= MAX_BULLETS) return`) caps the player at the same 8 simultaneous shots.",
+    "reasoning": "This is one of Tempest's best-known rules (\"8 shots in the well\") and it is exactly reproduced — worth recording so the audit isn't all complaints."
+  },
+  {
+    "id": "DA-002",
+    "class": "DIVERGENCE",
+    "title": "Enemy bolt cap: NICHARG=4 matches MAX_ENEMY_BULLETS=4",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 813,
+      "verbatim": "NICHARG=4"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 62,
+      "verbatim": "export const MAX_ENEMY_BULLETS = 4"
+    },
+    "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
+    "reasoning": "A second confirmed hard cap, and it is the one that makes the whole enemy-fire rate feel authentically sparse rather than a bullet-hell. CORRECTION (coverage review): this finding was originally filed as a false CONFIRMED — NICHARG is only the array's physical slot count, not the live per-wave cap — and has been reclassed to DIVERGENCE. See W-019 (pair-1-alwelg-sim-enemies.json), which states the correct per-wave WCHAMX+1 cap. [REFUTATION] Re-opened ALCOMN.MAC:813 (NICHARG=4, confirmed verbatim) and ALWELG.MAC. WTABLE (line 732) pairs TCHAMX with WCHAMX ('MAX # ENEMY SHOTS -1'); TCHAMX (line 586: '.BYTE TZ,1,9,1,1,1,2,3,2,2,3,3 ;ADD 1') is a TZ-type (per-wave byte) table giving WCHAMX=1 for wave 1 (waves 1-3 all =1, ramping to 2-3 by wave 5+). CONTOUR (lines 397-469) decodes TZ as one byte per wave in range and stores it directly via the WTABLE pointer -- no additional scaling. FIREIC (ALWELG.MAC:2687-2729) confirms the governing search: 'LDY WCHAMX' then a DEY/MIEND loop checking indices WCHAMX..0 inclusive (WCHAMX+1 slots) for a vacancy in CHARY+NPCHARG -- slots beyond WCHAMX are never even inspected, so the practical concurrent cap truly is WCHAMX+1 = 2 at wave 1, not 4. EASY/HARD (lines 473-518) DEC/INC WCHAMX further, capped at 3 (cap 4) on HARD -- so NICHARG=4 is only ever the ceiling, matched exactly by the array size, never the wave-1 floor. Checked our side: rules.ts:62 MAX_ENEMY_BULLETS=4 (comment 'ROM n_enemy_bullets = 4', itself evidence the same conflation happened on our side) and sim.ts:225 enforces it as a flat break condition for every wave/level, with no per-level scaling function anywhere in rules.ts or sim.ts. No unit or dead-module issue (ALWELG/ALCOMN both linked per ALEXEC.MAP). Holds.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-003",
+    "class": "CONFIRMED",
+    "title": "Player-bullet ammo-tint thresholds (6, 8) match CHACOU comparisons exactly",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 922,
+      "verbatim": "\tCMP I,NPCHARG-2"
+    },
+    "ours": {
+      "file": "src/shell/glyphs.ts",
+      "line": 294,
+      "verbatim": "  if (chargesInFlight >= 6) return 'cyan'"
+    },
+    "claim": "DSPCHG recolors the player-shot center dot off CHACOU (the live charge count): `CMP I,NPCHARG-2` (line 922, i.e. CHACOU>=6) selects the \"low\" tint, and `CMP I,NPCHARG` (line 925, CHACOU>=8) selects the \"out\" tint, else the default \"plenty\" tint. `playerBulletColor` (glyphs.ts:292-295) uses the identical thresholds: >=8 red, >=6 cyan, else yellow.",
+    "reasoning": "The exact threshold values (6 and 8, i.e. NPCHARG-2 and NPCHARG) are non-obvious tuning constants and they were carried over correctly."
+  },
+  {
+    "id": "DA-004",
+    "class": "DIVERGENCE",
+    "title": "Player bullet: ROM draws loose dots with only the inner ring ammo-tinted; ours draws two closed octagon outlines both uniformly tinted",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 384,
+      "verbatim": "\tCSTAT PSHCTR"
+    },
+    "ours": {
+      "file": "src/shell/glyphs.ts",
+      "line": 283,
+      "verbatim": "    { points: octagon(6), closed: true, color: 'white' },"
+    },
+    "claim": "DIARA2 (ALVROM.MAC:383-403), the player-charge picture, is built entirely from SCDOT (each expands to a beam-off move plus a zero-length dot — no connecting stroke). The inner 9-dot cluster (radius ~7, center dot + 8 around it) is colored via the dynamic `PSHCTR` color-RAM slot (the ammo tint from DA-003); the outer 8-dot ring (radius 0F=15, line 395-402) is colored with a fixed `CSTAT YELLOW` (line 394) that never changes. Our `playerBulletGlyph` (glyphs.ts:280-285) instead draws two CLOSED, line-stroked octagons (radius 3 and 6), and `drawBullets` (render.ts:285) passes the ammo `tint` as `strokeGlyph`'s `override`, which recolors EVERY stroke — so both rings change color together, and neither is a scatter of unconnected dots.",
+    "reasoning": "Two compounded differences: (1) the authentic bullet is a sparkle of independent points, not a pair of solid rings, and (2) only the inner cluster is ammo-reactive in the ROM — the outer ring is a fixed yellow anchor so the ammo tint reads as a color CHANGE against a stable reference, which our all-or-nothing recolor loses. [REFUTATION] Re-opened ALVROM.MAC:379-403 (DIARA2). Decoded SCDOT (line 89-92: SCVEC ...A,...B,0 then VCTR 0,0,CB) -- confirmed it is beam-off move + zero-length dot, never a connecting stroke; DIARA2 is built entirely from 17 SCDOT calls, no VCTR/stroke segments. Inner cluster is exactly 9 dots (center 0,0 plus 8 at radius ~7, lines 385-393) under 'CSTAT PSHCTR' (line 384); outer is 8 dots at radius 11-15 (lines 395-402) under 'CSTAT YELLOW' (line 394, a literal color constant, not a color-RAM index). Cross-checked PSHCTR=8 (ALVROM.MAC:149, ALCOMN.MAC:383) is a color-RAM slot dynamically rewritten by DSPCHG (ALDISP.MAC:920-930, 'STY COLPOR+PSHCTR ;SET UP COLOR FOR CENTER OF PLAYER SOT', driven by CHACOU ammo count) -- confirming only the inner cluster is ammo-reactive while YELLOW is a fixed absolute color never touched by that logic. Checked our side: glyphs.ts:280-285 playerBulletGlyph returns two `closed:true` octagons (radius 3, 6); render.ts strokeGlyph (lines 72-98) draws closed-point strokes as connected line loops, not individual dots, and `override` (line 83) recolors every sub-stroke when provided; drawBullets (render.ts:276-285) passes the ammo tint as that override for both octagons uniformly. All citations check out verbatim. Holds on both sub-claims.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-005",
+    "class": "DIVERGENCE",
+    "title": "Enemy-kill burst color: ROM's EXPL1-4 are CSTAT WHITE; ours is a gold/yellow hex",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 350,
+      "verbatim": "\tCSTAT WHITE"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 460,
+      "verbatim": "const ENEMY_BURST_COLOR = '#ffe66b'"
+    },
+    "claim": "All four stages of the 16-spoke enemy-kill explosion (EXPL1 line 350, EXPL2 line 358, EXPL3 line 366, EXPL4 line 374 — verified, all four say `CSTAT WHITE`) are pure white, matching ALCOMN.MAC's `EXPCOL=WHITE`. Our `ENEMY_BURST_COLOR` constant, used to stroke and glow every `EnemyBurst`, is `#ffe66b` — a warm gold, not white.",
+    "reasoning": "The authentic burst is a stark white flash against the colored well; a gold tint is a purely cosmetic choice with no source backing and is trivial to correct. [REFUTATION] Re-opened ALVROM.MAC:344-376: EXPL1 (350), EXPL2 (358), EXPL3 (366), EXPL4 (374) all read 'CSTAT WHITE' verbatim, matching ALCOMN.MAC:366 EXPCOL=WHITE. Checked whether CSTAT WHITE could be dynamically recolored per-wave the way PSHCTR is (WHITE=0 is also just a color-RAM index, ALVROM.MAC:159) -- traced INICOL (ALDISP.MAC:2353-2378), which does rewrite ALL 16 color-RAM slots per wave-group from COLTAB (line 2405+). But every row of COLTAB has its slot-0 byte as ZWHITE (lines 2406, 2414, 2422, 2430, 2441, 2449 -- 'EXPLOSIONS(0)' per the line-2406 comment) across every wave-group in the table, so despite the indirection the explosion color is white in every wave, not just incidentally. Checked our side: render.ts:460 ENEMY_BURST_COLOR = '#ffe66b', used to stroke/glow every EnemyBurst (confirmed by grep). No dead-module or unit issue. Holds -- genuinely a cosmetic-only gold tint against an always-white ROM burst.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-006",
+    "class": "DIVERGENCE",
+    "title": "Enemy-kill burst brightness ramp is off by one frame: ROM dims only the first (smallest) stage, ours dims the first two",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 347,
+      "verbatim": "\tCB=07"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 233,
+      "verbatim": "        ex.brightness = frame < 2 ? ENEMY_DIM : ENEMY_BRIGHT"
+    },
+    "claim": "CB (the SPOK16 macro's intensity input) is 07 only for EXPL1 (scale 1, the smallest/first stage, line 347); it is set to 0E immediately before EXPL2 (line 356) and stays 0E through EXPL3 and EXPL4 — so only frame 0 is dim, and frames 1, 2 and 3 are all full-bright. Our `update()` instead treats frames 0 AND 1 as dim (`frame < 2`) and only frames 2-3 as bright.",
+    "reasoning": "A concrete, source-verified off-by-one: the authentic burst brightens after its very first (smallest) frame, ours holds it dim for twice as long, softening the flash's punch for an extra frame. [REFUTATION] Re-opened ALVROM.MAC:344-376. CB (SPOK16's intensity operand) = 07 set at line 347, consumed by EXPL1's SPOK16 (line 352); CB is reset to 0E at line 356 before EXPL2 (line 360) and stays 0E for EXPL3 (364/368) and EXPL4 (372/375) -- so only the very first, smallest-scale frame (CM=1) is dim; frames 1-3 (CM=2,4,8) are uniformly 'full intensity' per the source's own comments. Checked our side: fx.ts:225-233 -- frame is derived from progress (0..3, matching CM steps 1,2,4,8 per the adjacent comment 'scale steps 1,2,4,8'), and `ex.brightness = frame < 2 ? ENEMY_DIM : ENEMY_BRIGHT` dims frames 0 AND 1. Notably the code's own comment one line above (230: 'brightness 7 then 14') describes the CORRECT one-frame-only dim behavior, but the code on the next line contradicts its own comment -- strong independent corroboration this is a real off-by-one bug, not an interpretation artifact. No unit/frame-rate issue (this is an ordinal stage count, not a timing claim). Holds.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-007",
+    "class": "DIVERGENCE",
+    "title": "The \"invader-player collision\" sparkle (PTSPAR/SPARK1-2) has no counterpart — every player death uses the same splat",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 982,
+      "verbatim": "\t.BYTE PTSPAR\t\t\t;INVADER - PLAYER COLLISION"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 161,
+      "verbatim": "    if (prevAlive && !s.player.alive) {"
+    },
+    "claim": "TEXTYP's bang-type table dedicates a distinct entry to a direct invader/player collision (as opposed to a charge killing the player): PTSPAR, drawn from SPARK1/SPARK2 (ALVROM.MAC:672-697) — a static YELLOW 4-dot cross at brightness 7 that just alternates between cardinal and diagonal placement across two frames, with no color cycling and no growth. Our `detect()` fires the SAME effect, `spawnPlayerSplat` (the color-cycling jagged star), for every player death unconditionally — it never distinguishes a grab/collision death from a charge-caused one.",
+    "reasoning": "The ROM gives a direct-contact death a visibly different, simpler cue (a fixed yellow sparkle) from a bullet-caused death (the multi-stage color-cycling splat covered in DA-009/010/011); our shell collapses all death causes onto one visual, losing a distinction players of the original would recognize. Reclassified from NO_COUNTERPART to DIVERGENCE because our player-death handler (fx.ts:161) already exists and fires for this exact case — it collapses a distinct ROM effect onto the generic splat rather than lacking a counterpart entirely. [REFUTATION] Re-opened ALDISP.MAC:976-982 (TEXTYP): index 5 is PTSPAR, commented 'INVADER - PLAYER COLLISION', distinct from index 1 ('CHARGE-PLAYER SEE SPECIAL', routed to the separate CHPLKI/SPLAT-sequence special routine at ALDISP.MAC:987) and from index 0 (PTEXP1, the generic charge-charge/charge-invader burst). Traced INIPSQ (ALWELG.MAC:2772-2775, LDA I,IPTYPE=5; JSR DEADCU -- DEADCU literally 'KILL CURSOR', cursor=player per project vocab) confirming this bang fires specifically for a player death by direct invader touch, separate from CPTYPE=1 (charge-kills-player). Checked our side: fx.ts:161 `if (prevAlive && !s.player.alive)` fires spawnPlayerSplat (the color-cycling jagged star) unconditionally for every player death; grepped events.ts and found the sim ALREADY carries the distinction the ROM makes -- PlayerDeathEvent.cause: 'grab'|'pulse'|'spike'|'bolt' (events.ts:92-96), populated by sim.ts:272/397/582, and even consumed for audio (audio-dispatch.ts:39) -- but fx.ts's detect() never reads e.type==='player-death' for visual selection, only the raw alive-flag diff. This is stronger evidence for the finding than it cites. CORRECTION: the finding's claim that SPARK1/SPARK2 'alternate... across two frames' does not hold up -- decoding DSPEXP's dispatch (ALDISP.MAC:947-962): for EXPLOT>=2 (which includes IPTYPE=5) the CPY I,2/IFCS branch forces the EXPLOS-derived picture offset to 0 every tick, so SCAPIC is called with the same TEXTYP[5]=PTSPAR (SPARK1) index for the entire ~4-tick duration (TEXINC[5]=3, TEXPDN[5]=10). SPARK2 (ALVROM.MAC:685) has no other reference anywhere in the source outside its own PITAB registration -- it is never actually invoked for this bang. The authentic effect is a STATIC single 4-dot cardinal cross (SPARK1 only), not a 2-frame cardinal/diagonal alternation. The core thesis (a distinct death cue exists and is collapsed) still holds and is independently strengthened by the ignored `cause` field.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-008",
+    "class": "DIVERGENCE",
+    "title": "Fuseball kills get their own 3-stage explosion sequence in the ROM; ours reuses the generic 16-spoke burst for every enemy kind",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 979,
+      "verbatim": "\t.BYTE PTFUSX+4\t\t;BUSE EXPL 1"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 185,
+      "verbatim": "      if (e.type === 'enemy-death') {"
+    },
+    "claim": "TEXTYP reserves 3 dedicated entries (\"FUSE EXPL 1/2/3\", lines 979-981, note the ROM's own typo \"BUSE\" for \"FUSE\" on line 979) pointing into the PTFUSX picture table — a bang sequence used only when a fuseball dies, distinct from the generic EXPL1-4 burst used for \"CHARGE CHARGE, CHARGE INVADER\" (line 977). Our `enemy-death` event already carries `enemyType: EnemyKind` (events.ts:22), but `detect()`'s handler (fx.ts:185-187) calls `spawnEnemyBurst` unconditionally for every kind — the field is read nowhere in fx.ts, so a fuseball explodes identically to a flipper or tanker.",
+    "reasoning": "The data needed to fix this is already flowing through the event (`enemyType`); the ROM's dedicated fuse-explosion sequence is simply never consulted, so a whole enemy-specific death animation is missing despite the plumbing already existing. Reclassified from NO_COUNTERPART to DIVERGENCE because our enemy-death handler (fx.ts:185) already exists and runs for every kill — it collapses the ROM's fuseball-specific sequence onto the generic burst rather than lacking a counterpart. [REFUTATION] Re-opened ALDISP.MAC:979-981 (TEXTYP entries PTFUSX+4/+2/+0, 'FUSE EXPL 1/2/3') and followed them to ALVROM.MAC:1096-1114 -- decoded the actual picture bodies, which the finding did not: FUSEX1 does 'JSRL CHAR.7; JMPL FIFTY' (which does JSRL CHAR.5; JMPL CHAR.0); FUSEX2 does 'JSRL CHAR.5; JSRL CHAR.0; JMPL ZERO' (CHAR.0 again); FUSEX3 does 'JSRL CHAR.2; JSRL CHAR.5; JMPL CHAR.0'. CHAR.0/2/5/7 are digit glyphs (confirmed in ANVGAN.MAC:244-307, CHAR.0=CHAR.O alias, CHAR.1..CHAR.9 all defined as numeral strokes). So FUSEX1/2/3 literally spell out '750', '500', '250' -- these are the fuseball's point-VALUE text popups, not an explosion/burst picture at all; there is no SPOK16 spoke pattern or growing-scale sequence here, unlike EXPL1-4. Cross-checked the dispatch: ALWELG.MAC:2745-2767 explicitly says 'RANDOMLY CHOOSE 0(250),1(500), OR 2(750)' and adds that offset to CFTYPE=2, giving EXPLOT 2/3/4 -- one of the three text pictures is chosen AT RANDOM per kill, not sequenced 1-2-3 as animation frames. Further confirmed via DSPEXP's dispatch (ALDISP.MAC:947-962) that for EXPLOT>=2 the frame-offset contribution is forced to 0, so whichever single text picture is chosen is held static (unchanging) for the whole ~7-tick duration (TEXPDN[2..4]=20, TEXINC=3) -- there is no 3-stage progression at all, contradicting the finding's premise that this is 'a 3-stage explosion sequence' analogous to a generic burst. This is exactly the failure mode the audit warns against (an undecoded operand -- here, un-decoded JSRL CHAR.x calls mistaken for explosion-picture calls). Our engine's real (if unrelated) gap is that it has no floating fuseball score-value display, not that it lacks a 'fuseball-specific explosion animation' -- the claim as written is miscited and rests on a misread of the source data, so it does not survive.",
+    "recommendation": "wont_fix",
+    "verdict": "REFUTED"
+  },
+  {
+    "id": "DA-009",
+    "class": "DIVERGENCE",
+    "title": "Player-death splat is simultaneously tri-color per-vertex in the ROM (with the color ASSIGNMENT rotating each frame); ours flashes the WHOLE shape one solid color at a time",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 812,
+      "verbatim": "\tCSTAT PDIWHI"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 238,
+      "verbatim": "        ex.color = SPLAT_CYCLE[ex.cycle % SPLAT_CYCLE.length]"
+    },
+    "claim": "The SPLAT picture (ALVROM.MAC:810-849) alternates `CSTAT PDIWHI` / `CSTAT PDIRED` / `CSTAT PDIYEL` every 2 vectors around the star, so white, red and yellow segments are all on screen AT ONCE, in a fixed spatial pattern. ALTCOL (ALDISP.MAC:1084-1094) seeds those 3 color-RAM slots to white/yellow/red once, and ROTCOL (ALDISP.MAC:1098-1110) 3-way-ROTATES the slot contents every subsequent frame — so the pattern of which star segment is which color visibly spins over time, but a red segment and a white segment always coexist. Our `drawPlayerSplat` (render.ts:495-507) strokes the ENTIRE jagged star with one `ctx.strokeStyle = ex.color`, and `update()` (fx.ts:236-239) advances that single color through `SPLAT_CYCLE` (white→red→yellow) one whole-object flash per frame.",
+    "reasoning": "This is a materially different visual: the authentic death is a tricolor pinwheel with rotating segments, ours is a strobe of solid colors. It's also the largest rendering gap in the explosion set — fixing it means re-authoring the splat glyph with per-segment colors, not just tuning a constant. [REFUTATION] Re-opened ALVROM.MAC:810-849 (SPLAT). It literally alternates CSTAT PDIWHI / PDIRED / PDIYEL roughly every 2 SCVEC vectors around a ~12-point star (first segment is 3 vectors, one later junction goes WHITE->RED->WHITE skipping YELLOW once, but the overall alternating tri-color spatial pattern is real and the claim's substance is unaffected). Decoded PDIWHI/PDIYEL/PDIRED (ALCOMN.MAC:384-386, values 9/10/11) as three adjacent COLRAM/COLPOR slots. ALDISP.MAC:1084-1094 (ALTCOL) confirms a one-time seed of those 3 slots to white/yellow/red; ALDISP.MAC:1098-1110 (ROTCOL) is a genuine 3-element circular rotate of COLRAM+COLPOR[PDIWHI..PDIRED]. Traced the call site (ALDISP.MAC:987-1015 CHPLKI + TSPCOD table at 1043-1059): TSPCOD[0]=0 (ALTCOL, first frame only) and TSPCOD[1..7]=2 (ROTCOL) are invoked via the unconditional 'JSR SPECIAL' that runs every raw display-list frame the special-explosion is active, not just on picture-advance frames -- so the rotation genuinely happens close to every game frame, confirming 'the pattern of which segment is which color visibly spins over time, but a red segment and a white segment always coexist.' Checked our side: fx.ts:236-239 update() advances one shared `ex.color` through a 3-entry cycle for the WHOLE object each frame, and render.ts's drawPlayerSplat (495-507) strokes both concentric star rings with a single ctx.strokeStyle = ex.color. This is a real, structural per-vertex-color vs whole-object-color divergence. Holds. [CORRECTION] Minor: the ROM alternation is not perfectly '2 vectors per color' (first WHITE run is 3 vectors, and one WHITE follows RED directly, skipping a YELLOW slot) -- it's a hand-authored, slightly irregular tri-color pattern, not a perfectly uniform pinwheel. Does not change the finding's substance or size.",
+    "recommendation": "fix",
+    "size": "l",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-010",
+    "class": "DIVERGENCE",
+    "title": "Player-death splat runs ~20 frames in the ROM = 0.70 s; ours holds for 0.9 s, ~1.3x longer",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 1022,
+      "verbatim": "TSPTIM:\t.BYTE 2\t\t\t;SPLAT6;CHARGE PLAYER EXPLOSION START"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 89,
+      "verbatim": "const SPLAT_LIFE = 0.9"
+    },
+    "claim": "The special-explosion frame-timer table (TSPTIM, ALDISP.MAC:1022-1030) sums to 20 frames total for the charge-player splat's full START-through-FINISH sequence (2+2+2+2+2+4+3+2+1 = 20 frames) before the (separate, pulsar-specific) 20-frame tail begins. Those are GAME frames of 35.16 ms (256/9 = 28.44 fps, FR-001), so the sequence runs 20/28.44 = 0.703 s — not the 0.33 s a 60 Hz reading gives. Our `SPLAT_LIFE` constant holds the effect for 0.9 s: 1.28x the authentic duration, ~0.2 s of overhang, not the ~2.7x originally reported.",
+    "reasoning": "A real but minor timing divergence: the death beat lingers about a fifth of a second too long, and SPLAT_LIFE should be 0.70. Corrected for the 28.444 fps rebase (see FR-015 in pair-11-framerate-adjudication.json): this finding's own inoculation — 'checked against the unit trap: 20 ROM frames genuinely is ~0.33s, not close to 0.9s under any frame-rate reading' — is precisely what the rebase refutes, because under the ROM's actual frame rate 20 frames IS close to 0.9 s. That assertion is withdrawn; the finding survives, at a quarter of its filed magnitude. [REFUTATION] Re-derived TSPTIM (ALDISP.MAC:1022-1030) myself: bytes 2,2,2,2,2,4,3,2,1 for indices 0-8 (SPLAT6 START through SPLAT6 FINISH, before PPSTART's separate 20-frame pulsar tail at index 9) sum to exactly 20, matching the claim's arithmetic. Confirmed SPFTIM (the per-picture frame timer) is decremented once per call to CHPLKI (ALDISP.MAC:987-1003), and CHPLKI is reached from DSPEXP which runs once per DISPLA call inside the FRTIMR>=9-gated MAINLN loop (ALEXEC.MAC:44-52) -- i.e. once per real 28.444fps game frame, not per IRQ. 20/28.444 = 0.7032s, matches the claim's 0.703s. Our SPLAT_LIFE=0.9 (fx.ts:89) gives 0.9/0.7032=1.28x, matching the finding's self-corrected 'quarter of its filed magnitude' framing. The finding already withdrew its own bad 60Hz-reading assertion in-text and the corrected numbers check out exactly. Small, real divergence. [CORRECTION] None needed -- the finding's self-correction is arithmetically sound as stated.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-011",
+    "class": "DIVERGENCE",
+    "title": "Player-death splat radius curve is inverted: ROM starts at PEAK size and implodes then re-expands; ours starts at zero, grows to a peak, and shrinks back",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 803,
+      "verbatim": "SPLAT6:\tSCAL 2,40"
+    },
+    "ours": {
+      "file": "src/shell/fx.ts",
+      "line": 236,
+      "verbatim": "        ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)"
+    },
+    "claim": "TSPTIM's picture order (ALDISP.MAC:1022-1030) plays SPLAT6 (the LARGEST picture, `SCAL 2,40`, line 803) first as the \"CHARGE PLAYER EXPLOSION START\", steps down through SPLAT5/4/3/2 to SPLAT1 (the smallest, `SCAL 0,0`, line 793) at the sequence's middle, then climbs back up through SPLAT3/SPLAT5 to SPLAT6 again at the \"FINISH\". So the authentic splat begins already at its biggest size, collapses toward a point, then re-expands to full size. Our `ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)` is the opposite arc: it starts at 0, grows to a single peak at the midpoint, and shrinks back to 0.",
+    "reasoning": "Same underlying idea (a symmetric grow/shrink arc, verified against the frame-order citation) but the phase is flipped — the authentic effect reads as an implosion-then-reexpansion, ours reads as a single outward puff. [REFUTATION] Decoded the SCAL macro the finding relies on (VGMC.MAC:66-76): 'THE FIRST PARAMETER IS THE POWER OF 2 SCALE. A VALUE OF 0 MEANS FULL SIZE, 1=1/2 SIZE, 2=1/4, ..., 7=1/128 SIZE.' SPLAT1 (ALVROM.MAC:793, `SCAL 0,0`) is therefore FULL SIZE -- the LARGEST picture, not the smallest as claimed. SPLAT6 (line 803, `SCAL 2,40`) has scale-exponent 2 (quarter size) further reduced by a nonzero linear-scale byte (40hex, roughly half again) -- the SMALLEST picture, not the largest as claimed. This is independently confirmed by the PITAB display-order comments at ALVROM.MAC:2125 ('PITAB SPLAT6,PTSPLA ;SMALL SPLAT') and :2133 ('PITAB SPLAT6 ;SMALL SPLAT'), bookending the sequence, with SPLAT1 in the middle explicitly marked ';TARGET SPLAT' (the full-size impact moment). So the authentic ROM arc is small(SPLAT6)->grow->PEAK/full-size(SPLAT1, middle)->shrink->small(SPLAT6) again -- i.e. the SAME small-to-peak-to-small shape as our `SPLAT_PEAK_RADIUS * sin(progress*PI)` curve (0->peak->0), not its inversion. The finding reversed which SCAL operand pairing is 'largest' vs 'smallest,' so its central claim of an inverted arc is backwards. [CORRECTION] If anything is real here, it is that the authentic splat never shrinks all the way to a point (bottoms out at quarter-size-and-then-some, not zero) while ours goes fully to 0 at both ends -- but that is a different, much smaller claim than 'the curve is inverted,' and is not what was filed.",
+    "recommendation": "wont_fix",
+    "verdict": "REFUTED"
+  },
+  {
+    "id": "DA-012",
+    "class": "NO_COUNTERPART",
+    "title": "Nymphs — pre-hatch enemies climbing from the vanishing point — have no counterpart anywhere in the shell",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 458,
+      "verbatim": "\t.SBTTL\tDISPLAY-NYMPHS"
+    },
+    "ours": null,
+    "claim": "DSPNYM (ALDISP.MAC:458-598) is a dedicated ~140-line display routine: up to NNYMPH=64 (ALCOMN.MAC:811) nymphs are tracked (NYMPY/NYMPL arrays), up to 24 (`LDA I,18.`, line 467) are drawn per frame with every-other-one skipped past a depth threshold, each rendered as a fake-perspective dot-plus-line-back-to-the-vanishing-point using its own color slot (NYMCOL=12, ALCOMN.MAC:387). A project-wide search of `src/` for \"nymph\" (any case) returns zero results — there is no pre-hatch enemy state, no nymph rendering, and no vanishing-point climb-then-hatch animation; every spawned enemy in `stepEnemies` (sim.ts) is pushed directly as a fully active flipper/tanker/spiker/fuseball/pulsar at depth 0.",
+    "reasoning": "This is a whole object class from the original game entirely absent from the clone, not a tuning gap. It also underlies DA-017 (the concurrent-active-invader cap): in the ROM, spawned enemies queue as nymphs until one of a limited number of active invader slots frees up, which is a core part of the authentic difficulty pacing.",
+    "recommendation": "fix",
+    "size": "l"
+  },
+  {
+    "id": "DA-013",
+    "class": "CONFIRMED",
+    "title": "Flip/jump world-coordinate offset table is a literal circle — confirms our arcAbout's \"flip is a circular arc\" design",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 764,
+      "verbatim": "JUMPX:\t.BYTE DG000"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 63,
+      "verbatim": "  const a = a0 + dA * t"
+    },
+    "claim": "JUMPX/JUMPZ (ALDISP.MAC:754-779) is a 16-sample lookup table of world-space (X,Z) offsets applied to a flipping/leaping invader's base-line position (IJMPDS, ALDISP.MAC:711-753). Decoding the byte values (DG000=2C=44, DG225=28=40, DG450=1F=31, DG675=10=16, DG900=0, and their negatives) against 22.5-degree steps confirms X[i]=44*cos(i*22.5deg) and — because JUMPZ's 4 bytes are immediately followed in memory by JUMPX's own bytes and both are indexed by the same `AND I,0F` 0-15 value (line 720) — Z[i]=44*sin(i*22.5deg): a genuine 16-point circle of radius 44 world-units. Our `arcAbout()` (render.ts:53-66) computes a continuous circular arc (interpolating angle and radius from source to target) for the same mid-flip tumble.",
+    "reasoning": "Confirms the flip/leap in both the original and the clone is fundamentally a CIRCULAR path, not a linear slide between lanes — the clone's design intent (a hand-over-hand tumble about a pivot) matches the ROM's own geometry, just computed continuously instead of via a 16-step table (see the related STRUCTURAL note, DA-021)."
+  },
+  {
+    "id": "DA-014",
+    "class": "CONFIRMED",
+    "title": "Flipper color: FLICOL=RED matches our red bowtie glyph",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 367,
+      "verbatim": "FLICOL=RED\t\t\t;FLIPPERS"
+    },
+    "ours": {
+      "file": "src/shell/glyphs.ts",
+      "line": 86,
+      "verbatim": "  return [{ points: center(verts), closed: true, color: 'red' }]"
+    },
+    "claim": "ALCOMN.MAC hardcodes flippers to RED. `flipperGlyph()` returns its bowtie stroke with `color: 'red'`.",
+    "reasoning": "A simple, exact palette match worth recording."
+  },
+  {
+    "id": "DA-015",
+    "class": "CONFIRMED",
+    "title": "Cursor (Claw) color: CURCOL=YELLOW matches CLAW_COLOR",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 360,
+      "verbatim": "CURCOL=YELLOW\t\t\t;CURSOR"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 23,
+      "verbatim": "const CLAW_COLOR = '#ffe600'"
+    },
+    "claim": "ALCOMN.MAC hardcodes the cursor to YELLOW. Our `CLAW_COLOR`, used for the player claw glyph, lives icon, and warp-dive claw, is `#ffe600` — an authentic yellow.",
+    "reasoning": "Another exact palette match."
+  },
+  {
+    "id": "DA-016",
+    "class": "CONFIRMED",
+    "title": "Tanker body color: GENTNK's CSTAT PURPLE matches our tanker body",
+    "source": {
+      "file": "ALVROM.MAC",
+      "line": 651,
+      "verbatim": "GENTNK:\tCSTAT PURPLE"
+    },
+    "ours": {
+      "file": "src/shell/glyphs.ts",
+      "line": 97,
+      "verbatim": "    color: 'purple',"
+    },
+    "claim": "The shared tanker-body drawing routine GENTNK (reached by TANKP, TANKF and TANKR alike) sets its X-diamond body to PURPLE, matching ALCOMN.MAC's `TANCOL=PURPLE`. Our `tankerGlyph`'s body stroke is likewise `color: 'purple'`.",
+    "reasoning": "Confirms the base tanker silhouette color is correct across all three cargo variants."
+  },
+  {
+    "id": "DA-017",
+    "class": "DIVERGENCE",
+    "title": "No cap on concurrent active invaders: ROM hard-limits 7 simultaneously active, ours spawns unboundedly",
+    "source": {
+      "file": "ALCOMN.MAC",
+      "line": 809,
+      "verbatim": "NINVAD=\t7"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 136,
+      "verbatim": "      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))"
+    },
+    "claim": "INVAY/INVAC1/INVAC2 (the active-invader arrays) are sized NINVAD=7, and DSPINV's display loop (ALDISP.MAC:626-650) walks exactly 7 slots every frame — the ROM can never have more than 7 invaders actively climbing/flipping/firing at once; additional spawns queue as nymphs (DA-012) until a slot frees. Our `stepEnemies` spawn block (sim.ts:121-140) pushes a freshly-made enemy onto `s.enemies` whenever the spawn timer elapses and `spawn.remaining > 0`, with no check against how many enemies are already active — `s.enemies.length` is unbounded by any concurrent-count gate.",
+    "reasoning": "This is arguably the single biggest gameplay-fidelity gap found in this pass: the authentic 7-invader ceiling (with the rest queued as nymphs) is core to Tempest's difficulty pacing — it's what keeps a single wave from becoming an overwhelming swarm. Without it, our level's spawn budget can all become simultaneously active and firing, changing the felt difficulty curve across every level. [REFUTATION] Confirmed NINVAD=7 (ALCOMN.MAC:809) sizes every active-invader parallel array (INVAC1:843, INVAC2:859, INVAYL:874, INVACT:875, INVAL1:883, INVAL2:885, INVAY:887, all `.BLKB NINVAD`). Confirmed DSPINV (ALDISP.MAC:625-650) walks exactly NINVAD-1 downto 0 (7 slots) every display frame, drawing only slots with a nonzero INVAY. This is a genuine hard ceiling: the ROM's invader arrays physically cannot hold an 8th concurrently-active invader. Checked our side: sim.ts stepEnemies (121-140) pushes a freshly-made enemy onto `s.enemies` whenever `s.spawn.timer` elapses and `s.spawn.remaining>0` -- gated only by a per-level spawn BUDGET and spawn-rate TIMER, never by `s.enemies.length` or any concurrent-count check. Grepped the whole file for any other writer/gate on active-enemy count and found none. The cap is real in the ROM and genuinely absent in our sim.",
+    "recommendation": "fix",
+    "size": "m",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-018",
+    "class": "DIVERGENCE",
+    "title": "Enemy bolt spin frame: ROM ties it to the global frame counter (synchronized, ~7 Hz, continuously cycling); ours ties it to the bolt's own depth (desynchronized, single-pass)",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 910,
+      "verbatim": "\tLDA QFRAME\t\t;ENEMY SHOT"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 297,
+      "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
+    },
+    "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
+    "reasoning": "The authentic pinwheel spin is a globally-synchronized flicker independent of each bolt's travel; ours instead ties the spin rate to travel speed (which varies by level via ENEMY_BOLT_SPEED_OFFSET) and desyncs simultaneous bolts from one another. Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json): the divergence is unchanged, but the target cadence is ~7.1 Hz, not the ~15 Hz stated here — a fix that reproduces QFRAME's cadence must step at ROM_FPS/4, so the 60 Hz reading would have made the pinwheel spin twice as fast as the arcade's. [REFUTATION] Re-opened ALDISP.MAC:910 verbatim ('LDA QFRAME ;ENEMY SHOT') in context (896-915, DSPCHG): `ASL; AND I,6; ADC I,PTESHO` -- since ASL doubles QFRAME then masks to bits 1-2, the picture index has period 4 in QFRAME, i.e. cycles once every 4 increments of QFRAME. Confirmed QFRAME is incremented exactly once per real game frame at ALEXEC.MAC:252 (`INC QFRAME`), inside NONSTA, itself called once per FRTIMR>=9-gated MAINLN pass (28.444fps per the audit's established ground truth) -- so the cycle rate is 28.444/4 = 7.11Hz, matching the claim, and is a single GLOBAL counter shared by every enemy bolt on screen (confirmed no invader/bolt-specific offset is added before the table lookup). Checked our side: render.ts:297 derives the frame purely from `Math.floor(b.depth * 8)`, per-bolt and depth/speed-dependent, with the file's own comment (289-292) admitting frame+rotation 'derive from depth so the spin stays deterministic with the sim' -- i.e. a deliberate design choice that is nonetheless a real divergence from the ROM's shared, time-driven cadence. The finding's self-correction from a 60Hz-implied ~15Hz to the correct ~7.1Hz is arithmetically right.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-019",
+    "class": "DIVERGENCE",
+    "title": "Charge-vs-charge (bullet-bullet) collisions get no explosion in ours; the ROM assigns them the same 16-spoke burst as a charge killing an invader",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 977,
+      "verbatim": "\t.BYTE PTEXP1\t\t;CHARGE CHARGE, CHARGE INVADER"
+    },
+    "ours": {
+      "file": "src/core/sim.ts",
+      "line": 261,
+      "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
+    },
+    "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",
+    "reasoning": "A specific, named ROM behavior (bullet-on-bullet gets the SAME big flash as a kill) is missing; currently the game gives this collision the weakest possible cue instead of the flashiest one the source assigns it. [REFUTATION] Re-opened ALDISP.MAC:976-982 (TEXTYP) verbatim -- line 977 is exactly '.BYTE PTEXP1 ;CHARGE CHARGE, CHARGE INVADER'. Traced who actually assigns explosion-type 0 to confirm the comment isn't just aspirational: ALWELG.MAC:2797-2809 (INCCSQ, the charge-charge-collision handler) calls GENEXP with `LDA I,CCTYPE` where `CCTYPE=0` (line 2881); ALWELG.MAC:2810-2836 (INCISQ, charge-kills-invader) uses `LDA I,CITYPE` where `CITYPE=0` (line 2882) -- both genuinely route through the same EXPLOT=0 -> TEXTYP[0]=PTEXP1 path, which DSPEXP (ALDISP.MAC:935-963) resolves to the escalating EXPL1-4 pictures, confirmed as '16 SPOKES' in ALVROM.MAC:349-375 comments. This is a real, specific, code-verified shared-bang-type behavior, not just a comment. Checked our side: sim.ts:245-262 resolveEnemyBulletHits removes matched bullets/bolts from both arrays with zero `s.events.push(...)` call of any kind. Grepped fx.ts: the only reachable visual is the generic vanished-bullet spark in detect() (fx.ts:141-156), which diffs `s.bullets` (the PLAYER's bullets only) against `prevBullets` and fires a small 12-particle spark regardless of cause; the big `EnemyBurst` (spawnEnemyBurst, fx.ts:120-126) is only ever invoked from the `enemy-death` event branch (fx.ts:185-186), which resolveEnemyBulletHits never emits. The gap is real: a named ROM behavior (shared 16-spoke burst) has no equivalent in ours at all.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-020",
+    "class": "DIVERGENCE",
+    "title": "Pulsar color: ROM is a steady binary toggle for the whole active window; ours adds an extra fast strobe on top while pulsing",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 862,
+      "verbatim": "\tLDA I,TURQOI\t\t;PULSE OFF"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 363,
+      "verbatim": "      const color = pulsarColor(e.pulsing && beat > 0.5)"
+    },
+    "claim": "PULPIC (ALDISP.MAC:861-867) sets the pulsar's color to WHITE for the ENTIRE duration `PULSON` is positive (the whole pulse-active window) and TURQOI otherwise — a single two-state toggle with no additional per-frame flicker in the color logic itself (the zig-zag shape does animate via PULTAB, but the color does not strobe separately). Our code instead gates white on `e.pulsing && beat > 0.5`, where `beat = 0.5 + 0.5*sin(renderTime*18)` — so while pulsing, the color additionally strobes between white and cyan roughly every half-cycle of an 18 rad/s sine, on top of whatever the pulse state is.",
+    "reasoning": "A fabricated flicker not evidenced by this ROM section: the authentic cue is a steady white for the whole active pulse (a clean binary \"it's live\" signal), while ours flickers white/cyan throughout, diluting that signal. [REFUTATION] Re-opened ALDISP.MAC:861-867 (PULPIC). Decoded exactly: default LDA I,TURQOI ('PULSE OFF'), then LDY PULSON; IFPL -> LDA I,WHITE ('PULSE ON'); STA COLOR. PULSON is defined at ALCOMN.MAC:775 as 'PULSE STATUS (MINUS=OFF)', and ALWELG.MAC:1537-1542 shows it is a bouncing counter incremented by PULTIM every invader-move frame, ranging roughly -27..+15 (ALWELG.MAC:1558-1568) — i.e. the on/off cadence itself is a slow multi-frame triangle wave, but PULPIC's color decision is a single sign check with no secondary modulation: white for the WHOLE window PULSON>=0, turquoise otherwise. Checked our side: src/core/enemies/pulsar.ts sets e.pulsing on/off for PULSE_DURATION/pulseInterval (the equivalent of the PULSON sign), and render.ts:359-363 computes `beat = 0.5+0.5*sin(renderTime*18)` and gates color on `e.pulsing && beat>0.5` — an additional strobe layered on top of the on-phase that has no ROM counterpart in PULPIC's color logic. Checked macro/governance: no other writer of `color` for the pulsar bar overrides this. Not a unit-trap (renderTime is seconds, PULSON is frames, but the finding's claim is structural — 'binary vs strobing', not about matching periods) and not self-refuting. Holds. [CORRECTION] None — the finding correctly scopes itself to color logic only, not the legitimately-animated PULTAB zig-zag shape.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
+  },
+  {
+    "id": "DA-021",
+    "class": "STRUCTURAL",
+    "title": "Flip/jump path: ROM's 16-step lookup table (stepped once per 28.4 Hz logic frame) vs. our continuous parametric arc",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 720,
+      "verbatim": "\tAND I,0F"
+    },
+    "ours": {
+      "file": "src/shell/render.ts",
+      "line": 53,
+      "verbatim": "function arcAbout("
+    },
+    "claim": "The ROM indexes its 16-entry JUMPX/JUMPZ circle (DA-013) with a 4-bit integer step counter (`INVAL2 AND 0F`, line 720) that advances one discrete step at a time — 16 fixed positions per full loop, updated once per GAME frame, i.e. on the FRTIMR-gated 256/9 = 28.44 Hz logic cadence (FR-001), not on a 60 Hz one and not on the ~256 Hz IRQ. `arcAbout()` instead evaluates `cos`/`sin`/`hypot` continuously for an arbitrary float `t` each frame, with no 16-step quantization.",
+    "reasoning": "Differs only because the ROM is integer-stepped on its logic frame and we are continuous/dt-driven float math — the underlying circular path is identical (DA-013). Not worth reproducing the quantization; the continuous version is strictly smoother for the same trajectory, so the accept stands. Corrected for the 28.444 fps rebase (see FR-001 and FR-012 in pair-11-framerate-adjudication.json): the '60Hz IRQ' cadence asserted here was wrong in both halves — the IRQ runs at ~256 Hz and the step counter advances once per logic frame (28.44/s) — so anything that reproduces the flip's RATE (as opposed to its path) must be driven from ROM_FPS, not 60.",
+    "recommendation": "accept"
+  },
+  {
+    "id": "DA-022",
+    "class": "DIVERGENCE",
+    "title": "Low-ammo tint: ROM's ZBLUE has no equivalent in our GlyphColor palette, so we substitute cyan",
+    "source": {
+      "file": "ALDISP.MAC",
+      "line": 924,
+      "verbatim": "\tLDY I,ZBLUE\t\t;LOW"
+    },
+    "ours": {
+      "file": "src/shell/glyphs.ts",
+      "line": 294,
+      "verbatim": "  if (chargesInFlight >= 6) return 'cyan'"
+    },
+    "claim": "The ROM's \"low ammo\" tint is ZBLUE (ALCOMN.MAC:381, `ZBLUE=FBLUE`, a blue-family color-RAM value). Our shared `GlyphColor` palette (render.ts `GLYPH_HEX`) has no `blue` entry, so `playerBulletColor` substitutes `'cyan'` for this tier, per its own comment (\"GlyphColor has no separate `blue`\").",
+    "reasoning": "A real, named-color divergence (blue vs. cyan) but already deliberate and documented in the code itself rather than an oversight — recorded for completeness since the audit rule is to record what differs, not just what's accidental. [REFUTATION] Re-opened ALDISP.MAC:924, confirmed verbatim 'LDY I,ZBLUE ;LOW' inside DSPCHG (DISPLAY-CHARGES, line 895 onward) — this is the routine that colors COLPOR+PSHCTR, the player-shot/ammo HUD indicator, based on CHACOU (charges-in-flight count) crossing NPCHARG-2 and NPCHARG thresholds; confirmed this is live, unconditional code (not one of ALDIS2/ALHAR2/etc. decoys). Re-opened ALCOMN.MAC:381 'ZBLUE=FBLUE' (FBLUE defined line 372) — confirmed ZBLUE really is a blue-family color-RAM constant, distinct from ZYELLO/ZRED used for the other two tiers in the same routine (lines 918/927). Checked our side: render.ts:38-46 GLYPH_HEX has red/green/yellow/cyan/white/orange/purple — no 'blue' key — and glyphs.ts:294 (playerBulletColor, comment at ~290-293) substitutes 'cyan' for the mid tier exactly as claimed, with the substitution already documented in-code. A real, correctly-cited, already-acknowledged divergence; 'accept' is the right call but the finding's factual content is accurate.",
+    "recommendation": "accept",
+    "verdict": "CONFIRMED"
+  }
+]
