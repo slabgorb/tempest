@@ -72,7 +72,20 @@ export function checkFindings(findings, { repoRoot, sourceDir }) {
     }
 
     // --- ours side
-    if (f.class === 'NO_COUNTERPART') {
+    //
+    // `remediated_by` (story tp1-1): once a fix story lands, the `ours` verbatim
+    // describes code that DELIBERATELY no longer exists. Re-pointing it at the
+    // corrected line would make the finding assert that the fix is the defect, and
+    // deleting it would destroy the audit record — so a remediated finding keeps its
+    // citation as HISTORY and is no longer re-opened against the working tree.
+    //
+    // The ROM `source` side above is still checked, always. That is where the audit's
+    // authority comes from, and the 1981 source does not change. What we are giving up
+    // here is only the guard that OUR code still contains the defect — which is the
+    // one thing a fix story is supposed to make false.
+    if (f.remediated_by) {
+      if (!f.ours?.file) errors.push(`${id}: remediated_by requires \`ours\` to keep its historical citation`)
+    } else if (f.class === 'NO_COUNTERPART') {
       if (f.ours !== null) errors.push(`${id}: NO_COUNTERPART requires \`ours\` to be null`)
     } else if (!f.ours?.file) {
       errors.push(`${id}: class ${f.class} requires \`ours\` (only NO_COUNTERPART may omit it)`)

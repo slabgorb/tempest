@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 35,
+      "line": 108,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "We shipped ZAP_WINDOW_FIRST = 13 frames, matching the book's literal transcription \"TIMAX: .BYTE 00,13,05\". The primary source's TIMAX table is not a literal byte list, it is a computed expression: TIMAX[1] = CSUSTA + (8*(CSUINT+1)). With CSUSTA=3 and CSUINT=1 (ALWELG.MAC:3490-3492), TIMAX[1] = 3 + (8*2) = 19, not 13. The authentic first Superzapper active window is 19 GAME frames — which at the ROM's 256/9 = 28.44 fps (FR-001) is 0.668 s, not the '~0.317s at 60Hz' this finding originally stated. Ours, 13 frames ticked at the sim's 1/60 s timestep, lasts 0.217 s: 3.1x short in wall-clock.",
@@ -30,7 +30,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 36,
+      "line": 109,
       "verbatim": "export const ZAP_WINDOW_SECOND = 5"
     },
     "claim": "Both agree at 5 frames. TIMAX[2] = CSUSTA + (1*(CSUINT+1)) = 3 + (1*2) = 5, matching ZAP_WINDOW_SECOND = 5 and the book's transcribed final byte '05'. The COUNT matches; the DURATION does not — 5 ROM game frames is 5/28.44 = 0.176 s (FR-001), whereas our 5 frames are ticked once per 1/60 s sim step and last 0.083 s.",
@@ -47,7 +47,7 @@
     },
     "ours": {
       "file": "src/shell/starfield.ts",
-      "line": 32,
+      "line": 43,
       "verbatim": "export const STAR_SPAWN_Z = 0xf0 // 240 — a fresh plane spawns here, far at the centre"
     },
     "claim": "All four numbers plus the plane count are confirmed: spawn Z 0xF0 (ALWELG.MAC:3421, 3449, 3469), step -7/frame (ALWELG.MAC:3442 'SBC I,07'), retire below 0x10 (ALWELG.MAC:3444 'CMP I,10' after the SBC), spawn-next threshold 0xD5 (ALWELG.MAC:3467 'CMP I,0D5'), and 8 planes (NPLANE=8, ALCOMN.MAC:808). Matches STAR_SPAWN_Z=0xf0, STAR_STEP=7, STAR_RETIRE_Z=0x10, STAR_SPAWN_NEXT_Z=0xd5, STAR_PLANES=8 (starfield.ts:32-36) exactly. The step is per GAME frame, so the ROM's planes close at 7 * 28.44 = 199 along-units/second (FR-001).",
@@ -64,7 +64,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 8,
+      "line": 81,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "Both 8. ALCOMN.MAC:812 defines NPCHARG=8, the maximum simultaneous player charges, matching MAX_BULLETS=8 exactly.",
@@ -88,7 +88,8 @@
     "reasoning": "Filed CONFIRMED as 'exactly the frames vs seconds trap flagged in the task brief — correctly NOT a contradiction'. It was in fact the trap, sprung: the invented 60 Hz base made a wrong seconds figure agree with a wrong constant, and the finding then certified the agreement. The book is not wrong and the frame count is not wrong — only the conversion. Corrected for the 28.444 fps rebase (see FR-007 in pair-11-framerate-adjudication.json): reclassed CONFIRMED → DIVERGENCE, same one-line fix as W-045 (BULLET_SPEED 2.4 → 1.143 depth/s; comment should read '~25 frames / ~0.88s'). [REFUTATION] Re-opened ALCOMN.MAC:890 (PCVELO=9, decimal, confirmed verbatim) and ALCOMN.MAC:819-820 (ILINDDY=0F0=240, ILINLIY=010=16). Traced FIREPC's charge-fire code (ALWELG.MAC:2667-2669, 'LDA CURSY / STA X,CHARY') and INICUR (ALWELG.MAC:296-297, CURSY initialized to ILINLIY) confirming a charge starts at Y=0x10. Traced MOVCHA (ALWELG.MAC:2540, 'ADC I,PCVELO') and the terminal check (ALWELG.MAC:2548-2549, 'CMP I,ILINDDY') confirming the charge travels 0xF0-0x10=224 along-units at +9/frame when unobstructed by a line collision. 224/9=24.9 frames confirms '~25 frames'; at authentic 256/9 fps, 224/9 frames / (256/9 fps) = 224/256 = 0.875s exactly (clean algebraic identity, not just an approximation) — confirms the '~0.88s' correction and refutes the shipped comment's '~0.42s'. Depth-rate conversion 9*(256/9)/224 = 256/224 = 1.142857 checks out exactly as 1.143. Verified ours: rules.ts:7 BULLET_SPEED=2.4 is the sole depth-decrement driver (sim.ts:104, 'b.depth -= BULLET_SPEED * dt'), no override. 2.4 = 9*60/224 = 2.4107≈2.4, confirming the constant was derived under the wrong 60Hz base. This is a real, governing-code divergence, correctly reclassified DIVERGENCE — not a re-litigation of the already-established 2.11x global factor, since this is a distinct per-constant fix (BULLET_SPEED specifically was never separately corrected).",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-1"
   },
   {
     "id": "B-006",
@@ -101,7 +102,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 28,
+      "line": 101,
       "verbatim": "export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap"
     },
     "claim": "We ship SPIKE_MAX_DEPTH=0.75. The ROM has no cap distinct from the spiker's own climb clamp: JSTRAI (ALWELG.MAC:2205-2229) caps a climbing spiker's INVAY at 0x20 (\"MAX HEIGHT\", line 2228), and LINEY (the spike's visible tip) is set directly from that same INVAY (lines 2214-2217) — so the ROM's one and only relevant cap is 0x20, i.e. depth (0xF0-0x20)/224 = 0.929, the SAME value already used for our own SPIKER_TURNAROUND_DEPTH (rules.ts:115). Our SPIKE_MAX_DEPTH (0.75) sits well below the ROM's actual cap (0.929).",
@@ -174,7 +175,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 21,
+      "line": 94,
       "verbatim": "export const SCORE_FLIPPER = 150"
     },
     "claim": "Confirmed: score-table index 1 (TUPSCL[1]=0x50, TUPSCM[1]=1 at ALEXEC.MAC:598/600) evaluates in BCD as 1*100+50=150 points, matching SCORE_FLIPPER=150.",
@@ -191,7 +192,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 23,
+      "line": 96,
       "verbatim": "export const SCORE_TANKER = 100"
     },
     "claim": "Confirmed: score-table index 3 (TUPSCL[3]=0, TUPSCM[3]=1 at ALEXEC.MAC:598/600) evaluates to 1*100+0=100 points, matching SCORE_TANKER=100.",
@@ -208,7 +209,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 22,
+      "line": 95,
       "verbatim": "export const SCORE_SPIKER = 50"
     },
     "claim": "Confirmed: score-table index 4 (TUPSCL[4]=0x50, TUPSCM[4]=0 at ALEXEC.MAC:598/600) evaluates to 0*100+50=50 points, matching SCORE_SPIKER=50.",
@@ -225,7 +226,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 24,
+      "line": 97,
       "verbatim": "export const SCORE_PULSAR = 200"
     },
     "claim": "Confirmed: score-table index 2 (TUPSCL[2]=0, TUPSCM[2]=0x02 at ALEXEC.MAC:598/600) evaluates to 2*100+0=200 points, matching SCORE_PULSAR=200.",
@@ -242,7 +243,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 26,
+      "line": 99,
       "verbatim": "export const SCORE_FUSEBALL_STEP = 250  // 250 / 500 / 750 across depth thirds"
     },
     "claim": "Confirmed: INCFS2 (fuseball explosion/score init, ALWELG.MAC:2745-2771) offsets its chosen tier (0/1/2) by +5 ('ADC I,5', line 2767) into the score table, landing on indices 5/6/7. TUPSCL/TUPSCM at those indices (ALEXEC.MAC:598,600) evaluate to 250/500/750 — a flat 250-point step, matching SCORE_FUSEBALL_BASE=250 and SCORE_FUSEBALL_STEP=250 exactly.",
@@ -259,7 +260,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 201,
+      "line": 302,
       "verbatim": "  const tier = Math.min(2, Math.max(0, Math.floor(depth * 3))) // 0,1,2"
     },
     "claim": "Our fuseballScore() derives the 250/500/750 tier from the fuseball's DEPTH at time of kill (Math.floor(depth*3), rules.ts:200-203). The ROM's INCFS2 instead rolls RANDO2 AND 7 (0-7, ALWELG.MAC:2754-2755); if the roll is >=3 (5 of 8 outcomes) it forces tier 0, otherwise it keeps the roll (0, 1, or 2) directly as the tier (ALWELG.MAC:2756-2759) — i.e. P(tier0)=6/8=75%, P(tier1)=1/8, P(tier2)=1/8, entirely independent of where onscreen the fuseball died. The point VALUES (250/500/750, see B-014) are correct, but the selection MECHANISM is not depth-based at all — it is a heavily tier-0-weighted coin flip.",
@@ -279,7 +280,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 27,
+      "line": 100,
       "verbatim": "export const SCORE_SPIKE_SEGMENT = 3    // points for shortening a spike (arcade: 1–3)"
     },
     "claim": "We award 3 points per bullet-vs-spike-line hit. LIFECT (ALWELG.MAC:2589-2617), the ROM's charge-vs-enemy-line collision handler, signals the score routine to use TEMP0-2 directly ('LDX I,-1', line 2609) with TEMP1=TEMP2=0 and TEMP0=1 (lines 2610-2614, comment literally \"ADD 1 TO SCORE FOR EACH HIT\") before JSR UPSCORE. A decimal-mode BCD add of 1/0/0 is exactly 1 point per hit — not 3, and not a 1-3 range.",
@@ -299,7 +300,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 30,
+      "line": 103,
       "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
     },
     "claim": "EXTRA_LIFE_INTERVAL=10000 is shipped as one fixed rule (\"extra life every 10,000 points\"). The primary source has no single such constant: BLIFIN (ALCOMN.MAC:782, \"BONUS LIFE INTERVAL\") is a RAM variable set at boot from an operator DIP-switch field, decoded through TBLIFI (ALLANG.MAC:289, '.BYTE 2,1,3,4,5,6,7,0') into a bonus-life interval of 0 (off), 10K, 20K, ... or 70K points depending on the cabinet's switch setting. 10,000 IS one of the 8 selectable values, but nothing in the disassembly identifies a single canonical/default interval the way a fixed constant would.",

@@ -14,7 +14,7 @@ import { GameState } from '../../src/core/state'
 import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { MAX_BULLETS } from '../../src/core/rules'
+import { MAX_BULLETS, BULLET_SPEED, ROM_FPS, SIM_STEP } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const HOLD: Input = { spin: 0, fire: true, zap: false, start: false }
@@ -140,13 +140,19 @@ describe('auto-fire determinism & recycle rate (core)', () => {
     expect(bulletDepthAfter(0.2, 1 / 60)).toBeCloseTo(bulletDepthAfter(0.2, 1 / 120), 6)
   })
 
-  // AC5: bullet speed verified — the pool must recycle at the arcade rate. ROM
-  // rev-3 frees a shot's slot at ~25 frames / ~0.42s from the rim. The shipped
-  // BULLET_SPEED = 2.0 gives a 0.5s lifetime (the pool recycles ~19% too slow),
-  // so this fails until the speed is corrected into the arcade range.
-  it('recycles the shot pool at the arcade rate (~0.42s lifetime, not 0.5s)', () => {
-    const lifetime = bulletLifetimeSeconds(1 / 60)
-    expect(lifetime).toBeLessThanOrEqual(0.46)
-    expect(lifetime).toBeGreaterThanOrEqual(0.39)
+  // AC5: bullet speed verified — the pool must recycle at the arcade rate. The ROM
+  // frees a shot's slot after ~25 FRAMES from the rim.
+  //
+  // REBASED BY tp1-1. The 25 frames is ROM truth and has not moved. The "~0.42s" this
+  // test used to demand was just 25/60 — the invented clock again. At the real rate 25
+  // ROM frames is 25/28.44 = 0.879 s, and BULLET_SPEED (9 along/frame x ROM_FPS = 8/7
+  // depth/s) crosses the well in 1/(8/7) = 0.875 s. The frame count was right all
+  // along; only its conversion to seconds was wrong.
+  it('recycles the shot pool at the arcade rate (~25 ROM frames = ~0.88s, not 0.42s)', () => {
+    const expected = 1 / BULLET_SPEED                       // 0.875 s
+    expect(expected * ROM_FPS).toBeCloseTo(25, 0)           // ...which IS the ROM's ~25 frames
+    const lifetime = bulletLifetimeSeconds(SIM_STEP)
+    expect(lifetime).toBeLessThanOrEqual(expected * 1.06)
+    expect(lifetime).toBeGreaterThanOrEqual(expected * 0.94)
   })
 })

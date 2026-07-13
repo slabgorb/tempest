@@ -2,7 +2,7 @@
 import { Flipper } from '../state'
 import { type Rng, nextFloat } from '@arcade/shared/rng'
 import { Tube, wrapLane } from '../geometry'
-import { LevelParams } from '../rules'
+import { LevelParams, ROM_FPS } from '../rules'
 
 // rng is a mutable cursor: nextFloat advances it in place. The caller owns it
 // (sim clones state.rng into a fresh cursor each frame), so no rng is threaded back.
@@ -24,7 +24,7 @@ export function stepFlipper(
       e.flipping = false
       e.flipDir = undefined
       e.flipProgress = undefined
-      e.flipTimer = moveFrames / 60   // climb for moveFrames before the next flip
+      e.flipTimer = moveFrames / ROM_FPS   // climb for moveFrames before the next flip
     }
     return { enemy: e }
   }
@@ -36,7 +36,7 @@ export function stepFlipper(
     e.flipDir = nextFloat(rng) < 0.5 ? -1 : 1
     e.flipping = true
     e.flipProgress = 1 / flipFrames   // the start step counts as tick 1
-    e.flipTimer = moveFrames / 60
+    e.flipTimer = moveFrames / ROM_FPS
   }
 
   return { enemy: e }

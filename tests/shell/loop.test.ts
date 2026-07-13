@@ -14,10 +14,16 @@ import { GameState, Mode } from '../../src/core/state'
 import { playingState } from '../core/helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
+import { SIM_STEP } from '../../src/core/rules'
 
 const stepGameMock = vi.mocked(stepGame)
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
-const STEP_MS = 1000 / 60 // one fixed sim step, in ms (loop's STEP = 1/60 s)
+// One fixed sim step, in ms. tp1-1: the sim is ROM-paced — the loop's STEP is now
+// SIM_STEP (9/256 s = 35.16 ms), not 1/60 s. Taken from the core rather than restated,
+// because a test that keeps its own private opinion about the clock is how the 60
+// survived here in the first place. These tests are about onModeChange and the guarded
+// callbacks; the step size is incidental to every one of them.
+const STEP_MS = SIM_STEP * 1000
 
 describe('createLoop onModeChange hook', () => {
   let nowMs: number
