@@ -267,8 +267,21 @@ export const PULSAR_CLIMB_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / WARP_ALON
 // pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
 // is intentionally not modelled.
 export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.357
-// Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab.
-export const SPLIT_CHILD_DEPTH = 0.85
+// There is no SPLIT_CHILD_DEPTH here any more, and that is the point of tp1-24 (W-030).
+//
+// It was 0.85, and its comment said "Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is
+// not an instant grab" — a deliberate softening, written before the fidelity epic, that
+// clamped a tanker's children safely below the grab line. The cabinet does the opposite on
+// purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own INVAY into TEMP0 and
+// ACTINV (1219-1226) seats each child straight back out of it, so both are born at the
+// parent's EXACT depth. A carrier that arrives on its own bursts at $20 — 0.9286, ABOVE the
+// 0.92 grab line — and a player on a flanking lane is grabbed on the burst frame.
+//
+// The constant is deleted rather than renumbered because there is no number that belongs
+// here: the children's depth is not a constant at all, it is the parent's. Do not
+// reintroduce it to soften the burst — the burst's fairness lives in the other two thirds
+// of the mechanism (the parent's own lane is VACATED, and the children cannot flip onto
+// the player), both in splitTanker.
 
 // ─── $20: ONE ROM CONSTANT, READ TWICE (W-032, and the bug tp1-5 first shipped) ──────
 //
