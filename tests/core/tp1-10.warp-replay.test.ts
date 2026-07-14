@@ -76,6 +76,15 @@ describe('tp1-10 AC-5 — a warp spike crash replays the SAME wave (WD-015)', ()
     expect(state.level).toBe(1) // same wave replays — NOT promoted to 2
   })
 
+  it('emits a player-spawn event on the crash-replay respawn (the fresh life spawns)', () => {
+    // runUntilRespawned breaks on the exact frame the respawn resolves (dying →
+    // playing), so that frame's events carry the replayWave spawn. Mutation guard:
+    // deleting the player-spawn emit in replayWave makes this go RED.
+    const { state } = runUntilRespawned(warpCrashState({ playerLane: 4 }))
+    expect(state.mode).toBe('playing')
+    expect(state.events.some((e) => e.type === 'player-spawn')).toBe(true)
+  })
+
   it('re-initialises the board on replay so the killing spike no longer re-crashes', () => {
     const { state, steps } = runUntilRespawned(warpCrashState({ playerLane: 4 }))
     expect(state.level).toBe(1)

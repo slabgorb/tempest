@@ -35,14 +35,23 @@ describe('tp1-10 AC-3 — render gates the starfield on the dive progress', () =
   })
 
   it('gates the warp starfield on the dive progress, not merely on mode === warp', () => {
-    // The call site must sit behind a progress gate. Today it is unconditional
-    // inside `if (s.mode === 'warp')`, so the window before the call mentions
-    // `warp` but never `progress` — RED.
-    const window = renderSrc.slice(Math.max(0, iStar - 240), iStar)
-    expect(window, 'drawStarfield(pctx, ...) must be guarded by warp progress').toMatch(/progress/)
+    // The call site must sit behind the ROM progress gate. Assert the actual guard
+    // EXPRESSION, with COMMENTS STRIPPED from the window first — otherwise a nearby
+    // render comment that merely mentions "progress"/"WARP_STARFIELD_GATE" satisfies a
+    // naive text search even when the real `if` is gone (tp1-10 review: exactly that
+    // happened to the old `/progress/` check). Mutation-proof: reverting the gate to an
+    // unconditional `drawStarfield(...)` removes `s.warp.progress >= WARP_STARFIELD_GATE`
+    // from the code window → RED.
+    const rawWindow = renderSrc.slice(Math.max(0, iStar - 240), iStar)
+    const codeWindow = rawWindow.replace(/\/\/[^\n]*/g, '') // strip line comments
+    expect(codeWindow, 'drawStarfield(pctx, ...) must be guarded by the warp progress gate')
+      .toMatch(/s\.warp\.progress\s*>=\s*WARP_STARFIELD_GATE/)
   })
 
-  it('references the ROM gate constant WARP_STARFIELD_GATE', () => {
-    expect(renderSrc).toMatch(/WARP_STARFIELD_GATE/)
+  it('references the ROM gate constant WARP_STARFIELD_GATE in code (not just an import/comment)', () => {
+    // Stronger than a bare source match (which an import line alone satisfies): the
+    // constant must appear in a `>=` comparison against the dive progress somewhere.
+    const code = renderSrc.replace(/\/\/[^\n]*/g, '')
+    expect(code).toMatch(/progress\s*>=\s*WARP_STARFIELD_GATE/)
   })
 })

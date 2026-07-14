@@ -9,7 +9,6 @@
 // so it hums through the whole warning hold. Both assertions below are RED.
 import { describe, it, expect } from 'vitest'
 import { playEventSounds } from '../../src/shell/audio-dispatch'
-import type { GameEvent } from '../../src/core/events'
 
 type Call =
   | { kind: 'play'; sound: string }
@@ -23,14 +22,15 @@ function recorder() {
     startLoop: (sound: string) => calls.push({ kind: 'startLoop', sound }),
     stopLoop: (sound: string) => calls.push({ kind: 'stopLoop', sound }),
   }
-  // audio-dispatch only touches play/startLoop/stopLoop (a Pick of AudioEngine).
-  return { calls, audio: audio as unknown as Parameters<typeof playEventSounds>[0] }
+  // audio-dispatch only touches play/startLoop/stopLoop (a Pick of AudioEngine); the
+  // inline object structurally satisfies that param, so no cast is needed.
+  return { calls, audio }
 }
 
 describe('tp1-10 AC-6 — the warp rumble is dispatched on descent-start, not entry', () => {
   it('starts the sustained warp loop on warp-descent-start', () => {
     const { calls, audio } = recorder()
-    playEventSounds(audio, [{ type: 'warp-descent-start' } as unknown as GameEvent])
+    playEventSounds(audio, [{ type: 'warp-descent-start' }])
     expect(calls).toContainEqual({ kind: 'startLoop', sound: 'levelClear' })
   })
 
@@ -43,7 +43,7 @@ describe('tp1-10 AC-6 — the warp rumble is dispatched on descent-start, not en
   it('still stops the loop on warp-end so it never bleeds past the dive', () => {
     const { calls, audio } = recorder()
     playEventSounds(audio, [
-      { type: 'warp-descent-start' } as unknown as GameEvent,
+      { type: 'warp-descent-start' },
       { type: 'warp-end' },
     ])
     expect(calls).toEqual([

@@ -23,6 +23,7 @@ import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import type { Input } from '../../src/core/input'
+import { WARP_FLYIN_FRAMES } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -72,5 +73,19 @@ describe('tp1-10 AC-2 — the eye flies INTO the new well (WD-018)', () => {
       if (s.level === 2 && s.mode !== 'playing') heldFrames++
     }
     expect(heldFrames).toBeGreaterThanOrEqual(1) // at least one dedicated fly-in frame
+  })
+
+  it('the fly-in lasts exactly WARP_FLYIN_FRAMES (the ROM-derived ceil(224/24) = 10)', () => {
+    // Pin BOTH the constant's value (so an accidental edit is caught — heldFrames >= 1
+    // alone would accept any nonzero count) AND that the observed held-frame count
+    // actually tracks it (so the sim can't silently desync from the constant).
+    expect(WARP_FLYIN_FRAMES).toBe(10)
+    let s = enterCleanWarp()
+    let heldFrames = 0
+    for (let i = 0; i < 1000 && s.mode !== 'playing'; i++) {
+      s = stepGame(s, NEUTRAL, DT)
+      if (s.level === 2 && s.mode !== 'playing') heldFrames++
+    }
+    expect(heldFrames).toBe(WARP_FLYIN_FRAMES)
   })
 })

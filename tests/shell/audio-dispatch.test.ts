@@ -90,7 +90,7 @@ const EVENT_EFFECT: ReadonlyArray<{ event: GameEvent; effect: Effect | null }> =
   // descending frame), so it no longer hums under the warning hold. 'level-clear'
   // now makes NO sound here — its white entry flash is an fx-layer concern.
   { event: { type: 'level-clear', newLevel: 2 }, effect: null },
-  { event: { type: 'warp-descent-start' } as unknown as GameEvent, effect: { kind: 'startLoop', sound: 'levelClear' } },
+  { event: { type: 'warp-descent-start' }, effect: { kind: 'startLoop', sound: 'levelClear' } },
   { event: { type: 'warp-end' }, effect: { kind: 'stopLoop', sound: 'levelClear' } },
   { event: { type: 'pulsar-hum-start' }, effect: { kind: 'startLoop', sound: 'pulsarHum' } },
   { event: { type: 'pulsar-hum-stop' }, effect: { kind: 'stopLoop', sound: 'pulsarHum' } },
@@ -149,7 +149,7 @@ describe('audio-dispatch playEventSounds (story 6-12 / 10-11)', () => {
     const { playEventSounds } = await loadDispatch()
     const audio = recordingAudio()
     playEventSounds(audio, [
-      { type: 'warp-descent-start' } as unknown as GameEvent,
+      { type: 'warp-descent-start' },
       { type: 'warp-end' },
     ])
     expect(audio.calls).toEqual([

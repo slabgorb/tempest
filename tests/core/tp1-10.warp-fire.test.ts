@@ -92,4 +92,24 @@ describe('tp1-10 AC-4 — firing during the warp dive (WD-014)', () => {
     expect(out.warp.progress).toBe(0) // Claw has not moved
     expect(out.bullets).toHaveLength(0) // no charge while frozen at the rim
   })
+
+  it('firing does NOT spawn during the post-descent eye FLY-IN (play is deferred, WD-018)', () => {
+    // Keep-behaviour guard, mirror of the AVOID-SPIKES-hold case for the OTHER
+    // suppression window. During the eye fly-in (warp.flyIn > 0) the player is a
+    // passenger — PLDROP/FIREPC do not run — so a lazy "fire whenever warning === 0 in
+    // warp" implementation must be rejected. The warp firing gate is
+    // `warning === 0 && (flyIn ?? 0) === 0`; drop the flyIn clause and this goes RED.
+    const s = playingState(1)
+    s.spawn = { nymphs: [] }
+    s.enemies = []
+    s.bullets = []
+    s.player.lane = 0
+    s.mode = 'warp'
+    s.spikes = new Array(s.tube.laneCount).fill(0)
+    s.warp = { progress: 0, velocity: 0, warning: 0, flyIn: 5 } // mid eye fly-in
+    const out = stepGame(s, FIRING, DT)
+    expect(out.mode).toBe('warp') // still flying in
+    expect(out.warp.flyIn ?? 0).toBeGreaterThan(0) // guard: genuinely in the fly-in
+    expect(out.bullets).toHaveLength(0) // FIREPC does not run — play is deferred
+  })
 })
