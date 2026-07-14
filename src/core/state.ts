@@ -38,22 +38,31 @@ export interface EnemyBullet {
 export type EnemyKind = 'flipper' | 'tanker' | 'spiker' | 'fuseball' | 'pulsar'
 export type TankerCargo = 'flipper' | 'fuseball' | 'pulsar'
 
+// Every invader carries the CAM's registers (tp1-4, W-005). Behaviour is not a
+// function of `kind` any more: it is the bytecode program at `camPc`, run once per
+// frame by the interpreter (src/core/enemies/interpreter.ts). These are the ROM's
+// own per-invader bytes, and they PERSIST across frames — that is what makes a CAM
+// program a coroutine rather than a state machine.
 interface EnemyBase {
-  lane: number          // integer lane
-  depth: number         // 0 (far, spawn) → 1 (near rim)
+  lane: number          // integer lane — the ROM's INVAL1, the invader's base leg
+  depth: number         // 0 (far, spawn) → 1 (near rim) — INVAY, inverted
   fireCooldown?: number // seconds left on the refire holdoff (Story 6-5); absent = ready to fire
+  camPc: number         // INVCAM — the program counter, an offset into the CAM
+  camLoop: number       // INVLOO — the loop counter VSLOOP sets and VELOOP spends
+  rot: -1 | 1           // the INVROT bit: which way it jumps. +1 = CCW (lane+1), -1 = CW.
+                        // It PERSISTS across jumps and is only ever changed by rule —
+                        // VCHROT reverses it, VCHPLA aims it at the player (W-007).
+  direction: 1 | -1     // the INVDIR bit: up the well (+1) or back down it (-1)
+  // The jump (a flip), mid-flight: the angle-step this invader has reached, of the
+  // eight a jump takes (W-008; JUMP_ANGLE_STEPS). Absent means it is not jumping —
+  // the ROM's $80 INVMOT bit, clear. While it is set the invader is caught BETWEEN
+  // lanes: `lane` holds at the source and settles on `lane + rot` when the angle
+  // runs out, which is the window the player can rotate through.
+  jumpAngle?: number
 }
 
 export interface Flipper extends EnemyBase {
   kind: 'flipper'
-  flipTimer: number     // seconds until next flip starts
-  // Multi-tick flip animation (story 6-14, ROM $80 mid-flip bit). While
-  // `flipping`, the flipper is caught between lanes: `lane` holds at the source
-  // until `flipProgress` reaches 1, then it settles on `lane + flipDir`. Absent
-  // (undefined) means the flipper is settled on its lane and not mid-flip.
-  flipping?: boolean
-  flipDir?: -1 | 1      // direction of the in-progress flip
-  flipProgress?: number // 0 → 1 across the current flip
 }
 
 export interface Tanker extends EnemyBase {
@@ -63,7 +72,6 @@ export interface Tanker extends EnemyBase {
 
 export interface Spiker extends EnemyBase {
   kind: 'spiker'
-  direction: 1 | -1     // climbing (+1) or descending (-1) while laying spike
 }
 
 export interface Fuseball extends EnemyBase {
@@ -73,13 +81,12 @@ export interface Fuseball extends EnemyBase {
   // by a bullet ONLY while `vulnerable`, which means ROLLING BETWEEN LANES; once it
   // lands on a lane it is bulletproof (";MAKE IT INVINCIBLE"), and at the rim it is
   // bulletproof outright. A state, not a toggle — set on every roll, cleared on every
-  // landing (see stepFuseball; the rim gate is in sim.ts).
+  // landing (the CAM's VSFUSE; the rim gate is in sim.ts).
   vulnerable: boolean
 }
 
 export interface Pulsar extends EnemyBase {
   kind: 'pulsar'
-  flipTimer: number     // seconds until next flip
   pulseTimer: number    // seconds until the pulse state next toggles
   pulsing: boolean      // true while the lane is electrified
 }

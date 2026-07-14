@@ -44,9 +44,9 @@ import { describe, it, expect } from 'vitest'
 import { initialState } from '../../src/core/state'
 import type { GameState, Enemy, EnemyBullet } from '../../src/core/state'
 import type { GameEvent, SuperzapperFlashEvent } from '../../src/core/events'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { SCORE_FLIPPER, SCORE_TANKER, SCORE_PULSAR } from '../../src/core/rules'
+import { SCORE_FLIPPER, SCORE_TANKER, SCORE_PULSAR, levelParams } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -106,12 +106,13 @@ function runZap(
 const activeFrames = (trace: { flashes: number }[]): number =>
   trace.filter((f) => f.flashes > 0).length
 
-// flipTimer parked at 999 so no enemy flips lanes mid-window — lane is a stable
-// identity we can assert against.
+// Built on wave 1's params, so every flipper runs NOJUMP and none of them changes
+// lane mid-window — lane stays a stable identity we can assert against. (Was
+// `flipTimer: 999`, a field tp1-4 deleted along with the timer it drove.)
 const threeFlippers = (): Enemy[] => [
-  { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 },
-  { kind: 'flipper', lane: 5, depth: 0.6, flipTimer: 999 },
-  { kind: 'flipper', lane: 9, depth: 0.9, flipTimer: 999 },
+  makeEnemy('flipper', 1, 0.2, levelParams(1)),
+  makeEnemy('flipper', 5, 0.6, levelParams(1)),
+  makeEnemy('flipper', 9, 0.9, levelParams(1)),
 ]
 
 // 2 flippers + 1 pulsar (must die) + a tanker that SURVIVES the first press
@@ -121,18 +122,18 @@ const threeFlippers = (): Enemy[] => [
 // so an un-parked survivor could loose a fresh bolt in the same frame and muddy
 // the "press clears in-flight bolts" assertion (10-1 paranoia note #3).
 const mixedBoard = (): Enemy[] => [
-  { kind: 'flipper', lane: 1, depth: 0.3, flipTimer: 999, fireCooldown: 999 },
-  { kind: 'tanker', lane: 3, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
-  { kind: 'pulsar', lane: 5, depth: 0.6, flipTimer: 999, pulseTimer: 999, pulsing: false, fireCooldown: 999 },
-  { kind: 'flipper', lane: 8, depth: 0.2, flipTimer: 999, fireCooldown: 999 },
+  { ...makeEnemy('flipper', 1, 0.3, levelParams(1)), fireCooldown: 999 },
+  { ...makeEnemy('tanker', 3, 0.5, levelParams(1), 'flipper'), fireCooldown: 999 },
+  { ...makeEnemy('pulsar', 5, 0.6, levelParams(1)), pulseTimer: 999, pulsing: false, fireCooldown: 999 },
+  { ...makeEnemy('flipper', 8, 0.2, levelParams(1)), fireCooldown: 999 },
 ]
 
 // One non-tanker + one spared tanker: the single kill finishes on the first
 // active frame, so the window's FLASH plainly outlasts the kills — a clean place
 // to measure window length independently of kill count.
 const oneFlipperOneTanker = (): Enemy[] => [
-  { kind: 'flipper', lane: 1, depth: 0.4, flipTimer: 999 },
-  { kind: 'tanker', lane: 6, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+  makeEnemy('flipper', 1, 0.4, levelParams(1)),
+  { ...makeEnemy('tanker', 6, 0.5, levelParams(1), 'flipper'), fireCooldown: 999 },
 ]
 
 const twoBolts = (): EnemyBullet[] => [
@@ -207,8 +208,8 @@ describe('superzapper 10-2 — active-window timer on player state', () => {
     const s2 = first.final
     s2.mode = 'playing'
     s2.enemies = [
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'tanker', lane: 7, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      { ...makeEnemy('tanker', 7, 0.5, levelParams(1), 'flipper'), fireCooldown: 999 },
     ]
     const second = runZap(s2)
     const secondFrames = activeFrames(second.trace)
@@ -364,7 +365,7 @@ describe('superzapper 10-2 — per-frame well-color flash', () => {
   })
 
   it('a spent superzapper produces no flash at all', () => {
-    const s = playing([{ kind: 'flipper', lane: 3, depth: 0.5, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 3, 0.5, levelParams(1))])
     s.player.superzapper = 'spent'
     const out = stepGame(s, ZAP, DT)
     expect(flashesOf(out)).toHaveLength(0)
@@ -377,8 +378,8 @@ describe('superzapper 10-2 — per-frame well-color flash', () => {
 describe('superzapper 10-2 — weak shot (second activation)', () => {
   it('destroys exactly ONE enemy — the one nearest the rim — and becomes spent', () => {
     const s = playing([
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // deepest → nearest the rim
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      makeEnemy('flipper', 7, 0.8, levelParams(1)), // deepest → nearest the rim
     ])
     s.player.superzapper = 'used-once'
     const { final } = runZap(s)
@@ -389,10 +390,10 @@ describe('superzapper 10-2 — weak shot (second activation)', () => {
 
   it('kills exactly one across the WHOLE window — never more, even on a packed board', () => {
     const s = playing([
-      { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 },
-      { kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 },
-      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 },
-      { kind: 'flipper', lane: 9, depth: 0.9, flipTimer: 999 },
+      makeEnemy('flipper', 1, 0.2, levelParams(1)),
+      makeEnemy('flipper', 4, 0.5, levelParams(1)),
+      makeEnemy('flipper', 7, 0.8, levelParams(1)),
+      makeEnemy('flipper', 9, 0.9, levelParams(1)),
     ])
     s.player.superzapper = 'used-once'
     const { final, trace } = runZap(s)
@@ -402,8 +403,8 @@ describe('superzapper 10-2 — weak shot (second activation)', () => {
 
   it('runs a shorter flash window than the first press (4–6 active frames)', () => {
     const s = playing([
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'tanker', lane: 7, depth: 0.5, contains: 'flipper', fireCooldown: 999 },
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      { ...makeEnemy('tanker', 7, 0.5, levelParams(1), 'flipper'), fireCooldown: 999 },
     ])
     s.player.superzapper = 'used-once'
     const { trace } = runZap(s)
@@ -414,8 +415,8 @@ describe('superzapper 10-2 — weak shot (second activation)', () => {
 
   it('awards the score of the single enemy it destroys', () => {
     const s = playing([
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 },
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      makeEnemy('flipper', 7, 0.8, levelParams(1)),
     ])
     s.player.superzapper = 'used-once'
     const { final } = runZap(s)
@@ -424,8 +425,8 @@ describe('superzapper 10-2 — weak shot (second activation)', () => {
 
   it('breaks a nearest-the-rim tie by destroying the LOWEST index', () => {
     const s = playing([
-      { kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 }, // index 0 — equal depth
-      { kind: 'flipper', lane: 9, depth: 0.5, flipTimer: 999 }, // index 1 — equal depth
+      makeEnemy('flipper', 4, 0.5, levelParams(1)), // index 0 — equal depth
+      makeEnemy('flipper', 9, 0.5, levelParams(1)), // index 1 — equal depth
     ])
     s.player.superzapper = 'used-once'
     const { final } = runZap(s)
@@ -435,7 +436,7 @@ describe('superzapper 10-2 — weak shot (second activation)', () => {
   })
 
   it('a zap kill never releases tanker cargo (declaw preserved)', () => {
-    const s = playing([{ kind: 'tanker', lane: 5, depth: 0.8, contains: 'flipper' }])
+    const s = playing([makeEnemy('tanker', 5, 0.8, levelParams(1), 'flipper')])
     s.player.superzapper = 'used-once'
     const { final } = runZap(s)
     expect(final.enemies).toHaveLength(0) // killed, no child left behind
@@ -445,8 +446,8 @@ describe('superzapper 10-2 — weak shot (second activation)', () => {
 
   it('a second press does NOT clear in-flight bolts — only the first press does', () => {
     const s = playing([
-      { kind: 'tanker', lane: 2, depth: 0.3, contains: 'flipper', fireCooldown: 999 },
-      { kind: 'tanker', lane: 7, depth: 0.8, contains: 'flipper', fireCooldown: 999 },
+      { ...makeEnemy('tanker', 2, 0.3, levelParams(1), 'flipper'), fireCooldown: 999 },
+      { ...makeEnemy('tanker', 7, 0.8, levelParams(1), 'flipper'), fireCooldown: 999 },
     ])
     s.player.superzapper = 'used-once'
     s.enemyBullets = [{ lane: 5, depth: 0.4 }]
@@ -461,21 +462,21 @@ describe('superzapper 10-2 — state machine across activations', () => {
   it('progresses full → used-once → spent, then a spent zap no-ops with no window/flash', () => {
     // First press → used-once (board clears over the window; keep spawn budget so
     // the emptied board does not auto-warp).
-    let s = playing([{ kind: 'flipper', lane: 1, depth: 0.5, flipTimer: 999 }])
+    let s = playing([makeEnemy('flipper', 1, 0.5, levelParams(1))])
     s.spawn = { remaining: 5, timer: 999 }
     s = runZap(s).final
     expect(s.player.superzapper).toBe('used-once')
 
     // Second press → spent (one kill).
-    s.enemies = [{ kind: 'flipper', lane: 2, depth: 0.5, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 2, 0.5, levelParams(1))]
     s.mode = 'playing'
     s = runZap(s).final
     expect(s.player.superzapper).toBe('spent')
 
     // A spent superzapper must do nothing — no kills, no window, no flash.
     s.enemies = [
-      { kind: 'flipper', lane: 3, depth: 0.4, flipTimer: 999 },
-      { kind: 'flipper', lane: 8, depth: 0.5, flipTimer: 999 },
+      makeEnemy('flipper', 3, 0.4, levelParams(1)),
+      makeEnemy('flipper', 8, 0.5, levelParams(1)),
     ]
     s.mode = 'playing'
     const out = stepGame(s, ZAP, DT)
@@ -616,8 +617,8 @@ describe('superzapper 10-14 — empty-board SECOND press (weak shot is wasted-bu
 
     // A target now appears; the SAME charge fires the weak shot for real.
     wasted.enemies = [
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // deepest → nearest the rim
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      makeEnemy('flipper', 7, 0.8, levelParams(1)), // deepest → nearest the rim
     ]
     const { final } = runZap(wasted)
     expect(final.enemies).toHaveLength(1)
@@ -636,8 +637,8 @@ describe('superzapper 10-14 — populated board is UNCHANGED (regression guard f
 
   it('a second press WITH a target still kills one nearest the rim and spends (10-2 intact)', () => {
     const s = playing([
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // deepest → nearest the rim
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      makeEnemy('flipper', 7, 0.8, levelParams(1)), // deepest → nearest the rim
     ])
     s.player.superzapper = 'used-once'
     const { final } = runZap(s)

@@ -33,9 +33,10 @@ import * as Sim from '../../src/core/sim'
 import { GameState, initialState, Enemy, EnemyBullet } from '../../src/core/state'
 import { Input } from '../../src/core/input'
 import { tubeForLevel, currentLane } from '../../src/core/geometry'
-import { MAX_BULLETS, PLAYER_RIM_DEPTH, START_LIVES } from '../../src/core/rules'
+import { MAX_BULLETS, PLAYER_RIM_DEPTH, START_LIVES, levelParams } from '../../src/core/rules'
 
 const stepGame = Sim.stepGame
+const makeEnemy = Sim.makeEnemy
 // GREEN must export `demoInput`; accessed loosely so RED fails on call, not import.
 const demoInput = (s: GameState): Input =>
   (Sim as unknown as { demoInput: (s: GameState) => Input }).demoInput(s)
@@ -66,7 +67,7 @@ function board(opts: {
   return s
 }
 
-const flipperAt = (lane: number, depth: number): Enemy => ({ kind: 'flipper', lane, depth, flipTimer: 999 })
+const flipperAt = (lane: number, depth: number): Enemy => makeEnemy('flipper', lane, depth, levelParams(1))
 
 // ---------------------------------------------------------------------------
 // Group A — the pure AI brain `demoInput` (AC: auto-move + anticipatory fire)

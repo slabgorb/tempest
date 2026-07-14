@@ -42,16 +42,14 @@
 //     branch-if-carry-clear = strictly less than. Delta 2 does NOT fire.
 //
 // TEA test-design note: these are BEHAVIOURAL tests through the public core surface
-// (stepGame / stepFuseball / demoInput), not assertions on private constants. The
+// (stepGame / demoInput), not assertions on private constants. The
 // ROM fixes a BEHAVIOUR; how Dev reaches it is Dev's to choose. The one exception is
 // SCORE_SPIKE_SEGMENT, which the ACs name as a constant and which is already imported
 // by sim.spikes.test.ts — so it is pinned both as a value and through a scoring run.
 import { describe, it, expect } from 'vitest'
 import * as Sim from '../../src/core/sim'
-import { stepGame } from '../../src/core/sim'
-import { stepFuseball } from '../../src/core/enemies/fuseball'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { SCORE_SPIKE_SEGMENT, levelParams } from '../../src/core/rules'
-import { createRng } from '@arcade/shared/rng'
 import { playingState } from './helpers'
 import type { GameState, Enemy, Fuseball } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
@@ -77,7 +75,7 @@ const demoInput = (s: GameState): Input =>
   (Sim as unknown as { demoInput: (s: GameState) => Input }).demoInput(s)
 
 const flipperAt = (lane: number, depth: number): Enemy =>
-  ({ kind: 'flipper', lane, depth, flipTimer: 999 }) as Enemy
+  makeEnemy('flipper', lane, depth, levelParams(1))
 
 // ---------------------------------------------------------------------------
 // AC3 — B-016: a spike-segment hit is worth ONE point, not three
@@ -179,7 +177,7 @@ describe('AC6 / W-040 — the spiker hops to the NEEDIEST lane (ASTRAL, ALWELG.M
   // Setup: park the spiker at the far end about to bottom out, so it must relocate.
   const aboutToHop = (seed: number): GameState => {
     const s = isolated(seed)
-    s.enemies = [{ kind: 'spiker', lane: 5, depth: 0.02, direction: -1 } as Enemy]
+    s.enemies = [{ ...makeEnemy('spiker', 5, 0.02, levelParams(1)), direction: -1 } as Enemy]
     return s
   }
 
@@ -269,10 +267,9 @@ describe('AC6 / W-040 — the spiker hops to the NEEDIEST lane (ASTRAL, ALWELG.M
 
 describe('AC7 / W-022 — the fuseball\'s vulnerability is INVERTED (COLCHK, ALWELG.MAC:2965-2979)', () => {
   const params = levelParams(1)
-  const tube = playingState(1).tube
 
   const fuse = (over: Partial<Fuseball> = {}): Fuseball =>
-    ({ kind: 'fuseball', lane: 8, depth: 0.5, jitterTimer: 999, vulnerable: false, ...over }) as Fuseball
+    ({ ...makeEnemy('fuseball', 8, 0.5, params), jitterTimer: 999, vulnerable: false, ...over })
 
   // ---- what SETS the bit: rolling, not sitting -----------------------------
   //
@@ -280,12 +277,26 @@ describe('AC7 / W-022 — the fuseball\'s vulnerability is INVERTED (COLCHK, ALW
   // and POSITIVE the instant the fuse lands on a line (JJUMPM writes $20, ";MAKE IT
   // INVINCIBLE"). Our flag must track the same thing: rolling ⇒ set, settled ⇒ clear.
   //
+  // tp1-4 deleted stepFuseball — the fuseball's move is now the CAM's VSFUSE, reached
+  // only through the sim. So the fuse is driven the way the game drives it: one
+  // stepGame with its jitter tick due. (The behaviour, and every assertion below, is
+  // unchanged; only the seam moved from the unit to the public step.)
+  //
   // A jitter tick with the player OFF-lane forces a slide (FUSEBALL_MOVE_PROB gates it,
   // so we retry seeds until one rolls — the roll is what we are testing, not the RNG).
+  function jitterOnce(start: Fuseball, playerLane: number, seed: number): Fuseball {
+    const s = isolated(seed)
+    s.player.lane = playerLane
+    s.enemies = [{ ...start, jitterTimer: 0.0001 }]
+    const out = stepGame(s, NEUTRAL, DT).enemies[0]
+    if (out?.kind !== 'fuseball') throw new Error('the fuseball did not survive its own step')
+    return out
+  }
+
   function rollOnce(start: Fuseball, playerLane: number): Fuseball {
     for (let seed = 1; seed < 60; seed++) {
-      const out = stepFuseball({ ...start, jitterTimer: 0.0001 }, DT, params, tube, createRng(seed), playerLane)
-      if (out.enemy.lane !== start.lane) return out.enemy // it actually slid
+      const out = jitterOnce(start, playerLane, seed)
+      if (out.lane !== start.lane) return out // it actually slid
     }
     throw new Error('no seed produced a lane slide — FUSEBALL_MOVE_PROB may have changed')
   }
@@ -308,11 +319,9 @@ describe('AC7 / W-022 — the fuseball\'s vulnerability is INVERTED (COLCHK, ALW
 
   it('becomes INVINCIBLE once it settles on a lane (";MAKE IT INVINCIBLE", ALWELG.MAC:1928)', () => {
     // A jitter tick that does NOT slide = the fuse landed and is parked on a line.
-    // Pin it where it already is (player on its own lane ⇒ laneStepToward returns 0
-    // ⇒ no slide can occur, whatever the RNG rolls).
-    const settled = stepFuseball(
-      { ...fuse({ vulnerable: true }), jitterTimer: 0.0001 }, DT, params, tube, createRng(1), 8,
-    ).enemy
+    // Pin it where it already is (player on its own lane ⇒ the step toward the player
+    // is 0 ⇒ no slide can occur, whatever the RNG rolls).
+    const settled = jitterOnce(fuse({ vulnerable: true }), 8, 1)
     expect(settled.lane).toBe(8) // it did not roll...
     expect(settled.vulnerable).toBe(false) // ...so it is parked, and bulletproof
   })

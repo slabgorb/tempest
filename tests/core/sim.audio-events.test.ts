@@ -21,10 +21,10 @@ import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { GameEvent } from '../../src/core/events'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import type { Input } from '../../src/core/input'
 import { tubeForLevel } from '../../src/core/geometry'
-import { SPIKE_MAX_DEPTH, SPIKE_SHORTEN, SCORE_SPIKE_SEGMENT, EXTRA_LIFE_INTERVAL } from '../../src/core/rules'
+import { SPIKE_MAX_DEPTH, SPIKE_SHORTEN, SCORE_SPIKE_SEGMENT, EXTRA_LIFE_INTERVAL, levelParams } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -50,7 +50,7 @@ function playing(enemies: Enemy[]): GameState {
 }
 
 const aPulsar = (lane: number, depth: number): Enemy => ({
-  kind: 'pulsar', lane, depth, flipTimer: 999, pulseTimer: 999, pulsing: false,
+  ...makeEnemy('pulsar', lane, depth, levelParams(1)), pulseTimer: 999, pulsing: false,
 })
 
 // A freshly-cleared 'playing' state (no enemies, empty budget) that enters warp
@@ -135,7 +135,7 @@ describe('pulsar-hum loop edges (AC1: loop while a pulsar is present)', () => {
   it('emits pulsar-hum-start the frame the first pulsar appears (0 → >0)', () => {
     // A tanker carrying a pulsar reaches split depth and bursts into pulsars this
     // frame: the board had NO pulsar before the step and HAS one after — the edge.
-    const tanker: Enemy = { kind: 'tanker', lane: 8, depth: 0.95, contains: 'pulsar' }
+    const tanker: Enemy = makeEnemy('tanker', 8, 0.95, levelParams(1), 'pulsar')
     const s = playing([tanker])
     const out = stepGame(s, NEUTRAL, DT)
 
@@ -163,7 +163,7 @@ describe('pulsar-hum loop edges (AC1: loop while a pulsar is present)', () => {
   })
 
   it('emits NEITHER edge when no pulsar is ever on the board', () => {
-    const s = playing([{ kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 4, 0.5, levelParams(1))])
     const out = stepGame(s, NEUTRAL, DT)
     expect(eventsOfType(out, 'pulsar-hum-start')).toHaveLength(0)
     expect(eventsOfType(out, 'pulsar-hum-stop')).toHaveLength(0)

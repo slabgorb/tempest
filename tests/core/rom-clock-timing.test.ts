@@ -24,15 +24,14 @@
 
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { tubeForLevel } from '../../src/core/geometry'
 import {
   ROM_FPS,
   SIM_STEP,
-  flipPatternForLevel,
   enemyFireHoldoffFrames,
-  enemyFireHoldoffSeconds,
-} from '../../src/core/rules'
+  enemyFireHoldoffSeconds, levelParams } from '../../src/core/rules'
+import { JUMP_ANGLE_STEPS } from '../../src/core/enemies/interpreter'
 import type { GameState } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
 
@@ -83,7 +82,7 @@ describe('the tube traverse — a level-1 flipper takes 5.7 s, not 2.7 s', () =>
     expect(expected).toBeCloseTo(5.727, 2)
 
     const s = isolated(7)
-    s.enemies = [{ kind: 'flipper', lane: 0, depth: 0, flipTimer: 999 }] // no flips: straight up
+    s.enemies = [makeEnemy('flipper', 0, 0, levelParams(1))] // no flips: straight up
 
     const { state, seconds } = runUntil(s, (x) => (x.enemies[0]?.depth ?? 0) >= 0.999, 12)
 
@@ -96,33 +95,36 @@ describe('the tube traverse — a level-1 flipper takes 5.7 s, not 2.7 s', () =>
 })
 
 describe('the flip cadence — the frame-counted family (AC3)', () => {
-  it('a settled L1 flipper changes lane after (moveFrames + flipFrames) ROM frames', () => {
+  it('a wave-2 flipper changes lane after the CAM\'s OWN frame count, on the ROM clock', () => {
     // This is the test that catches a rebase that fixed the SPEEDS but left the
-    // frame-counted timers on the 60 Hz clock — the exact failure FR-012 warns
-    // about. moveFrames counts down to the flip START; flipFrames animates it; the
-    // lane settles on completion (flipper.ts:18-40).
+    // frame-counted timers on the 60 Hz clock — the exact failure FR-012 warns about.
     //
-    // Under EITHER FR-012 answer the wall-clock total must be the same:
-    //   L1: (8 + 4) frames / 28.44 fps = 0.422 s.   Today: 12 / 60 = 0.200 s.
-    const { moveFrames, flipFrames } = flipPatternForLevel(1)
-    expect(moveFrames).toBe(8)
-    expect(flipFrames).toBe(4)
-
-    const expected = (moveFrames + flipFrames) / ROM_FPS // 0.421875 s
-    const today = (moveFrames + flipFrames) / INVENTED_60 // 0.2 s
+    // It used to count `moveFrames + flipFrames` at LEVEL 1. tp1-4 refuted both halves
+    // of that: `flipPatternForLevel` was invented, and a level-1 flipper never flips at
+    // all (its CAM program is NOJUMP — W-006, the oracle in tp1-4.cam-behaviour). So the
+    // cadence is re-seated onto the first wave that DOES flip, and onto the ROM's own
+    // frame counts, which is what AC3 was always really about.
+    //
+    // Wave 2 is MOVJMP (CAMWAV, ALWELG.MAC:713). Its frames, straight off the program:
+    //     VSLOOP 8   → 8 frames of climb, one VSMOVE per VEXIT   (ALWELG.MAC:2394-2397)
+    //   + VJUMPS     → 1 frame to start the jump                 (2398-2399)
+    //   + 8 × VJUMPM → 8 angle-steps, the lane settles on the 8th (W-008)
+    //   = 17 ROM frames. At 28.44 fps that is 0.598 s; on the invented 60 it is 0.283 s.
+    const frames = 8 + 1 + JUMP_ANGLE_STEPS
+    const expected = frames / ROM_FPS
+    const today = frames / INVENTED_60
     expect(expected / today).toBeCloseTo(2.109, 2) // the 2.11x, proved not assumed
 
     const s = isolated(3)
+    s.level = 2
     const startLane = 5
-    s.enemies = [{
-      kind: 'flipper', lane: startLane, depth: 0.2,
-      flipTimer: moveFrames / ROM_FPS, // settled, counting down to its first flip
-    }]
+    s.enemies = [makeEnemy('flipper', startLane, 0.2, levelParams(2))]
 
     const { state, seconds } = runUntil(s, (x) => (x.enemies[0]?.lane ?? startLane) !== startLane, 5)
 
     expect(state.enemies.length, 'the flipper must survive to flip').toBe(1)
-    // One sim step of quantisation either way.
+    // Two sim steps of quantisation either way — the exact yield point inside the
+    // jump loop is an implementation choice the ROM does not dictate to the frame.
     expect(seconds).toBeGreaterThan(expected - 2 * SIM_STEP)
     expect(seconds).toBeLessThan(expected + 2 * SIM_STEP)
     // Hard floor: it cannot still be flipping at the 60 Hz cadence.
@@ -210,7 +212,7 @@ describe('dt-independence — what the rebase must NOT break (rule guard)', () =
     const N = 28
     const climbOver = (dt: number, steps: number): number => {
       let s = isolated(11)
-      s.enemies = [{ kind: 'flipper', lane: 0, depth: 0, flipTimer: 999 }]
+      s.enemies = [makeEnemy('flipper', 0, 0, levelParams(1))]
       for (let t = 0; t < steps; t++) s = stepGame(s, NEUTRAL, dt)
       return s.enemies[0].depth
     }

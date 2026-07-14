@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 650,
+      "line": 653,
       "verbatim": "  stepBullets(s, dt)"
     },
     "claim": "PLAY (ALWELG:869-878) runs MOVCUR, FIREPC, PROSUZ, MOVNYM, MOVINV, MOVCHA, FIREIC, COLLIS, PROEXP, ANALYZ. Our stepPlaying (sim.ts:630-644) runs stepPlayer, stepFiring, stepZap, stepBullets, stepEnemies, stepEnemyFire, stepEnemyBullets, resolve*. The first three slots match exactly (cursor, player fire, superzapper). After that: (a) we move player charges (stepBullets, line 633) BEFORE enemies; the arcade moves ALL charges (player and enemy, one MOVCHA loop) AFTER MOVINV, so an invader is at its new position when the bullet advances through it; (b) the arcade fires enemy charges (FIREIC) AFTER MOVCHA, so a newly launched enemy bolt sits still for its birth frame; we call stepEnemyFire then stepEnemyBullets, so our new bolt already moves one step on the frame it is born; (c) the arcade has no spawn step here at all — MOVNYM occupies that slot (see W-002).",
@@ -45,7 +45,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 127,
+      "line": 146,
       "verbatim": "    if (s.spawn.timer <= 0) {"
     },
     "claim": "MOVNYM (ALWELG:1110-1123) computes INMCOU + INCCOU (invaders on lines + chasers), compares it against WINVMX, and if the slots are booked — or a superzap is running (SUZTIM != 0) — it sets TEMPY negative, which STOPS every nymph from advancing that frame. There is no spawn timer anywhere in ALWELG. Nymphs simply march up and hatch as fast as free invader slots allow. We instead release one enemy every params.spawnInterval seconds (rules.ts:187: max(0.3, 1.2/ramp)) regardless of how many are already alive.",
@@ -65,7 +65,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 136,
+      "line": 155,
       "verbatim": "      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))"
     },
     "claim": "WINVMX = 6 for every wave 1-99 (TINVMX), and NINVAD = 7 (ALCOMN.MAC:809). ACTINV (ALWELG:1219-1263) scans slots WINVMX..0 for a vacancy and returns 'no slot' when all are taken; MOVINV loops the same 7 slots. So the arcade never has more than 7 active invaders on screen, at ANY level. Our stepEnemies pushes a new enemy whenever the spawn timer elapses, with no population cap: at level 10 our budget is 24 enemies (rules.ts:183) released every 0.51 s, so 20+ can be alive simultaneously.",
@@ -92,7 +92,8 @@
     "reasoning": "This is the structural finding the rest of the enemy divergences hang off. Our modules cannot express, at any constant setting: 'move up N frames then flip' (MOVJMP), 'flip continuously while climbing' (SPIRAL), 'reverse flip direction every 2 then every 3 jumps' (SPIRCH), 'flip only when NOT standing on a spike' (COWJMP), 'flip away from the player' (AVOIDR), or 'crouch 4 frames at the rim then jump toward the player at double angular speed' (TOPPER). Retro-fitting them as booleans on five steppers will reproduce the shapes badly and will not survive the next level's program. Honest sizing: this is a rewrite of src/core/enemies/* into a small CAM interpreter plus the eleven programs — the enemy modules do not survive it. [REFUTATION] Re-opened TABJSR (ALWELG.MAC:1611-1631): counted exactly 20 CAM-A opcodes (VEXIT, VSLOOP, VSKIP0, VSETPC, VELOOP, VNOOP, VSMOVE, VSTRAI, VSLOPB, VJUMPS, VJUMPM, VCHROT, VKITST, VBR0PC, VELTST, VSFUSE, VFUSKI, VSPUMO, VCHPLA, VCHKPU) — matches the claimed count and roster exactly. Re-opened the CAM table (ALWELG.MAC:2374-2526): counted exactly 11 named programs (TRALUP, NOJUMP, MOVJMP, SPIRAL, SPIRCH, TOPPER, COWJM2/COWJMP, FUSEUP, FUSELR, PULSCH, AVOIDR) — matches. Confirmed MOVINV (1508-1535) is a genuine bytecode interpreter: loads INVCAM into CAMPC, dispatches through JSRCAM in a loop until EXICAM clears (VEXIT sets it to 0), auto-increments CAMPC, writes it back to INVCAM per-invader — a real per-invader program counter with loop state (INVLOO). Checked our side: sim.ts:144-197 is a plain kind-keyed switch with per-kind hand-written steppers (flipper.ts, pulsar.ts, fuseball.ts, spiker.ts, tanker.ts) — grepped the enemies/ directory for any CAM/opcode/program-counter concept and found none. The structural gap is real and is the correct root cause behind W-006/W-007's specific divergences.",
     "recommendation": "fix",
     "size": "l",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-4"
   },
   {
     "id": "W-006",
@@ -112,7 +113,8 @@
     "reasoning": "This is the single most visible gameplay difference in the audit. The opening level of Tempest is famously a shooting gallery of flippers coming straight up the lanes; ours is a swarm of flippers strobing sideways five times a second. It also means levels 5, 9, 13 (COWJM2: flip only when off a spike), 10 and 15 (AVOIDR: flip AWAY from the player), and 3, 8, 12 (SPIRAL: flip continuously) all play identically in our build. [REFUTATION] Re-opened CAMWAV (ALWELG.MAC:711-727): transcribed all 16 table entries myself — NOJUMP, MOVJMP, SPIRAL, SPIRCH, COWJM2, MOVJMP, SPIRCH, SPIRAL, COWJM2, AVOIDR, SPIRCH, SPIRAL, COWJM2, NOJUMP, AVOIDR, SPIRCH — matches the claim's list verbatim, entry-for-entry. Decoded the TZANDF indexing mechanism (TZANDF=6, 'AND CURRENT WAVE WITH F, THEN DO TZ', line 411) via DOTZAN (line 791-799): it takes CURWAV (confirmed 0-based — attract mode does `LDA RANDOM; AND I,7` to pick among the first 8 levels, i.e. CURWAV 0-7 = levels 1-8) and effectively indexes the table by CURWAV mod 16, so level 1 (CURWAV=0) selects table entry 0 = NOJUMP. Read NOJUMP's program (2387-2390): VSMOVE (climb); VEXIT; VSETPC NOJUMP (reloop) — no VJUMPS is ever reached, so a level-1 flipper genuinely never flips while climbing, only becoming a chaser once it reaches the rim. This is also consistent with well-documented real-Tempest trivia (level 1 flippers climb straight up). Checked our side: flipper.ts has no level/CAMWAV-driven program selection at all — every level runs the identical flip-then-climb state machine, varying only moveFrames (rules.ts flipPatternForLevel, 8 at L1 per the claim's cited math). The divergence is real and level 1 is provably wrong in our build.",
     "recommendation": "fix",
     "size": "l",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-4"
   },
   {
     "id": "W-007",
@@ -132,7 +134,8 @@
     "reasoning": "A rule-driven direction is what makes arcade flippers feel like they are hunting you and makes the AVOIDR levels feel evasive; a coin-flip makes them feel like Brownian motion and, statistically, makes them approach the player half as often. It also means our RNG is consumed at a completely different rate, so no seeded replay can ever line up. [REFUTATION] Re-opened AVOIDR (ALWELG.MAC:2513-2515): VCHPLA then VCHROT then VJUMPS — verbatim as claimed (set toward player, then flip the bit, i.e. deliberately away). Re-opened SPIRCH (2420-2443): VSLOOP 2 ... VCHROT ... VSLOOP 3 ... VCHROT — confirms 'reverse every 2 then every 3 jumps' claim exactly. Re-opened PULSCH (2493-2509): VCHPLA appears at PULSC3 immediately before each VJUMPS — confirms 'VCHPLA before every flip'. Decoded JCHPLA (1876-1889): computes POLDEL (polar delta to CURSL1) and sets/clears the INVROT bit by the shortest way — a deterministic geometric calculation, no RANDOM involved. Decoded JJUMPS (2013-2050) and JCHROT (1722-1726): both read/toggle the existing INVROT bit, never assign it randomly — confirms direction persists across jumps as claimed. Checked our side: flipper.ts:36 and pulsar.ts:32 both draw `nextFloat(rng) < 0.5 ? -1 : 1` on every flip — confirmed, and neither ROM flipper CAM (TRALUP/NOJUMP/MOVJMP/SPIRAL/SPIRCH/COWJM2/AVOIDR) nor the pulsar CAM (PULSCH) ever consult RANDOM for direction, so this divergence is real for these two enemy kinds. HOWEVER the claim overstates itself: 'Not one call site draws a random direction' is false as a blanket statement — grepped RANDOM across ALWELG.MAC and found LEFRIT (2171-2178), called from JFUSEUP/MAYBLR (2093-2166, the FUSEUP/FUSELR CAM's underlying routine, dispatched via the VSFUSE opcode), which does `BIT RANDOM` to genuinely randomly choose CW/CCW for a fuseball's non-chasing jumps. That is a real random-direction call site inside the CAM system, it's just not on the flipper or pulsar path the finding actually cites and fixes. The actionable core (flipper.ts/pulsar.ts should be rule-driven, not RNG-driven) still holds; only the absolute 'not one call site' framing needs correcting. [CORRECTION] The claim's blanket assertion 'Not one call site draws a random direction' is wrong: FUSEUP's underlying JFUSEUP routine (ALWELG.MAC:2126,2139,2162 → LEFRIT at 2171) does use `BIT RANDOM` to pick a fuseball's jump direction when not chasing the player. This does not invalidate the finding's concrete fix target (flipper.ts:36, pulsar.ts:32 — neither of which the ROM ever randomizes), but the general principle should be stated as 'flippers and pulsars are never randomized; fuseballs sometimes are' rather than an absolute rule.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-4"
   },
   {
     "id": "W-008",
@@ -152,7 +155,8 @@
     "reasoning": "Our climbing flips are twice as fast as the arcade's, which is what makes a flipper cross a lane in 4 frames instead of 8 and halves the window in which the player can rotate 'through' a mid-flip flipper (see W-010). Our rim value (4) happens to be right, for the wrong reason — flipFrames was modelled on flip_top_accel, which is WTTFRA, a rim-only parameter. [REFUTATION] Re-opened ALWELG.MAC:2447-2460 (TOPPER) and the CAM interpreter (MOVINV loop, 1508-1535; JSRCAM/JELOOP/JSETPC macros, 1575-1691). Confirmed the interpreter's frame boundary is defined purely by hitting a VEXIT opcode — VELOOP/VSETPC reloops that don't cross a VEXIT execute WITHIN the same game frame. Traced KJULP1/KJULP2: each 'jump frame' does VSLOPB WTTFRA (load loop=WTTFRA) then loops VJUMPM up to WTTFRA times before VBR0PC TOPPER or loop-exhaustion forces the next VEXIT — so TOPPER really does burn WTTFRA VJUMPM calls per frame. Cross-checked every other flipper CAM cited (MOVJMP 2394-2404, SPIRAL 2407-2416, SPIRCH 2420-2443, COWJM2/COWJMP/COWJM3 2462-2472, AVOIDR 2513-2526): every one of them places exactly one VJUMPM between consecutive VEXITs — 1 angle-step/frame, confirmed by direct read, no exceptions. TWTTFRA (704-706) is T1,1,20.,2 / T1,21.,32.,2 / T1,33.,99.,3 — WTTFRA=2 for waves 1-32, 3 for 33+, exact match to the claim. JJUMPM (1892-1976, the non-fuseball ELSE branch at 1945-1971) advances INVAL2 by ±1 mod 16 per call and ends the jump when it matches CALSAN's reverse-direction angle; CALSAN (2074-2091) contains a literal 'ADC I,8' term, structurally guaranteeing the start/end angles differ by 8 (a half-turn on the mod-16 wheel) regardless of geometry — '8 steps' holds. Checked ALWELG is genuinely linked (ALEXEC.MAP line 5/10/25) and has zero conditional-assembly (.IF) blocks in the whole file, so nothing here is dead code. On our side, confirmed flipper.ts:16 (depth clamp) and that flipPatternForLevel/flipFrames (rules.ts:170-177) is the ONLY place flipFrames is used (flipper.ts:13,21,38 and sim.ts:113) — applied uniformly to every flip regardless of depth, exactly as claimed. Notably our own comment at rules.ts:162 says 'flip_top_accel... steps 2->3 at L33' — i.e. our own code's commentary already identifies WTTFRA/flip_top_accel as the source, corroborating the finding's own diagnosis that this is a rim-only parameter misapplied everywhere. [CORRECTION] Minor: the finding states the rim flip is '2.67 frames' at deep levels (8/3). Because VBR0PC checks for jump-done after every single VJUMPM inside the WTTFRA-loop and can exit the loop before it's exhausted, the actual integer frame count for WTTFRA=3 is ceil(8/3)=3 frames (steps 3+3+2), not a fractional 2.67 — so our flipFrames=3 for L33+ is arithmetically exact for the RIM case, not just 'happens to be right' only at L1-32. The core divergence claim is unaffected: it is still wrong for every climbing (non-rim) flip, which should take 8 frames constant, not 3-4.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-4"
   },
   {
     "id": "W-009",
@@ -164,9 +168,9 @@
       "verbatim": "ATOP:\tJSR CHASER\t\t;YES. CONVERT TO CHASER"
     },
     "ours": {
-      "file": "src/core/enemies/flipper.ts",
-      "line": 16,
-      "verbatim": "  e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 155,
+      "verbatim": "  e.depth = Math.max(0, Math.min(1, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))"
     },
     "claim": "JSMOVE detects INVAY <= CURSY and calls CHASER (1824-1874), which: pins the invader exactly at CURSY; decrements INMCOU and increments INCCOU (the arcade tracks 'invaders on lines' and 'invaders chasing the cursor' separately); sets CAMPC to TOPPER; and picks the chase direction — the shortest way to the player via JCHPLA, UNLESS exactly one other chaser already exists, in which case it sends this one the OPPOSITE way to pincer the player (1845-1869). TOPPER (2447-2460) then crouches 4 frames, tests for a cursor kill each frame (VKITST), and jumps around the rim at WTTFRA angle-steps per frame. Our flipper has no rim state: it clamps depth at 1 (flipper.ts:16) and keeps running its climbing behaviour; the grab is resolved externally in resolvePlayerHits.",
     "reasoning": "The chaser is the enemy that actually kills you in Tempest, and the pincer rule is why two flippers at the rim close from both sides instead of chasing in a conga line. Ours can never do this. Cheap to bolt onto our steppers as a state, but it wants the CAM (W-005) to be honest. [REFUTATION] Re-opened ALWELG.MAC:1747 (ATOP: JSR CHASER) — verbatim match. Re-opened CHASER (1824-1874) in full: confirmed it pins the invader at CURSY (1825-1826), decrements INMCOU (1844) and increments INCCOU (1873) as separate counters, sets CAMPC to TOPPER-CAM-1 (1871-1872), and implements the pincer rule exactly as described — checks INCCOU==1 (1845-1847: IFNE means 'if count != 1, i.e. 0 or 2+ existing chasers' -> shortest way via JCHPLA; the implicit ELSE, exactly 1 existing chaser, scans for that other chaser (1851-1864) and sets this invader's rotation to its OPPOSITE (1865-1869)). This is a genuine, distinct state machine with its own counter and directional rule, not something incidental. On our side, grepped the entire src/core tree for 'chaser', 'pincer', 'INCCOU' — zero hits, confirming no equivalent state exists anywhere in our code. Confirmed flipper.ts:16 (depth clamp, no rim state) and resolvePlayerHits in sim.ts:382-399, which resolves the grab externally by simple depth/lane overlap with no counter, no CAM, no pincer targeting. The citations and claim both hold exactly as stated.",
@@ -185,7 +189,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 402,
+      "line": 405,
       "verbatim": "    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl"
     },
     "claim": "JKITST (1980-1993) tests INVAC1 for IFPL — the INVMOT ($80) bit clear, i.e. the invader is on its lines and NOT jumping — before it will compare INVAL1/INVAL2 against CURSL1/CURSL2 and kill the cursor. A jumping invader passing over the player's lane does not kill. Our resolvePlayerHits excludes flippers with `e.flipping` (sim.ts:390) for exactly this reason.",
@@ -260,7 +264,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 299,
+      "line": 300,
       "verbatim": "    spikerSpeed: 0.22 * ramp,"
     },
     "claim": "The spiker's speed slot is WINVIL+ZABTRA, filled from TSPIIN (602-605) using type code TB, which DOTB (829-832) implements as 'the record byte PLUS the already-computed WINVIL' (the CONTOUR loop walks WTABLE backwards, so WINVIL is set first). TSPIIN's byte is 0 for waves 1-20, so the spiker's speed IS the flipper's speed: 1.375 along-units/frame at wave 1, which at the ROM's 28.44 fps (FR-001) is 0.175 depth/s. It then becomes WINVIL-48 for waves 21-32, WINVIL-40 for 33-48, WINVIL-48 for 49-99 — i.e. FASTER than a flipper in the late game. Our spikerSpeed is 0.22 * (1 + 0.15*(level-1)): 0.22 depth/s at L1, on a curve unrelated to the flipper's — 26% FASTER than the arcade's spiker, not slower.",
@@ -280,7 +284,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 301,
+      "line": 302,
       "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
     },
     "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
@@ -297,7 +301,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 192,
+      "line": 193,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, and in the same units: ROM GAME frames, converted to seconds only at the call site (sim.ts:223), where the divisor is wrong.",
@@ -314,7 +318,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 178,
+      "line": 179,
       "verbatim": "const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]"
     },
     "claim": "FIREIC (2705-2708) draws RANDOM and fires when RANDOM >= CHANCE[ESHCOU], where ESHCOU is the number of enemy shots already on screen. The thresholds 0, $E0, $F0, $FA, $FF give firing probabilities of 256/256 = 1.0, 32/256 = 0.125, 16/256 = 0.0625, 6/256 = 0.0234, 1/256 = 0.0039. Our ENEMY_FIRE_CHANCE is [1.0, 0.125, 0.0625, 0.023, 0.004], indexed the same way (sim.ts:229).",
@@ -331,7 +335,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 171,
+      "line": 172,
       "verbatim": "    case 'pulsar':  return level >= 60"
     },
     "claim": "FIREIC gates on the INVFIR ($40) bit of INVAC2 (2696-2698). TNEWI2 (1485-1489) sets that bit per type: flipper ZFIRYE, pulsar ZFIRNO, tanker ZFIRYE, spiker(TRALER) ZFIRYE, fuse ZFIRNO. NEWPUL (1434-1438) then ORs WPULFI into the pulsar's byte, and WPULFI comes from TWFULF/TWPULF — which has NO record below wave 60 (so it resolves to 0 via the TE default) and ZFIRYE for waves 60-99. Our enemyCanShoot returns true for flipper/tanker/spiker, level >= 60 for pulsar, false for fuseball.",
@@ -348,7 +352,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 151,
+      "line": 152,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "FIREIC searches enemy-charge slots WCHAMX..0 for a vacancy (2709-2726), so the live cap is WCHAMX+1 (hence the ';ADD 1' comment). TCHAMX (586-588) gives WCHAMX = 1,1,1,2,3,2,2,3,3 for waves 1-9, then 2 for waves 10-64, then 3 for 65-99. The cap is therefore 2 bolts on waves 1-3, 3 on wave 4, 4 on wave 5, 3 on waves 6-7, 4 on waves 8-9, 3 on waves 10-64 and 4 on waves 65+ — it goes DOWN as well as up. NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count. We hard-cap at 4 on every level (sim.ts:225).",
@@ -368,7 +372,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 161,
+      "line": 162,
       "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
     },
     "claim": "TCHARIN is a single TB record for waves 1-99 with byte -64, and TB (DOTB, 829-832) means 'byte + WINVIL'. So WCHARL = WINVIL - 64 for EVERY wave, then TIMES8 scales it: the bolt is always exactly 64*8/256 = 2.0 along-units/frame faster than the invader that fired it. At the ROM's real 28.44 fps (FR-001) that offset is 2.0 * (256/9) / 224 = 0.254 depth/s, and the wave-1 bolt's absolute speed is (44+64)/32 = 3.375 along/frame = 0.4286 depth/s. Our ENEMY_BOLT_SPEED_OFFSET is 0.72 depth/s — 2.83x the ROM's offset — giving 0.368 + 0.72 = 1.088 depth/s at L1, 2.54x the arcade's bolt. The code comment claiming 'flipper-relative +0xc0' is not what the source says.",
@@ -388,7 +392,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 154,
+      "line": 155,
       "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
     },
     "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
@@ -428,9 +432,9 @@
       "verbatim": "\t.BYTE TR,17.,32.,0,40"
     },
     "ours": {
-      "file": "src/core/enemies/fuseball.ts",
-      "line": 47,
-      "verbatim": "      const dir = laneStepToward(tube, e.lane, playerLane)"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 275,
+      "verbatim": "    const dir = shortestRot(ctx.tube, e.lane, ctx.playerLane)"
     },
     "claim": "The fuseball's chase behaviour is controlled by WFUSCH (D7 = chase at the top, D6 = chase on the tube, ALCOMN.MAC:786) and comes from TWFUSC (686-690). TWFUSC's FIRST record starts at wave 17, and the table ends in TE — so for every wave below 17, CONTOUR's EOT path (442) yields 0 and WFUSCH = 0, meaning NEITHER chase bit is set. JFUSEUP/MAYBLR (2121-2165) then always take the LEFRIT branch, which chooses the rotation direction from RANDOM (2171-2178). Fuseballs first appear at wave 11 (W-036), so for their entire early-game life they wander. Even from wave 17 the chase is conditional: TR alternates 0/$40 across waves 17-32, and MAYBLR only chases on an EVEN invader index (2157-2159). Our fuseball ALWAYS steps toward the player's lane.",
     "reasoning": "Our fuseball is a homing missile from the moment it appears; the arcade's is a drunk that becomes a hunter later. This is the difference between 'fuseballs are the level-11 surprise' and 'fuseballs are unavoidable'. [REFUTATION] Re-opened ALWELG.MAC and ALCOMN.MAC. WFUSCH is confirmed as 'FUSE CHASE PLAYER FLAG (D7 FOR TOP;D6 FOR TUBE)' (ALCOMN.MAC:786), matching the claim's bit assignments exactly. TWFUSC (686-690) has its first record start at wave 17 and terminates in TE; traced CONTOUR's table-walk (398-469) and confirmed the TE-type-code EOT path (442, 'BEQ TEXIT' with A already 0 from the just-loaded TYPCOD) writes 0 straight into the output byte at TEXIT (461-463) whenever no record's wave range matches — so for any CURWAV<17, WFUSCH=0, both chase bits clear. Verified both consumers respect this: MAYBLR's 'BIT WFUSCH / IFVS' (2155-2156, V flag = bit6/D6) and JFUSEUP's 'LDA WFUSCH / IFMI' (2122-2123, bit7/D7) both fall through to JSR LEFRIT when WFUSCH=0, and LEFRIT (2171-2178) picks direction purely via 'BIT RANDOM / IFVS'. Our rollSpawnKind (rules.ts:253) does gate fuseball introduction at level>=11, consistent with the finding's cross-reference, but stepFuseball (fuseball.ts) takes no level/wave parameter at all and unconditionally computes dir = laneStepToward(tube, e.lane, playerLane) (line 38) — there is no code path by which it could reproduce the wave-17 gate. Holds.",
@@ -448,9 +452,9 @@
       "verbatim": "\tCMP I,20\t\t;YES. TURN BACK BEFORE TOP"
     },
     "ours": {
-      "file": "src/core/enemies/fuseball.ts",
-      "line": 38,
-      "verbatim": "  e.depth = Math.min(1, e.depth + params.fuseballSpeed * dt)"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 155,
+      "verbatim": "  e.depth = Math.max(0, Math.min(1, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))"
     },
     "claim": "JFUSEUP (2105-2130): if there are nymphs left AND CURWAV < 17 ('EARLY WAVE?'), the fuseball's climb is capped at Y = $20 (depth 0.929) instead of CURSY — reaching it triggers a lateral move (LEFRIT/FUCHPL) rather than an arrival. Only when the nymph queue is empty does it 'HEAD FOR THE TOP' (2118). It also reverses at the BOTTOM of its range ($80, 2132-2143), so it yo-yos. Our fuseball climbs monotonically to depth 1 and grabs.",
     "reasoning": "The arcade's early-game fuseball is a lane-denial hazard that patrols the middle of the well; ours is a killer that always arrives. Note this rule depends on the nymph count (W-002), so it cannot be modelled correctly until nymphs exist — a shared prerequisite with W-029 and W-041. [REFUTATION] Re-opened ALWELG.MAC:2095-2145 (JFUSEUP) line by line, tracking which value is in the accumulator through each conditional (a real risk here since several IF blocks in a row don't reload A). Confirmed the up-climb path: after INVAY is updated (2098-2104) and the arrival clamp against CURSY (2105-2108) is skipped (i.e., not yet arrived), the code falls into 'LDY NYMCOU / IFNE' (nymphs left) / 'LDY CURWAV / CPY 17. / IFCC' (early wave) / 'CMP I,20' (2115) — this CMP reuses the still-live accumulator value (the just-updated INVAY), correctly decoded as the claim states: comparing current climbed position against 0x20. Confirmed via the Y-direction analysis (see W-021) that Y=0x20 sits closer to the rim than Y=CURSY's normal arrival, giving depth (0xf0-0x20)/224 ≈ 0.929 — matching the claim and matching our own SPIKER_TURNAROUND_DEPTH constant's use of the same $20 value for a different enemy. When NYMCOU==0 the code RTS's immediately at 2118 ('NONE LEFT. HEAD FOR TOP'), skipping the cap entirely. Confirmed the yo-yo bottom reversal too: the down-climb branch (2131-2143) calls JSMOVD then 'CMP I,080 / IFCS' (2133-2134, 'AT BOTTOM OF RANGE?'), reversing there. Our fuseball.ts has no nymph count, no wave gate, and monotonically climbs to depth 1 (line 30: 'Math.min(1, e.depth + params.fuseballSpeed * dt)') with no reversal — the divergence is real and the size='m' is fair given it depends on nymphs not yet existing in our sim. Holds.",
@@ -476,7 +480,8 @@
     "reasoning": "The pulsar is supposed to walk deliberately onto your lane and then electrify it; a random walk makes it a slow flipper. PUCHDE is also a real per-wave table (40/20 alternating at waves 17-32, ramping to 20/10 by wave 40+), while our flipInterval is a hand-tuned 1.5/ramp. [REFUTATION] Re-opened ALWELG.MAC. PULSCH (2493-2509, explicitly commented 'PULSAR CHASER PLAYER') runs VSLOPB PUCHDE (a per-wave delay load), VSPUMO in a loop, VCHKPU (pulse check), then PULSC3: VCHPLA (2504, verbatim as cited) before VJUMPS starts the flip. Decoded the CAM macro dispatch (TABJSR, 1611-1631): VCHPLA maps to JCHPLA (entry 0x24, line 1630), and JCHPLA itself (1876-1889) computes POLDEL between the invader's line and CURSL1, then sets the CW/CCW rotation bit based on the shorter arc ('SEND CHASER SHORTEST WAY') — a deliberate toward-player computation, not randomness. Confirmed TPUCHDE (680-685, PN=40,PC=20) is a real per-wave chase-DELAY table (governs cadence between flips, not direction) — the claim's numeric gloss is a fair simplification of the TZ/TR/TA record mix. Read pulsar.ts directly: stepPulsar's flip branch (line 32) is 'const dir = nextFloat(rng) < 0.5 ? -1 : 1' — pure coin-flip, no player-lane input at all — and uses params.flipInterval (line 34), never PUCHDE. The divergence is real and correctly characterized: the ROM pulsar deliberately homes onto the player's lane before flipping; ours is a random walk. Holds.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-4"
   },
   {
     "id": "W-026",
@@ -488,9 +493,9 @@
       "verbatim": "\tADC PULTIM"
     },
     "ours": {
-      "file": "src/core/enemies/pulsar.ts",
-      "line": 26,
-      "verbatim": "    e.pulseTimer = e.pulsing ? PULSE_DURATION : params.pulseInterval"
+      "file": "src/core/sim.ts",
+      "line": 192,
+      "verbatim": "      e.pulseTimer = e.pulsing ? PULSE_DURATION : params.pulseInterval"
     },
     "claim": "MOVINV updates the pulse ONCE per frame, outside the invader loop (1536-1570): PULSON += PULTIM; a sign change of PULSON is the on/off transition (PULSON >= 0 = pulsing); PULSON bounces between +15 and -63 (1558-1568), with PULTIM = 4 for waves 1-48, 6 for 49-64, 8 for 65+ (WPULTIM, 610-613). With PULTIM = 4 the full cycle is ~40 GAME frames, which at the ROM's 28.44 fps (FR-001) is 1.41 s, of which only ~9 frames (~0.32 s) are ON. Every pulsar on the board pulses in unison off this one counter. We give each pulsar its OWN pulseTimer, ON for PULSE_DURATION = 0.6 s and OFF for pulseInterval = max(1.2, 3.0/ramp) s — a 3.6 s cycle at level 1, bottoming out at 1.8 s once the ramp reaches the 1.2 s floor.",
     "reasoning": "Our pulse is ~1.9x too long (0.6 s vs 0.32 s), our cycle is ~1.3x too slow even at its floor (1.8 s vs 1.41 s) and 2.6x too slow at level 1, and the phases are independent between pulsars. The arcade's synchronised, short, fast strobe is what makes a pulsar level readable — you learn the beat and move on the gap; independent per-enemy phases make the board unlearnable. Corrected for the 28.444 fps rebase (see FR-001 and FR-012 in pair-11-framerate-adjudication.json): the original magnitudes ('4x too long, 2x too infrequent') converted the ROM's frame counts at 60 Hz — the shape of the divergence is unchanged, but it is roughly half the size that was filed. [REFUTATION] Re-opened ALCOMN.MAC:774-775: PULSON and PULTIM are each `.BLKB 1` — single global bytes, not per-invader fields. Re-opened ALWELG.MAC:1508-1571 (MOVINV): the invader loop runs and exits (DEC INDEX1/MIEND, line 1533-1535) BEFORE the pulse-update block at 1536-1571, so the pulse math genuinely executes once per frame, outside/after the per-enemy loop, as claimed. Decoded the update: LDA PULSON/ADC PULTIM/TAY/EOR PULSON/STY PULSON (1537-1542) computes new=old+PULTIM and detects a sign flip via XOR — turn ON if the new value is non-negative, OFF if negative, exactly as described. WPULTIM (610-613) confirmed byte-for-byte: 4 for waves 1-48, 6 for 49-64, 8 for 65+. Checked the bounce thresholds by decoding 1557-1570 myself rather than trusting the (stale/typo'd) comment 'BOUNCE BETWEEN -27 AND +15' at 1558 — the actual immediates compared are CMP I,15. and CMP I,-63. (1559, 1562), so the finding's +15/-63 bounce is right and it correctly ignored the wrong comment. I simulated the exact byte machine in Python to check the derived timing: with PULTIM=4 the steady-state cycle is 42 frames (not ~40), of which 9 are ON — so the 9-frame ON claim is exact, but the 40-frame total is undercounted by ~5%. Our side (pulsar.ts:22-27) gives each Pulsar its own independent pulseTimer/pulsing pair, seeded per-enemy in sim.ts:117 — there is no shared global phase anywhere in the codebase (grepped for a single shared pulse clock; none exists). This is a real, large, correctly-identified structural divergence. [CORRECTION] The full pulse cycle is ~42 ROM frames, not ~40 — 42/28.444 = 1.48 s, not 1.41 s (verified by simulating the exact PULSON/PULTIM byte machine). The 9-frame / 0.32 s ON duration is exact. Everything else (global vs. per-enemy phase, the structural description of the update) is accurate.",
@@ -509,7 +514,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 407,
+      "line": 410,
       "verbatim": "  const killer = grabber ?? s.enemies.find((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)"
     },
     "claim": "JPULMO's kill test (1802-1817) requires PULSON to be positive (pulse on) AND INVAY < PULPOT AND both cursor legs to match the pulsar's legs. PULPOT is $A0 for waves 1-64 and $C0 for 65+ (WPULPOT, 606-609) — $A0 is depth 0.357 in our convention. So a pulsing pulsar deeper than 0.357 (i.e. in the far third of the well) does NOT kill. Our resolvePlayerHits kills whenever a pulsing pulsar shares the player's lane, at ANY depth, including one that has just hatched at the far end.",
@@ -528,9 +533,9 @@
       "verbatim": "\tLDY I,ZABFLI\t\t;NO. GO FASTER"
     },
     "ours": {
-      "file": "src/core/enemies/pulsar.ts",
-      "line": 19,
-      "verbatim": "  const climbSpeed = e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 115,
+      "verbatim": "      return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed"
     },
     "claim": "JPULMO (1780-1788) selects the speed index: ZABPUL by default, but if the pulsar is going up and INVAY >= PULPOT (i.e. it is still deeper than the potency height) it swaps to ZABFLI — 'NO. GO FASTER'. WINVIL+ZABPUL / WINVIN+ZABPUL are hard-set to $A0/$FE (547-550) = -1.375 along-units per GAME frame, level-independent — the same byte as the wave-1 flipper. At the ROM's real 28.44 fps (FR-001) that is 1.375 * (256/9) / 224 = 0.175 depth/s. We ship PULSAR_CLIMB_SPEED = 82.5/224 = 0.368 depth/s, and 82.5 is literally 1.375 * 60: the constant carries the invented frame rate on its face. PULSAR_NEAR_FAR_DEPTH = (0xf0-0xa0)/224 = 0.357 is a pure position ratio and IS correct, and the finding's structural half (dual speed, selected exactly this way) stands. The pulsar's other speed — params.flipperSpeed — is 2.11x fast for the same reason (FR-008).",
     "reasoning": "Originally CONFIRMED on the grounds that 'both the threshold and the two speeds are right'. The threshold is right; the two speeds are both 2.11x the arcade's. Corrected for the 28.444 fps rebase (see FR-009 in pair-11-framerate-adjudication.json): reclassed CONFIRMED → DIVERGENCE, keeping the structural half intact — PULSAR_CLIMB_SPEED must become 1.375 * ROM_FPS / 224 = 0.175 depth/s, and because it IS the L1 flipper byte it has to be rebased in the same edit as the flipper table (FR-008) or the two desynchronise. [REFUTATION] Re-opened ALWELG.MAC:1780-1788 (JPULMO climb-up branch). Decoded fully: LDY I,ZABPUL sets the default speed slot; IFPL (going up) checks CMP PULPOT/IFCS — carry SET means INVAY >= PULPOT($A0), i.e. still in the far portion (depth <= 0.357) — and only then swaps LDY to ZABFLI ('NO. GO FASTER'), otherwise keeping ZABPUL. This is: far portion -> flipper speed (level-dependent, faster at high levels), near portion -> the fixed ZABPUL constant. Cross-checked against our pulsar.ts:19 (`e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed`): near (depth>=0.357) -> fixed PULSAR_CLIMB_SPEED, far (depth<0.357) -> flipperSpeed. Structurally identical mapping — confirmed correct. Verified the magnitude claim: WINVIL+ZABPUL/WINVIN+ZABPUL are hardcoded at ALWELG.MAC:547-550 to $A0/$FE every wave (inside CONTOUR, not a per-level WTABLE entry) = -1.375 along/frame in 8.8 fixed point (-2 + 160/256), level-independent, matching the L1 flipper byte (FLIPPER_ALONG_PER_FRAME_L1=1.375 in rules.ts:148). PULSAR_CLIMB_SPEED = 82.5/224 in rules.ts:120, and 82.5 = 1.375*60 — the 60 Hz assumption is baked into the numerator exactly as claimed. At the real 28.444 fps that constant should be 1.375*28.444/224 ≈ 0.175 depth/s versus our shipped 0.368 depth/s: ratio 2.104, matching the audit's already-established 2.11x-too-fast correction factor (60/28.444=2.109). The reclassification from 'both speeds correct' to 'structure correct, both speeds 2.11x fast' is accurate and consistent with the ground-truth framerate rebase.",
@@ -548,9 +553,9 @@
       "verbatim": "\tIFCS\t\t\t;TIME TO REVERSE?"
     },
     "ours": {
-      "file": "src/core/enemies/pulsar.ts",
-      "line": 19,
-      "verbatim": "  const climbSpeed = e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : params.flipperSpeed"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 115,
+      "verbatim": "      return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed"
     },
     "claim": "The pulsar's INVAC2 carries a direction bit (INVDIR, ALCOMN.MAC:869). JPULMO (1789-1801) moves it DOWN when the bit is set, and reverses it back to UP once it descends past PULPOT — unless the nymph queue is empty, in which case it forces the pulsar up ('SEND PULSAR UP', 1793). CHASER (1829-1837) likewise sends a pulsar that reaches the rim back DOWN if any nymphs remain. So a pulsar patrols up and down between the rim and the potency height for as long as the wave still has nymphs. Our pulsar's depth only ever increases.",
     "reasoning": "Same prerequisite as W-024: the reversal is keyed on NYMCOU, so this cannot be modelled correctly until nymphs exist (W-002). The visible effect is large — arcade pulsars hover and strobe in the middle of the well; ours march to the rim and park. [REFUTATION] Re-opened ALWELG.MAC:1789-1801 (JPULMO down-branch) and 1821-1849 (CHASER). Down-branch: JSR JSMOVD moves the pulsar toward the far end (verified JSMOVD at 1764-1776 subtracts a negative speed, i.e. increases INVAY = moves away from rim); then LDY NYMCOU/IFEQ forces A=0xFF ('SEND PULSAR UP' comment at 1793) only when the nymph count is zero — otherwise A keeps the real INVAY from JSMOVD's return. Either way, CMP PULPOT/IFCS then flips INVAC2's direction bit (EOR INVDIR) — reversing to 'up' once genuinely past PULPOT (depth back to <=0.357), or unconditionally when nymphs are gone. CHASER (1829-1837): when a pulsar (CMP ZABPUL/IFEQ) reaches the rim and NYMCOU != 0, it flips INVAC2 (EOR INVDIR) and RETURNS EARLY, skipping the normal become-a-chaser path entirely — so as long as nymphs remain, a pulsar can never grab/chase, it just bounces back down. Cross-checked ALCOMN.MAC:869 (INVDIR=$80, 0=up/1=down) and :916 (NYMCOU, single counter) — both real, both as cited. Grepped our codebase for 'nymph' (case-insensitive): zero hits anywhere in src — nymphs are wholly unmodeled, exactly as the finding's stated prerequisite (W-002) says. Re-read pulsar.ts:20 as cited: `e.depth = Math.min(1, e.depth + climbSpeed * dt)` is a one-directional clamp-to-1 accumulation; there is no code path anywhere in stepPulsar that decreases depth. The yo-yo-while-nymphs-remain behavior is real, our monotonic-climb behavior is real, and the finding is honest about depending on the (also-missing) nymph mechanic.",
@@ -569,7 +574,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 234,
+      "line": 235,
       "verbatim": "export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth"
     },
     "claim": "JSMOVE (1749-1760) splits a carrier the moment its INVAY drops below $20 — depth ($F0-$20)/224 = 0.929, the SAME $20 threshold we already use for SPIKER_TURNAROUND_DEPTH (rules.ts:115). KILINV then places both children at TEMP0 = the parent's own INVAY (2301-2302), i.e. at the parent's exact depth. We split at TANKER_SPLIT_DEPTH = 0.9 and clamp the children to SPLIT_CHILD_DEPTH = 0.85 (tanker.ts:19).",
@@ -588,8 +593,8 @@
       "verbatim": "\tADC I,2"
     },
     "ours": {
-      "file": "src/core/enemies/tanker.ts",
-      "line": 22,
+      "file": "src/core/sim.ts",
+      "line": 204,
       "verbatim": "    makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),"
     },
     "claim": "KILINV computes the first child's line as INVAL1 - 1 (2331-2333) and the second's as that value + 2 (2352-2355), both masked to 0F — so the two children land on the lanes either side of the dead carrier and nothing is left on its own lane. Our splitTanker emits children on wrapLane(lane-1) and wrapLane(lane+1).",
@@ -621,7 +626,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 377,
+      "line": 378,
       "verbatim": "    ['fuseball', level >= 11 ? 4 : 0],"
     },
     "claim": "NEWTAN (1445-1474) picks the cargo by drawing a random index 0-3 into WTACAR and walking it until it finds a type with openings. WTACAR has four entries: slots 0 and 1 are hard-set to ZCARFL on every wave (CONTOUR, 551-553); slot 2 comes from WWTAC2 (614-617) = ZCARFL for waves 1-32, ZCARFU for 33-40, ZCARPU for 41-99; slot 3 comes from WWTAC3 (618-620) = ZCARFL for waves 1-48, ZCARFU for 49-99. So ALL FOUR slots are flippers for waves 1-32: a tanker cannot carry anything but flippers until wave 33, cannot carry a pulsar until wave 41, and the pulsar cargo lives in only one of four slots even then. We roll fuseball cargo from level 11 and pulsar cargo from level 17, at weights 4 against flipper's 10.",
@@ -641,7 +646,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 355,
+      "line": 356,
       "verbatim": "export function rollSpawnKind(level: number, rng: Rng): EnemyKind {"
     },
     "claim": "NYMCHA (1266-1412) decides what a hatching nymph becomes, in this order: (1) compute per-type 'openings' = WFLMAX[type] - FLIPCO[type] (the live count of that type) for all 5 types; (2) subtract 2 openings of the carried type for EVERY live tanker, so cargo is reserved in advance (1286-1303); (3) clamp openings to the total free invader slots; (4) if exactly one type has openings, take it; (5) otherwise satisfy any type whose live count is below its WFLMIN first (1351-1364); (6) then attempt a 'smart launch' — if both a spiker and a tanker slot are free, look at the enemy line the nymph is standing on and launch a SPIKER on a short/dead line or a TANKER on a long one (1366-1385); (7) failing all that, draw RANDO2 AND 3, add 1 — a random type that EXCLUDES flippers (1386-1389) — and walk from there to the first needy type. Our rollSpawnKind is a single weighted pick from a fixed table (flipper 10, tanker 4, spiker 3, pulsar 3, fuseball 3) with level gates and a per-cycle 'hard' multiplier.",
@@ -661,7 +666,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 361,
+      "line": 362,
       "verbatim": "    ['tanker', level >= 5 ? 4 * hard : 0],"
     },
     "claim": "WTANMX (651-657) itemises the tanker MAX for waves 1-5 as 0, 0, 1, 0, 1 — so exactly one tanker is allowed on wave 3, none on wave 4, one on wave 5, then 2 for waves 6-16. WTANMI (645-650) itemises the MIN as 0, 0, 1, 0 — wave 3 REQUIRES its tanker. WSPIMX (628-635) itemises the spiker max for waves 1-6 as 0, 0, 0, 2, 3, 4 — the first spiker is possible on wave 4 — and WSPIMI (621-627) makes wave 4 require one. Our gates are `level >= 5` for both, with weights rather than counts.",
@@ -681,7 +686,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 363,
+      "line": 364,
       "verbatim": "    ['pulsar', level >= 17 ? 3 * hard : 0],"
     },
     "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Our gates are `level >= 17` for pulsars and `level >= 11` for fuseballs (rules.ts:252-253).",
@@ -698,7 +703,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 571,
+      "line": 574,
       "verbatim": "  s.spikes = new Array(s.tube.laneCount).fill(0)"
     },
     "claim": "TELIHI is a TZANDF table (indexed by (wave-1) mod 16) giving NWTELI, the INITIAL height of every enemy line for the new wave. INIENE (303-313) writes that one value into LINEY for all NLINES=16 lines. The bytes are 0, 0, 0, $E0, $D8, $D4, $D0, $C8, $C0, $B8, $B0, $A8, $A0, $A0, $A0, $A8 — so waves 1-3 start clean, and from wave 4 EVERY lane begins with a spike, growing from depth ($F0-$E0)/224 = 0.071 at wave 4 to ($F0-$A0)/224 = 0.357 by wave 13. We reset every lane to zero on every level (advanceLevel, sim.ts:558) and grow spikes only from spikers.",
@@ -717,8 +722,8 @@
       "verbatim": "\tCMP I,20"
     },
     "ours": {
-      "file": "src/core/enemies/spiker.ts",
-      "line": 13,
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 168,
       "verbatim": "  if (e.depth >= SPIKER_TURNAROUND_DEPTH) {"
     },
     "claim": "JSTRAI (2222-2229) compares the spiker's INVAY against $20; when it climbs past it ('MAX HEIGHT?'), it sets the ZDIRDO bit to send it back down and pins INVAY at $20. That is depth ($F0-$20)/224 = 0.929, which is exactly our SPIKER_TURNAROUND_DEPTH (rules.ts:115).",
@@ -734,9 +739,9 @@
       "verbatim": "\tIFCC\t\t\t;NEW ENEMY LINE?"
     },
     "ours": {
-      "file": "src/core/sim.ts",
-      "line": 186,
-      "verbatim": "        s.spikes[sp.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(s.spikes[sp.lane], sp.depth))"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 165,
+      "verbatim": "  ctx.spikes[e.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(ctx.spikes[e.lane], e.depth))"
     },
     "claim": "JSTRAI (2214-2221) writes the spiker's own INVAY straight into LINEY whenever it is higher than the current line height — the spike IS the spiker's high-water mark, with no cap other than the spiker's own $20 turnaround (W-038). So a fully grown spike reaches depth 0.929, essentially the rim. We clamp the stored spike height to SPIKE_MAX_DEPTH = 0.75 (rules.ts:28) even though we already turn the spiker around at 0.929 — so the last 0.18 of the spiker's climb lays no spike at all.",
     "reasoning": "Spike height is the entire warp-crash threat model. Our tallest possible spike stops well short of the rim, so an unattended spiker is far less punishing than the arcade's — and W-037's pre-seeded spikes plus a 0.929 ceiling is what makes late-level warps genuinely dangerous. The cap and the turnaround should be the same $20. [REFUTATION] JSTRAI citation is exact: line 2216 verbatim is 'IFCC ;NEW ENEMY LINE?', and the 2214-2221 range covers LDA X,INVAY / CMP Y,LINEY / IFCC / STA Y,LINEY / LDA I,80 / STA Y,LINSTA / comment / ENDIF -- confirmed the LINEY-update block runs on the RAW (pre-clamp) INVAY value, and the INVAY-clamp-to-$20-and-reverse logic runs immediately AFTER in the same routine (not before), so the high-water mark genuinely can reach the $20 turnaround before the position itself is clamped. Independently re-derived the finding's own arithmetic from real named constants (ILINDDY=$F0, ILINLIY=$10 -> divisor 224) rather than trusting its output: (0xF0-0x20)/224 = 0.929, matching. Checked our code directly (spiker.ts:12-15): stepSpiker turns around at SPIKER_TURNAROUND_DEPTH (~0.929, rules.ts:115), while sim.ts:176 clamps the stored spike to SPIKE_MAX_DEPTH (0.75, rules.ts:28) -- both citations verbatim-correct, confirming the gap is real in our own code today. [CORRECTION] This is not an overlooked bug -- rules.ts:110-115 already documents the exact same 0.929 figure and explicitly states SPIKER_TURNAROUND_DEPTH is kept SEPARATE from SPIKE_MAX_DEPTH on purpose ('story 6-15 deviations') so raising the turnaround doesn't also grow spikes, for warp-balance reasons. The technical divergence is accurate as stated, but recommendation='fix' should account for the fact this was a conscious, already-tracked design decision, not something nobody noticed.",
@@ -775,9 +780,9 @@
       "verbatim": "\tORA I,ZCARFL\t\t;CARRYING FLIPPERS"
     },
     "ours": {
-      "file": "src/core/sim.ts",
-      "line": 161,
-      "verbatim": "            moved.push(makeEnemy('tanker', sp.lane, 0, params, 'flipper'))"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 198,
+      "verbatim": "    return { camSta: 0, became: { ...e, kind: 'tanker', contains: 'flipper' } }"
     },
     "claim": "JSTRAI (2236-2247): when the spiker reaches the bottom of its range and NYMCOU is zero, it rewrites INVAC2's carrier bits to ZCARFL and INVAC1's appearance bits to ZABTAN — it becomes a tanker carrying flippers, and CAMSTA is set to 0 so the CAM branches it out of TRALUP into NOJUMP (2381). Our spiker does exactly this when s.spawn.remaining === 0, spawning a flipper-carrying tanker at depth 0.",
     "reasoning": "Correct in mechanism and in cargo, and our spawn.remaining is a faithful stand-in for NYMCOU here. Recorded because it is a non-obvious rule we got right."
@@ -793,7 +798,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 489,
+      "line": 492,
       "verbatim": "    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')"
     },
     "claim": "KILENE's EXIKIL (3562-3566) takes the first live invader it finds, CLEARS the INVCAR bits in its INVAC2, and then explodes it — the carrier bit is stripped precisely so that the kill does not split it. So the arcade's zap DOES destroy tankers; it just denies you the cargo. Our first-zap cadence and our kill-count both filter tankers out (`e.kind !== 'tanker'`, sim.ts:476 and 513), so a tanker survives a full superzap.",
@@ -813,7 +818,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 108,
+      "line": 109,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "With CSUSTA=3 and CSUINT=1 (3490-3492), TIMAX resolves to 0, 3+8*2 = 19, 3+1*2 = 5, 0, 0, indexed by SUZCNT. So the first zap runs 19 frames and the second 5. KILENE (3542-3546) only kills when SUZTIM >= CSUSTA (3) AND (SUZTIM AND CSUINT) == 0 — i.e. on every SECOND frame from frame 4 — giving at most 8 kills across the first window (which is exactly what the '8*' in TIMAX is sizing). It also takes the first live invader scanning DOWN from slot WINVMX (3548), which is slot order, not nearest-the-rim. Our ZAP_WINDOW_FIRST is 13 frames with one kill on EVERY active frame (runZapFrame, sim.ts:473-480), targeting the enemy nearest the rim. Our ZAP_WINDOW_SECOND = 5 is correct.",
@@ -833,7 +838,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 81,
+      "line": 82,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "NPCHARG = 8 player charge slots (NICHARG = 4 more for enemy shots). FIREPC (2661-2681) scans slots NPCHARG-1..0 for a vacancy and simply does nothing if all eight are busy. Our MAX_BULLETS = 8, enforced the same way in stepFiring (sim.ts:96).",
@@ -871,7 +876,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 297,
+      "line": 293,
       "verbatim": "const HIT_DEPTH = 0.06"
     },
     "claim": "COLCHK compares |charge Y - invader Y| against ENSIZE indexed by the invader's TYPE (2963-2964). ENSIZE for the fuseball is set literally to (PCVELO+3)/2 = 6 (545-546). For flippers, tankers and pulsars it is computed by TIMES8 (570-577) as ((255 - hi) + 13) >> 1 where hi is the high byte of speed*8 — which evaluates to 7 at waves 1-16 and 8 at waves 33+. In our depth units (224 along-units = depth 1.0) that is 0.031-0.036 for a flipper and 0.027 for a fuseball. Our HIT_DEPTH is 0.06 (13.4 units, ~1.9x too generous) and our FUSEBALL_HIT_DEPTH is 0.09 (20 units, ~3.3x too generous). Our comment at sim.ts:288-291 asserts the ROM's fuseball tolerance is WIDER than the default; the source shows it is NARROWER (6 vs 7).",
@@ -891,7 +896,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 351,
+      "line": 347,
       "verbatim": "      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)"
     },
     "claim": "LIFECT (2589-2626) runs from MOVCHA on every frame a player charge is at or past a spike tip: it SLOWS the charge (PCVELO - 4 = 5 units/frame, 2542-2545), sets LINEY to the charge's CURRENT Y — cutting the spike down to exactly where the bullet is — increments the charge's CHARCO counter, awards 1 point (2609-2615), and deactivates the charge once CHARCO reaches 2 (2618-2624). So one shot eats ~2 frames' worth (~10 units, ~0.045 depth) of spike and scores ~2 points, and the spike visibly recedes ahead of the bullet. Ours removes a flat SPIKE_SHORTEN = 0.08 depth, kills the bullet instantly, and awards SCORE_SPIKE_SEGMENT = 3.",
@@ -910,9 +915,9 @@
       "verbatim": "\tADC Y,WINVIL"
     },
     "ours": {
-      "file": "src/core/enemies/flipper.ts",
-      "line": 16,
-      "verbatim": "  e.depth = Math.min(1, e.depth + params.flipperSpeed * dt)"
+      "file": "src/core/enemies/interpreter.ts",
+      "line": 155,
+      "verbatim": "  e.depth = Math.max(0, Math.min(1, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))"
     },
     "claim": "JSMOVE (1731-1777) keeps each invader's position as a 16-bit fixed-point pair — INVAYL (fraction) and INVAY (integer, 0 = rim end, $F0 = far end) — and adds the per-type WINVIL/WINVIN increment once per GAME frame with a carry between the bytes. A game frame is one FRTIMR-gated MAINLN pass (ALEXEC.MAC:49-57), i.e. NINE IRQ ticks of a ~256 Hz interrupt (ALHARD.MAC:149-151) = 35.16 ms: 256/9 = 28.44 frames/second. It is NOT one IRQ, and it is not 60 Hz. Every threshold in the game ($20, $30, PULPOT, CURSY) is an integer comparison on INVAY. We carry `depth` as a float in [0,1] and integrate it as depth += speed * dt.",
     "reasoning": "The float integration itself is acceptable and is required by our frame-rate-independent core — that half of the verdict stands, and the 'accept' covers the REPRESENTATION only (8.8 fixed point vs float+dt). Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json, which calls this finding the audit's linchpin): the mapping declared here was wrong twice. The position mapping depth = ($F0 - INVAY)/224 is right, but one along-unit/frame is (256/9)/224 = 0.127 depth/s — NOT the '60/224' (0.268) asserted here and hard-coded in rules.ts — and the increment is applied once per LOGIC frame, not 'once per 60 Hz IRQ'. This finding's closing reassurance, that 'every value quoted in this audit was converted through that mapping before being compared', is therefore an indictment rather than a defence: every seconds-valued figure in the audit was 2.11x off, and each has been rebased (FR-006 through FR-017). The numeric fix belongs to FR-001/FR-008/FR-012, not here.",

@@ -1,9 +1,9 @@
 // tests/core/sim.death.test.ts
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { RESPAWN_DELAY } from '../../src/core/rules'
+import { RESPAWN_DELAY, levelParams } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
@@ -12,7 +12,7 @@ describe('enemy ↔ player collision and death', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.lives).toBe(2)
@@ -24,7 +24,7 @@ describe('enemy ↔ player collision and death', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    s.enemies = [{ kind: 'flipper', lane: 9, depth: 0.99, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 9, 0.99, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('playing')
@@ -40,8 +40,8 @@ describe('enemy ↔ player collision and death', () => {
     // level is NOT incidentally clear afterward — this test exercises the
     // respawn mechanic, not the end-of-level warp (see sim.warp.test.ts).
     s.enemies = [
-      { kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 },
-      { kind: 'flipper', lane: 9, depth: 0.3, flipTimer: 999 },
+      makeEnemy('flipper', 4, 0.95, levelParams(1)),
+      makeEnemy('flipper', 9, 0.3, levelParams(1)),
     ]
     s = stepGame(s, NEUTRAL, 1 / 60)            // → dying
     expect(s.mode).toBe('dying')
@@ -58,7 +58,7 @@ describe('enemy ↔ player collision and death', () => {
     s.spawn.remaining = 0
     s.lives = 1
     s.player.lane = 4
-    s.enemies = [{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }]
+    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('gameover')
