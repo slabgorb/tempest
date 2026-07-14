@@ -2,10 +2,16 @@
 //
 // RED-phase suite for Story 3-2 — the warp animation lifecycle (AC4).
 // Paranoid by design: pins progress to [0,1) on entry, proves it advances
-// monotonically toward 1, resets to exactly 0 on completion, forbids firing
-// during the warp, allows the Claw to keep rotating (the dodge foundation),
-// and — critically — proves stepGame does NOT mutate its input warp state
-// (the `cloneState` must clone `warp`, a subtle determinism trap).
+// monotonically toward 1, resets to exactly 0 on completion, allows the Claw to
+// keep rotating (the dodge foundation), and — critically — proves stepGame does
+// NOT mutate its input warp state (the `cloneState` must clone `warp`, a subtle
+// determinism trap).
+//
+// tp1-10 (WD-014) INVERTED one of Story 3-2's assertions: the ROM fires player
+// charges every descending frame (PLDROP → FIREPC, ALWELG.MAC:891), so "does NOT
+// fire during the warp" became "DOES fire during the descent". The full firing +
+// bullet-motion + no-fire-during-the-hold contract lives in
+// tests/core/tp1-10.warp-fire.test.ts; the one line kept here guards the lifecycle.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
@@ -60,11 +66,11 @@ describe('warp lifecycle', () => {
     expect(s.warp.progress).toBe(0)
   })
 
-  it('does NOT fire bullets during the warp', () => {
-    let s = enterWarp()
+  it('lets the player fire during the warp descent (tp1-10, WD-014)', () => {
+    let s = enterWarp() // no spikes → warning 0 → immediately descending
     expect(s.mode).toBe('warp') // guard: hold FIRING *while warping*, not after it ends
     for (let i = 0; i < 5 && s.mode === 'warp'; i++) s = stepGame(s, FIRING, 1 / 60)
-    expect(s.bullets).toHaveLength(0)
+    expect(s.bullets.length).toBeGreaterThan(0) // FIREPC runs every descending frame
   })
 
   it('still lets the player rotate the Claw during the warp', () => {

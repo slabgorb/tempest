@@ -10,13 +10,16 @@
 //     extraLife.
 //   - SUSTAINED cues via the engine's new startLoop/stopLoop:
 //       'pulsar-hum-start' -> startLoop('pulsarHum'),  'pulsar-hum-stop' -> stopLoop
-//       'level-clear'      -> startLoop('levelClear'), 'warp-end'        -> stopLoop
+//       'warp-descent-start' -> startLoop('levelClear'), 'warp-end' -> stopLoop
 //     The warp/zoom sound used to be a one-shot `play('levelClear')` clipped to the
-//     wav length; it is now a loop that STARTS on warp entry and STOPS on warp-end,
-//     so it spans the actual dive (no early silence, no bleed into the next level).
+//     wav length; it is now a loop that spans the actual dive.
 //
-// The new event variants do not exist and the dispatcher does not wire them yet,
-// so the new rows below fail today (valid RED).
+// tp1-10 (WD-017) RE-SEATED the sustained warp loop: it starts on the first
+// DESCENDING frame ('warp-descent-start'), NOT at warp entry ('level-clear'), so it
+// no longer hums under the AVOID-SPIKES hold. 'level-clear' now sounds nothing here.
+//
+// The 'warp-descent-start' event does not exist in the union yet and the dispatcher
+// does not wire it, so its row + the headline test below fail today (valid RED).
 import { describe, it, expect } from 'vitest'
 import type { GameEvent } from '../../src/core/events'
 import type { SoundName } from '../../src/shell/audio'
@@ -82,7 +85,12 @@ const EVENT_EFFECT: ReadonlyArray<{ event: GameEvent; effect: Effect | null }> =
   { event: { type: 'spike-shot', lane: 4 }, effect: { kind: 'play', sound: 'spikeShot' } }, // 10-11
   { event: { type: 'extra-life', count: 1 }, effect: { kind: 'play', sound: 'extraLife' } }, // 10-11
   // --- sustained / looping cues (10-11) ------------------------------------
-  { event: { type: 'level-clear', newLevel: 2 }, effect: { kind: 'startLoop', sound: 'levelClear' } },
+  // tp1-10 (WD-017): the sustained warp/zoom loop moved OFF 'level-clear' (warp
+  // entry, before the AVOID-SPIKES hold) ONTO 'warp-descent-start' (the first
+  // descending frame), so it no longer hums under the warning hold. 'level-clear'
+  // now makes NO sound here — its white entry flash is an fx-layer concern.
+  { event: { type: 'level-clear', newLevel: 2 }, effect: null },
+  { event: { type: 'warp-descent-start' } as unknown as GameEvent, effect: { kind: 'startLoop', sound: 'levelClear' } },
   { event: { type: 'warp-end' }, effect: { kind: 'stopLoop', sound: 'levelClear' } },
   { event: { type: 'pulsar-hum-start' }, effect: { kind: 'startLoop', sound: 'pulsarHum' } },
   { event: { type: 'pulsar-hum-stop' }, effect: { kind: 'stopLoop', sound: 'pulsarHum' } },
@@ -134,17 +142,31 @@ describe('audio-dispatch playEventSounds (story 6-12 / 10-11)', () => {
     expect(audio.calls).toEqual([])
   })
 
-  // The headline 10-11 behaviour: the warp/zoom sound is sustained, not a one-shot.
-  it('starts the warp loop on level-clear and stops it on warp-end (spans the dive)', async () => {
+  // The headline behaviour: the warp/zoom sound is sustained AND (tp1-10 / WD-017)
+  // starts on the first DESCENDING frame, not at level-clear/entry. So it spans the
+  // dive from descent-start to warp-end, silent through the AVOID-SPIKES hold.
+  it('starts the warp loop on warp-descent-start and stops it on warp-end (spans the dive)', async () => {
     const { playEventSounds } = await loadDispatch()
     const audio = recordingAudio()
-    playEventSounds(audio, [{ type: 'level-clear', newLevel: 2 }, { type: 'warp-end' }])
+    playEventSounds(audio, [
+      { type: 'warp-descent-start' } as unknown as GameEvent,
+      { type: 'warp-end' },
+    ])
     expect(audio.calls).toEqual([
       { kind: 'startLoop', sound: 'levelClear' },
       { kind: 'stopLoop', sound: 'levelClear' },
     ])
     // It must NOT be a one-shot play anymore — that was the clipped-on-entry bug.
     expect(audio.calls.some((c) => c.kind === 'play')).toBe(false)
+  })
+
+  // tp1-10 (WD-017): 'level-clear' fires at warp ENTRY, before the descent — it must
+  // NOT start the sustained rumble (that would hum under the AVOID-SPIKES hold).
+  it('does NOT start the warp loop on level-clear (entry precedes the descent)', async () => {
+    const { playEventSounds } = await loadDispatch()
+    const audio = recordingAudio()
+    playEventSounds(audio, [{ type: 'level-clear', newLevel: 2 }])
+    expect(audio.calls).toEqual([])
   })
 
   it('starts and stops the pulsar hum loop on its edges', async () => {
@@ -171,6 +193,6 @@ describe('audio-dispatch playEventSounds (story 6-12 / 10-11)', () => {
     // compile-time half).
     const types = EVENT_EFFECT.map((r) => r.event.type)
     expect(new Set(types).size, 'no duplicate event rows').toBe(types.length)
-    expect(types.length, 'all 16 core GameEvent discriminants covered (11 pre-10-11 + 5 new)').toBe(16)
+    expect(types.length, 'all 17 core GameEvent discriminants covered (16 + tp1-10 warp-descent-start)').toBe(17)
   })
 })
