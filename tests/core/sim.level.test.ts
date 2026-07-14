@@ -82,7 +82,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
     s.spawn.remaining = 0
     s.lives = 1
     s.player.lane = 4
-    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('gameover') // player died this frame

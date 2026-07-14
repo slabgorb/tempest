@@ -44,7 +44,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
     s.spawn.remaining = 0 // no fresh spawns muddy the window before death
     s.player.lane = 4
     s.enemies = [
-      makeEnemy('flipper', 4, 0.95, levelParams(1)), // the killer
+      makeEnemy('flipper', 4, 1, levelParams(1)), // the killer
       makeEnemy('flipper', 4, 0.8, levelParams(1)),  // would chain-kill if it survives
     ]
 
@@ -76,7 +76,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
       { lane: 8, depth: 0.7 },
     ]
     s.enemies = [
-      makeEnemy('flipper', 4, 0.95, levelParams(1)),       // the killer
+      makeEnemy('flipper', 4, 1, levelParams(1)),       // the killer
       makeEnemy('flipper', 7, 0.3, levelParams(1)),        // far survivor (old model keeps it)
       makeEnemy('tanker', 2, 0.5, levelParams(1), 'flipper'),    // mid-tube survivor
     ]
@@ -101,7 +101,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
       s.spawn.remaining = 0
       s.player.lane = deathLane
       s.enemies = [
-        makeEnemy('flipper', deathLane, 0.95, levelParams(1)), // the killer
+        makeEnemy('flipper', deathLane, 1, levelParams(1)), // the killer
         // A far survivor on a third lane keeps the level un-cleared under the old
         // model (so it resumes 'playing' instead of warping), forcing the failure
         // onto the respawn-lane assertion below rather than an incidental warp.
@@ -127,7 +127,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
     let s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
 
     s = stepGame(s, NEUTRAL, DT) // → dying, one life spent
     for (let i = 0; i < DYING_FRAMES; i++) s = stepGame(s, NEUTRAL, DT)
@@ -136,7 +136,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
 
     // Drop a grabber straight onto the rim of the respawn lane.
     const lane = currentLane(s.tube, s.player.lane)
-    s.enemies = [makeEnemy('flipper', lane, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', lane, 1, levelParams(1))]
 
     s = stepGame(s, NEUTRAL, DT)
     expect(s.mode).toBe('dying')              // killed again — no shield protected the ship
@@ -150,7 +150,7 @@ describe('Story 6-3 — safe respawn after death (board reset, no chain-death)',
       let s = playingState(42)
       s.spawn.remaining = 0
       s.player.lane = 4
-      s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+      s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
       s = stepGame(s, NEUTRAL, DT)
       for (let i = 0; i < DYING_FRAMES + 10; i++) s = stepGame(s, NEUTRAL, DT)
       return s

@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 153,
+      "line": 181,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
@@ -347,7 +347,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 326,
+      "line": 333,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",

@@ -57,7 +57,7 @@ import { fileURLToPath } from 'node:url'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy, splitTanker } from '../../src/core/sim'
 import {
-  levelParams, SIM_STEP, PLAYER_RIM_DEPTH, TANKER_SPLIT_DEPTH, SPLIT_TOO_CLOSE_DEPTH,
+  levelParams, SIM_STEP, TANKER_SPLIT_DEPTH, SPLIT_TOO_CLOSE_DEPTH,
 } from '../../src/core/rules'
 import { tubeForLevel } from '../../src/core/geometry'
 import { Input } from '../../src/core/input'
@@ -146,8 +146,15 @@ describe('tp1-24 — the children are born at the PARENT\'s depth (W-030, open h
     }
   })
 
-  it('a tanker that ARRIVES on its own bursts above the grab line, and its children are born there', () => {
+  it('a tanker that ARRIVES on its own bursts at the $20 gate, and its children are born there', () => {
     // The whole finding, driven through a real climb. No hand-placed depth anywhere.
+    //
+    // tp1-27 NOTE: this test used to be titled "...bursts above the grab line", and asserted
+    // the children are born ABOVE PLAYER_RIM_DEPTH. That was true only of the INVENTED 0.92.
+    // The real grab line is the rim ($10 = CURSY = depth 1.0), and ATOP is tested BEFORE the
+    // carrier check (ALWELG.MAC:1744-1750) — a carrier that actually reaches the rim becomes a
+    // CHASER instead of bursting. So the children are born BELOW the grab line, always. The
+    // burst gate ($20) is the real subject here, and that half of W-030 stands unchanged.
     const { s, lastSeenDepth } = climbUntilBurst(WAVE, 12)   // player parked far away
 
     // Premises — an unstated one here is what hid W-032's dead branch for a review cycle.
@@ -165,11 +172,14 @@ describe('tp1-24 — the children are born at the PARENT\'s depth (W-030, open h
         k.depth,
         'a child of a self-arriving tanker is born at the parent\'s depth — at or past the arrival gate',
       ).toBeGreaterThanOrEqual(TANKER_SPLIT_DEPTH)
-      // ...and that line is ABOVE the grab line. This is the difficulty change, stated.
+      // ...and BELOW the rim, which is where the grab actually lives (tp1-27). Pinned to the
+      // literal 1.0, not to PLAYER_RIM_DEPTH: an assertion written against the constant would
+      // re-derive from it and stay green no matter what value it took — which is exactly how
+      // the invented 0.92 survived this suite the first time.
       expect(
         k.depth,
-        'the ROM drops the children ABOVE PLAYER_RIM_DEPTH — that is the point of the finding',
-      ).toBeGreaterThan(PLAYER_RIM_DEPTH)
+        'a newborn child is never at the rim — a carrier that reaches CURSY becomes a CHASER, it does not burst',
+      ).toBeLessThan(1)
     }
     // Both children come from the one TEMP0, so they are born at the SAME depth.
     expect(kids[0]!.depth).toBe(kids[1]!.depth)
@@ -177,20 +187,39 @@ describe('tp1-24 — the children are born at the PARENT\'s depth (W-030, open h
 })
 
 describe('tp1-24 — the burst is lethal where the ROM says it is, and survivable where it does not', () => {
-  it('is INSTANTLY lethal to a player standing on a child\'s landing lane', () => {
-    // The cruelty, and the reason this is a ruling rather than a transcription. The
-    // child is born at 0.9286, above PLAYER_RIM_DEPTH, on lane 4 — and resolveTankerArrivals
-    // runs BEFORE resolvePlayerHits in the same frame, so the grab lands the moment it
-    // is born. Today the child appears at 0.85 and the player strolls away.
+  it('is lethal to a player on a child\'s landing lane — but not INSTANTLY (tp1-27)', () => {
+    // REFUTED AND RE-SEATED BY tp1-27. This test used to assert the player dies ON THE BURST
+    // FRAME, on the reasoning that "the child is born at 0.9286, above PLAYER_RIM_DEPTH".
+    // That reasoning was circular: it was above the grab line only because the grab line was
+    // the invented 0.92. The cabinet's grab line is the rim (CURSY = $10 = depth 1.0) and the
+    // grab is reachable ONLY from the CHASER cam (VKITST appears in TOPPER and nowhere else),
+    // so a child born at 0.9286 must climb the last ~11 frames before it can touch anyone.
+    //
+    // The cruelty is real, but it is a sentence, not an execution. Both halves are asserted —
+    // "he survives the burst frame" alone is also what a board of INERT children looks like.
     const livesBefore = base(WAVE, LANDING_LANES[0]!).lives
-    const { s } = climbUntilBurst(WAVE, LANDING_LANES[0]!)   // player ON lane 4
+    let { s } = climbUntilBurst(WAVE, LANDING_LANES[0]!)   // player ON lane 4
 
     expect(flippersOf(s), 'premise: the tanker burst').toHaveLength(2)
     expect(
+      flippersOf(s).map((k) => k.lane),
+      'premise: a child really did land on the player\'s lane',
+    ).toContain(LANDING_LANES[0]!)
+
+    expect(
       s.player.alive,
-      'a child born above the grab line on the player\'s own lane must grab him on the burst frame',
-    ).toBe(false)
-    expect(s.lives, 'the grab must actually cost a life').toBe(livesBefore - 1)
+      'a child born below the rim cannot grab on the frame it is born',
+    ).toBe(true)
+    expect(s.lives, 'the burst frame itself must not cost a life').toBe(livesBefore)
+
+    // ...and then it takes the rim and kills him.
+    let died = false
+    for (let i = 0; i < 120 && !died; i++) {
+      s = stepGame(s, NEUTRAL, FRAME)
+      if (!s.player.alive) died = true
+    }
+    expect(died, 'the child must still kill him once it reaches the rim').toBe(true)
+    expect(s.lives, 'and that grab must cost a life').toBe(livesBefore - 1)
   })
 
   it('SPARES the player on the tanker\'s own lane — the lane the ROM vacates', () => {
