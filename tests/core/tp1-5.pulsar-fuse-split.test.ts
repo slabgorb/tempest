@@ -22,6 +22,7 @@ import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import {
   levelParams, SIM_STEP, PULSAR_NEAR_FAR_DEPTH, PLAYER_RIM_DEPTH,
+  TANKER_SPLIT_DEPTH, SPLIT_TOO_CLOSE_DEPTH,
 } from '../../src/core/rules'
 import { tubeForLevel } from '../../src/core/geometry'
 import { Input } from '../../src/core/input'
@@ -318,51 +319,122 @@ describe('tp1-5 — a fuseball below wave 17 does not chase (W-023)', () => {
       return lanes
     }
 
+    // LIVENESS FIRST. Two identical paths prove the player is not an input — but a
+    // fuseball frozen solid also walks two identical paths ([8,8,8,…]), and would
+    // satisfy the assertion below without moving a muscle. The pair of tests this one
+    // replaced carried exactly this guard ("actually closes the gap — it is steering,
+    // not frozen") and dropping it was a regression the Reviewer caught. A random
+    // walker MUST visit more than one lane in 60 frames.
+    const path = pathWithPlayerAt(2)
+    expect(
+      new Set(path).size,
+      'the fuseball never left its lane — the equality below would pass vacuously',
+    ).toBeGreaterThan(1)
+
     // Lane 2 and lane 14 are on OPPOSITE sides of the fuseball's lane 8, so a
     // chasing fuseball is pulled in opposite directions by the two runs.
-    expect(pathWithPlayerAt(2)).toEqual(pathWithPlayerAt(14))
+    expect(path).toEqual(pathWithPlayerAt(14))
   })
 })
 
 describe('tp1-5 — a split too close to the player produces NON-FLIPPING children (W-032)', () => {
-  // SPLCHA (ALWELG.MAC:1494-1502): `LDA TEMP0 / CMP I,20 / IFCC ;SPLITTING TOO CLOSE
-  // TO PLAYER?` — TEMP0 is the split depth, and the carry-clear branch (INVAY < $20,
-  // i.e. within 32 of the rim = depth > 0.857 for us) hands the children NEWGEN, the
-  // GENERIC cam for their appearance code: TNEWCAM[ZABFLI] = NOJUMP. "YES. NO
-  // FLIPPING". Split deeper down and they get NEWTY2 — the wave's normal program.
+  // ── ONE ROM CONSTANT, TWO TESTS. This is the whole finding. ──────────────────────
   //
-  // Wave 3's flipper cam is SPIRAL, which flips constantly, so the two cases are
-  // trivially distinguishable by whether the children ever change lane.
-  const splitOn = (tankerDepth: number): GameState => {
-    const s = playingState(1)
-    s.level = 3
-    s.tube = tubeForLevel(3)
-    s.spikes = new Array(s.tube.laneCount).fill(0)
-    s.spawn.remaining = 0
-    s.player.lane = 12                     // far from the split, so nothing is grabbed
-    s.enemies = [makeEnemy('tanker', 5, tankerDepth, levelParams(3), 'flipper')]
-    s.bullets = [{ lane: 5, depth: tankerDepth }]   // point-blank: it splits this frame
-    return s
+  // JSMOVE (ALWELG.MAC:1748-1758) auto-splits a climbing CARRIER:
+  //
+  //     CMP CURSY / BEQ ATOP / IFCC   ;AT TOP?      -> JSR CHASER
+  //     ELSE
+  //     CMP I,20  / IFCC              ;TOO CLOSE TO TOP FOR CARRIER?
+  //                                   -> JSR KILINV   ;SPLIT CARRIER
+  //
+  // and the KILINV that split it routes through SPLCHA (2344), whose too-close test is
+  // the SAME compare (1494-1502):
+  //
+  //     LDA TEMP0 / CMP I,20 / IFCC   ;SPLITTING TOO CLOSE TO PLAYER?
+  //                                   -> TAY / JSR NEWGEN   ;YES. NO FLIPPING
+  //
+  // Both are `CMP I,20`. So in the arcade EVERY tanker that arrives under its own steam
+  // splits INSIDE the too-close band, by construction, and its children ALWAYS get
+  // NEWGEN — TNEWCAM[ZABFLI] = NOJUMP. A tanker only produces flipping children when it
+  // is SHOT further down the well, below $20.
+  //
+  // $20 = INVAY 32, and depth = (0xf0 - INVAY) / 224, so the band is depth > 0.9286 —
+  // which is SPLIT_TOO_CLOSE_DEPTH exactly. The arrival gate must therefore sit AT OR
+  // BEYOND that line, or the two rules are describing different places and the
+  // too-close branch can never fire.
+  //
+  // Wave 3's flipper cam is SPIRAL, which flips constantly, so "did the children flip?"
+  // is trivially observable.
+
+  it('the carrier auto-split cannot fire SHALLOWER than the too-close band', () => {
+    // The bug tp1-5 shipped, stated as an invariant. TANKER_SPLIT_DEPTH was 0.9
+    // (INVAY 38.4) while the too-close test reads $20 (INVAY 32 = depth 0.9286) — so
+    // the tanker was always destroyed 0.029 depth-units BEFORE it could enter the band
+    // its own rule is written for, and `t.depth >= SPLIT_TOO_CLOSE_DEPTH` was dead code.
+    // Correct in isolation, unreachable in play, and stamped `remediated_by` regardless.
+    expect(
+      TANKER_SPLIT_DEPTH,
+      'the arrival gate fires below $20, so SPLCHA\'s too-close branch can never be true',
+    ).toBeGreaterThanOrEqual(SPLIT_TOO_CLOSE_DEPTH)
+  })
+
+  /**
+   * Let a tanker CLIMB to its own arrival and split THERE — no bullet, no hand-placed
+   * depth. This is the only way a tanker ever splits near the rim in the real game, and
+   * it is the state SPLCHA's rule is written for. The test it replaces seated a tanker
+   * at depth 0.95 by hand: a depth no tanker in this game has ever occupied, because
+   * `resolveTankerArrivals` destroys it at 0.9 and its fastest climb is 0.0151/frame.
+   * A test that builds its own premise cannot falsify anything.
+   */
+  function climbUntilSplit(level: number, startDepth: number): GameState {
+    let s = base(level, 12)                 // player far from lane 5: nothing is grabbed
+    const t = makeEnemy('tanker', 5, startDepth, levelParams(level), 'flipper')
+    t.fireCooldown = 999                    // no bolts: a bolt is a second, noisy channel
+    s.enemies = [t]
+
+    for (let i = 0; i < 400; i++) {
+      s = stepGame(s, NEUTRAL, FRAME)
+      if (!s.enemies.some((e) => e.kind === 'tanker')) return s
+    }
+    throw new Error('fixture: the tanker never split — it never reached its arrival depth')
   }
 
-  it('children of a rim split never flip', () => {
-    const s0 = splitOn(0.95)               // depth 0.95 > 0.857 — "TOO CLOSE"
-    expect(s0.tube.closed).toBe(true)      // premise: wave 3 is a closed tube
+  it('children of a tanker that ARRIVES on its own never flip', () => {
+    const atSplit = climbUntilSplit(3, 0.5)
+    expect(atSplit.tube.closed).toBe(true)     // premise: wave 3 is a closed tube
 
-    const s = step(s0, 20)
+    // splitTanker straddles the parent's lane: the children land on 4 and 6.
+    const born = atSplit.enemies.filter((e) => e.kind === 'flipper')
+    expect(born, 'the arrival should have burst the tanker into two children').toHaveLength(2)
+    expect(born.map((k) => k.lane).sort((a, b) => a - b)).toEqual([4, 6])
+
+    const s = step(atSplit, 16)
     const kids = s.enemies.filter((e) => e.kind === 'flipper')
     expect(kids).toHaveLength(2)
 
-    // splitTanker straddles the tanker's lane: children land on 4 and 6 and, on
-    // NOJUMP, stay there. On SPIRAL — which is what they get today — the first jump
-    // lands around frame 10 and they have moved by now.
+    // Premise: neither child has reached the rim, so a lane change here can only be a
+    // FLIP — never a CHASER walking the rim. (They are seated at SPLIT_CHILD_DEPTH =
+    // 0.85 and climb ~0.0067/frame at wave 3, so 16 frames leaves them short of 1.0.)
+    for (const k of kids) {
+      expect(k.chasing ?? false, 'a child took the rim — shorten the window').toBe(false)
+    }
+
+    // On NOJUMP they sit on the lanes they landed on. On SPIRAL — what they get today —
+    // the first jump lands around frame 10 and they have moved by now.
     expect(kids.map((k) => k.lane).sort((a, b) => a - b)).toEqual([4, 6])
   })
 
-  it('children of a DEEP split still get the wave\'s program, and do flip', () => {
+  it('children of a tanker SHOT deep in the well still get the wave\'s program, and do flip', () => {
     // The other side of the threshold, so "no flipping" cannot be applied to every
-    // split. Deep children run SPIRAL and must move off the lanes they landed on.
-    const s = step(splitOn(0.50), 20)      // depth 0.50 < 0.857 — a normal split
+    // split. This is the one path that is genuinely reachable with a bullet: a tanker
+    // shot at depth 0.50 is nowhere near $20, so its children run SPIRAL and must move
+    // off the lanes they landed on. If this ever goes red, the fix overshot and made
+    // EVERY split non-flipping.
+    const s0 = base(3, 12)
+    s0.enemies = [makeEnemy('tanker', 5, 0.50, levelParams(3), 'flipper')]
+    s0.bullets = [{ lane: 5, depth: 0.50 }]   // point-blank: it splits this frame
+
+    const s = step(s0, 20)
     const kids = s.enemies.filter((e) => e.kind === 'flipper')
     expect(kids).toHaveLength(2)
 

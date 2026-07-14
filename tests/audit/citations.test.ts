@@ -165,6 +165,41 @@ describe('checkFindings', () => {
     )).toEqual([])
   })
 
+  it('a remediated NO_COUNTERPART may have `ours` null or a WELL-FORMED citation — not junk', () => {
+    // The widening tp1-5 shipped bought the null case at the cost of validating NOTHING:
+    // once `remediated_by` and `class: NO_COUNTERPART` are both set, the branch falls
+    // through with no check at all, so an `ours` that is present but malformed — no file,
+    // no line, no verbatim — sails past a gate whose entire job is to refuse citations
+    // that cannot be re-opened. "Null" and "anything at all" are not the same permission.
+    const base = {
+      title: 't', source: { file: 'ALWELG.MAC', line: 1, verbatim: 'anything' },
+      claim: 'c', reasoning: 'r', recommendation: 'fix', size: 'm',
+      class: 'NO_COUNTERPART', remediated_by: 'tp1-5',
+    }
+
+    // Present but shapeless: no `file` to open, no `line` to find, no quote to compare.
+    expect(checkFindings(
+      [{ ...base, id: 'X-033', ours: { line: 3 } }],
+      { repoRoot, sourceDir: null },
+    ).join('\n'), 'a malformed `ours` was accepted').toMatch(/X-033.*ours/)
+
+    // Not even an object.
+    expect(checkFindings(
+      [{ ...base, id: 'X-034', ours: 'src/core/sim.ts:1' }],
+      { repoRoot, sourceDir: null },
+    ).join('\n'), 'a non-object `ours` was accepted').toMatch(/X-034.*ours/)
+
+    // The two legitimate shapes still pass — this must not become "reject everything".
+    expect(checkFindings([{ ...base, id: 'X-035', ours: null }], { repoRoot, sourceDir: null })).toEqual([])
+    expect(checkFindings(
+      [{
+        ...base, id: 'X-036',
+        ours: { file: 'src/core/rules.ts', line: 19, verbatim: 'a quote nothing will re-open' },
+      }],
+      { repoRoot, sourceDir: null },
+    )).toEqual([])
+  })
+
   it('rejects duplicate ids', () => {
     const f = {
       id: 'X-006', class: 'NO_COUNTERPART', title: 't', ours: null,

@@ -43,6 +43,81 @@ function must<T>(v: T | undefined, what: string): T {
   return v
 }
 
+/**
+ * Pull one top-level function's whole body out of a file. Our source puts the closing
+ * brace of a top-level function in column 0, and every nested brace is indented, so a
+ * newline followed by `}` is the end of the function and nothing else.
+ */
+function bodyOf(file: string, fn: string): string {
+  const src = stripComments(read(file))
+  return must(
+    new RegExp(`function ${fn}\\b[\\s\\S]*?\\n}`).exec(src)?.[0],
+    `${fn}() not found in ${file}`,
+  )
+}
+
+/** Find assertNever's PARAMETER LIST, wherever it is declared — locally or imported. */
+function assertNeverParams(file: string): string {
+  const src = stripComments(read(file))
+  const local = /function assertNever\s*\(([^)]*)\)/.exec(src)?.[1]
+  if (local !== undefined) return local
+
+  const from = must(
+    /import\s*\{[^}]*\bassertNever\b[^}]*\}\s*from\s*'([^']+)'/.exec(src)?.[1],
+    `assertNever is neither defined in nor imported into ${file}`,
+  )
+  expect(from, 'assertNever must come from a relative module inside src/').toMatch(/^\./)
+  const rel = join(dirname(file), from).replace(/\.js$/, '.ts')
+  return must(
+    /function assertNever\s*\(([^)]*)\)/.exec(stripComments(read(rel)))?.[1],
+    `assertNever not found in ${rel}`,
+  )
+}
+
+// ── lang-review #3, applied to EVERY switch it governs — not just the one tp1-5 fixed ──
+//
+// tp1-5 gave `speedFor` a real compile-time guard and then wrote, in interpreter.ts:
+//
+//     "Adding a sixth EnemyKind now fails `tsc`, at the switch that forgot it"
+//
+// which is not true. Three other switches over the same closed union have no default at
+// all, and `noImplicitReturns` is off, so a sixth kind compiles clean and returns
+// `undefined` at runtime: `scoreFor` hands it to the score (→ NaN), `enemyCanShoot` reads
+// it as falsy. `makeEnemy` guards with a runtime `throw` — the exact tripwire the story's
+// own comment calls insufficient, left standing in the file the story edited most.
+//
+// A rule enforced in one place is a rule that will be broken in the others. Every switch
+// over a closed union in the core owes the same guard, and the comment above owes the
+// truth.
+const EXHAUSTIVE_SWITCHES = [
+  { file: 'src/core/enemies/interpreter.ts', fn: 'speedFor', union: 'EnemyKind' },
+  { file: 'src/core/rules.ts', fn: 'scoreFor', union: 'EnemyKind' },
+  { file: 'src/core/rules.ts', fn: 'enemyCanShoot', union: 'EnemyKind' },
+  { file: 'src/core/sim.ts', fn: 'makeEnemy', union: 'EnemyKind' },
+  { file: 'src/core/sim.ts', fn: 'stepGame', union: 'Mode' },
+]
+
+describe('tp1-5 — every switch over a closed union is exhaustive at COMPILE time (lang-review #3)', () => {
+  it.each(EXHAUSTIVE_SWITCHES)(
+    '$fn switches on $union and guards it with assertNever',
+    ({ file, fn }) => {
+      expect(
+        bodyOf(file, fn),
+        `${fn}() has no assertNever — a new union member compiles clean and fails at runtime`,
+      ).toMatch(/assertNever/)
+    },
+  )
+
+  it.each(EXHAUSTIVE_SWITCHES)('$fn\'s assertNever actually refuses a non-never argument', ({ file }) => {
+    // A helper that takes `unknown` and throws is not an exhaustiveness check — it is the
+    // runtime throw wearing a better name, and it would let a sixth kind compile. The
+    // parameter must be typed `never`. (`rules.ts` cannot import from `interpreter.ts` —
+    // interpreter imports rules — and `state.ts` already imports rules, so the helper
+    // needs a module of its own that imports nothing.)
+    expect(assertNeverParams(file)).toMatch(/:\s*never\b/)
+  })
+})
+
 describe('tp1-5 — speedFor is exhaustive at COMPILE time (lang-review #3)', () => {
   it('guards its default with assertNever, not only a runtime throw', () => {
     // This story is the reason the rule matters here: the interpreter's own comment
