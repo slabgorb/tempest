@@ -186,6 +186,13 @@ export function createFx(): Fx {
         spawnEnemyBurst(project(tube, e.lane, e.depth))
       }
 
+      // tp1-13 (S-013): a shot-down enemy bolt explodes like any kill — INCCSQ pairs
+      // CCEXPL with GENEXP at the shot's coordinates (ALWELG.MAC:2797-2809). Same
+      // 16-spoke burst, at the destroyed bolt's projected position, event-driven only.
+      if (e.type === 'bolt-destroyed') {
+        spawnEnemyBurst(project(tube, e.lane, e.depth))
+      }
+
       // Superzapper active this frame → surface the well-color index (masked to
       // the ROM's 0..7 range) for the renderer to tint the well/web with.
       if (e.type === 'superzapper-flash') {

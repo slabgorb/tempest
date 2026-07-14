@@ -44,7 +44,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 162,
+      "line": 168,
       "verbatim": "export interface HighScoreEntryState {"
     },
     "claim": "ITIMHI=60 (ALSCOR.MAC:36) is HEX in this assembler — decimal literals carry a trailing period ('SECOND\t=20.', ALCOMN.MAC:87; 'CMP I,10.', ALWELG.MAC:571), cf. B-021 — so ITIMHI = 0x60 = 96, not 60. It seeds TIMHIS (INTLDR, ALSCOR.MAC:745-746), which GETINI decrements once per 32 GAME frames (`LDA QFRAME / AND I,1F / IFEQ ... DEC TIMHIS`, ALSCOR.MAC:768-772) and aborts entry (CNOTFOU) at zero: 96 * 32 = 3072 game frames, which at the ROM's 256/9 = 28.44 fps (FR-001) is ~108 seconds before an idle player's initials entry is auto-cancelled. `HighScoreEntryState` (src/core/state.ts:106-108) carries only `{ initials: string }` — no countdown field anywhere in state.ts or sim.ts — so our entry screen waits indefinitely for input.",
@@ -63,7 +63,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 81,
+      "line": 82,
       "verbatim": "  const initials = stepNameEntry(s.entry.initials, key, MAX_INITIALS)"
     },
     "claim": "The ROM's initial-selection cursor (GINICO/GETINI, ALSCOR.MAC:781-789) cycles a value 0-26 where 0-25 map through the ASCVG table to 'A'-'Z' and 26 (CBLANK) is an explicit blank/space glyph — 27 selectable symbols per character slot, and unfilled/default initials are seeded as blank (`LDA I,CBLANK` in HISCHK, ALSCOR.MAC:629-631). Our `stepNameEntry` regex `/^[a-zA-Z]$/` accepts only the 26 letters; there is no blank/space keystroke, and an unfilled slot is simply absent from the string rather than a stored blank character.",
@@ -82,7 +82,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 52,
+      "line": 53,
       "verbatim": "const MAX_INITIALS = 3"
     },
     "claim": "The ROM reserves exactly 3 initial-bytes per ranked entry (3*NHISCO where NHISCO=8), and our entry buffer caps at MAX_INITIALS=3 — the classic 3-character arcade initials convention is preserved exactly."

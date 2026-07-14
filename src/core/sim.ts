@@ -10,6 +10,7 @@ import {
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
+  WARP_SPACE_FRAMES, startWaveBonus,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
@@ -389,6 +390,10 @@ function resolveEnemyBulletHits(s: GameState): void {
       if (bolt.lane === bullet.lane && Math.abs(bolt.depth - bullet.depth) <= HIT_DEPTH) {
         deadBullets.add(bi)
         deadBolts.add(ci)
+        // tp1-13 (S-013): INCCSQ's charge-charge kill (ALWELG.MAC:2797-2809) makes
+        // the EX noise + explosion at the SHOT's (the bolt's) coordinates and scores
+        // nothing. The event carries the BOLT's position, not the bullet's.
+        s.events.push({ type: 'bolt-destroyed', lane: bolt.lane, depth: bolt.depth })
         break
       }
     }
@@ -633,6 +638,12 @@ function startGameAtLevel(s: GameState, level: number): void {
   s.warp.progress = 0
   s.warp.velocity = 0
   s.warp.warning = 0
+  s.warp.inSpace = false
+  s.warp.spaceFrames = 0
+  // tp1-13 (S-015): the ROM commits the select index into BONUS here (ALWELG.MAC:236);
+  // we store its ladder value directly. Paid once on arrival at the next well
+  // (advanceLevel). A wave-1 start yields 0 — no bonus, no chime.
+  s.startBonus = startWaveBonus(level)
   startLevel(s)
 }
 
@@ -734,6 +745,8 @@ function checkLevelClear(s: GameState): void {
     s.mode = 'warp'
     s.warp.progress = 0
     s.warp.velocity = WARP_INITIAL_SPEED // dive starts slow, then accelerates (6-1)
+    s.warp.inSpace = false               // the dive opens in the well, not in space (tp1-13)
+    s.warp.spaceFrames = 0
     // AVOID SPIKES grace: hold the Claw at the rim for a beat so the player can
     // rotate off a spiked lane before the dive commits — but only when a spike
     // actually threatens AND the displayed level is still low enough to warn.
@@ -759,6 +772,19 @@ function advanceLevel(s: GameState): void {
   s.warp.progress = 0
   s.warp.velocity = 0
   s.warp.warning = 0
+  s.warp.inSpace = false
+  s.warp.spaceFrames = 0
+  // tp1-13 (S-015): arrival at the next well is where the advanced-start skill-step
+  // bonus is collected and cleared (ENDWAV pays BONPTM[BONUS]; "CLEAR BONUS" on
+  // arrival, ALWELG.MAC:114-117). Paid through awardScore — the shared UPSCOR path —
+  // so a bonus that crosses EXTRA_LIFE_INTERVAL also grants the bonus life
+  // (ALEXEC.MAC:374, 561-586). Gated on nonzero (ENDWAV's IFNE), so a wave-1 start
+  // makes no award and no chime.
+  if (s.startBonus > 0) {
+    s.events.push({ type: 'wave-bonus', points: s.startBonus })
+    awardScore(s, s.startBonus)
+  }
+  s.startBonus = 0
   s.mode = 'playing'
 }
 
@@ -815,19 +841,42 @@ function stepWarp(s: GameState, dt: number): void {
     s.warp.warning = Math.max(0, s.warp.warning - dt)
     return // still at the rim — the dive (and any spike crash) waits for the countdown
   }
-  // WD-010 (tp1-23): warpAccel's ramp is indexed by the ROM's CURWAV, which is 0-based,
-  // while s.level is the displayed 1-based number (state.ts seeds it at 1). Feeding it
-  // s.level ran the whole ramp one wave early — the level-1 dive got 0x24 where the ROM
-  // gives 0x20 (12.5% hot) and the cap landed on level 12 instead of 13.
+  // The dive keeps accelerating the whole way down. WD-010 (tp1-23): warpAccel's ramp
+  // is indexed by the ROM's CURWAV, which is 0-based, while s.level is the displayed
+  // 1-based number (state.ts seeds it at 1). Feeding it s.level ran the whole ramp one
+  // wave early — the level-1 dive got 0x24 where the ROM gives 0x20 (12.5% hot) and the
+  // cap landed on level 12 instead of 13.
   s.warp.velocity += warpAccel(s.level - 1) * dt
   s.warp.progress += s.warp.velocity * dt
-  if (resolveWarpSpikeHit(s)) return // crashed onto a spike — do not advance the level
-  if (s.warp.progress >= 1) {
-    // Story 10-11: the dive completed — stop the sustained warp sound on the same
-    // frame the level advances, so it spans the dive exactly (no bleed into next).
-    s.events.push({ type: 'warp-end' })
-    advanceLevel(s)
+
+  // tp1-13 (S-014): the SECOND phase. Past the well bottom (ILINDDY) the cursor is off
+  // the lines — the spike collision no longer exists ("CMP I,ILINDDY / IFCC ;CURSOR
+  // STILL ON LINES", ALWELG.MAC:1083-1085) — so the dive is CRASH-PROOF here and just
+  // holds the T3 drone before arriving at the next well.
+  if (s.warp.inSpace) {
+    s.warp.spaceFrames -= 1
+    if (s.warp.spaceFrames <= 0) {
+      // Arrival. Story 10-11: stop the sustained warp sound so it spans the dive
+      // exactly. advanceLevel pays the pending advanced-start bonus (ENDWAV).
+      s.events.push({ type: 'warp-end' })
+      advanceLevel(s)
+    }
+    return
   }
+
+  // Still in the well: a spike on the player's lane crashes the dive. Checked ONLY
+  // while progress < 1 (the bottom-crossing branch below is reached first once the
+  // cursor passes ILINDDY), which is exactly the ROM's "still on lines" gate.
+  if (s.warp.progress >= 1) {
+    // The cursor passed the well bottom (ILINDDY = $F0). MOVCUD initializes space mode
+    // and starts the T3 space drone via SOUTS3 (ALWELG.MAC:1032-1037). The level has
+    // NOT advanced yet — space is still the warp.
+    s.events.push({ type: 'warp-space' })
+    s.warp.inSpace = true
+    s.warp.spaceFrames = WARP_SPACE_FRAMES
+    return
+  }
+  resolveWarpSpikeHit(s) // crash onto a spike in the well — killPlayer stops the dive
 }
 
 // Story 10-11: the authentic pulsar_hum (ROM cc99) loops while a pulsar is on the

@@ -8,7 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entries describe what changed
 for the player. Purely internal work is summarised under *Internal*.
 
-## [Unreleased]
+## [1.0.13] - 2026-07-14
 
 ### Changed
 - **Every well now has its own camera.** The far end of the tube was a fixed
@@ -21,6 +21,13 @@ for the player. Purely internal work is summarised under *Internal*.
   a new wave the camera glides into the next well's framing over about a
   quarter of a second instead of cutting. A fresh life still snaps straight
   into place.
+- **The enemies wear the well's colours now.** Flippers, tankers and pulsars
+  take their colours from the same per-wave-group palette bank as the well —
+  the recolouring 1.0.12's palette work promised. A pulsing pulsar strobes
+  white and shows its wave group's colour between pulses; the tanker keeps its
+  cargo emblem. The warp starfield follows: plain blue over the first four
+  waves, then from wave 5 each plane of stars takes its own colour from the
+  bank.
 
 ### Fixed
 - The warp starfield had been drawn half a screen off-centre since an earlier

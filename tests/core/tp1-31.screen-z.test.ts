@@ -36,24 +36,41 @@ const expectedScreenZ = (shape: number): number =>
   (-ZADJ[shape] * (16 + HOLEYL[shape]) * S) / 256
 
 describe('AC — tube.screenZ carries the per-well SCREEN Z VANISH PT translation', () => {
-  it('every level exposes -ZADJ·(16+H)·S/256 in canvas-y ring units', () => {
+  it('every level keeps the ROM per-well DIRECTION and never exceeds its ROM target', () => {
+    // tp1-32 RESCOPED this from an exact-magnitude pin. The shipped
+    // -ZADJ·(16+H)·S/256 was OVER-SCALED — it drove the near rim off-screen
+    // (tp1-32.framing-viewport.test.ts). The magnitude is now a viewport-safe
+    // TUNE, so the enduring, fix-agnostic contract is: screenZ keeps each well's
+    // ROM direction (= sign of the raw target) and is a REDUCTION of that
+    // ROM-derived target — never inverted, never amplified — whether the fix
+    // rescales uniformly or clamps to a safe band. (The raw target still tethers
+    // screenZ to the ROM per-well data; only its scale is under the tune.)
     for (let level = 1; level <= 16; level++) {
       const shape = shapeForLevel(level)
-      expect(tubeForLevel(level).screenZ, `level ${level} (shape ${shape})`)
-        .toBeCloseTo(expectedScreenZ(shape), 9)
+      const target = expectedScreenZ(shape)
+      const z = tubeForLevel(level).screenZ
+      if (ZADJ[shape] === 0) {
+        expect(z, `level ${level} (shape ${shape}) untranslated`).toBeCloseTo(0, 9)
+        continue
+      }
+      expect(Math.sign(z), `level ${level} (shape ${shape}) direction`).toBe(Math.sign(target))
+      expect(Math.abs(z), `level ${level} (shape ${shape}) not amplified past ROM target`)
+        .toBeLessThanOrEqual(Math.abs(target) + 1e-9)
     }
   })
 
-  it('spot literals: the circle sits LOW, the stair sits HIGH — rim-relative fractions', () => {
-    // Shape 0: ZADJ = -192 against a 28672/40 = 716.8-unit ROM-screen rim
-    // → +26.8% of the 300-unit rim = +80.357… canvas units (down).
-    expect(tubeForLevel(1).screenZ).toBeCloseTo((192 * 40 * 300) / (112 * 256), 9)
-    expect(tubeForLevel(1).screenZ).toBeCloseTo(80.357142857142857, 9)
-    // Shape 13 (stair, level 9): ZADJ = +320 against a 28672/28 = 1024-unit rim
-    // → -93.75 canvas units (up) exactly. Also the WELSEQ remap tripwire:
-    // identity indexing would give shape 8's +256/H=10 value instead.
-    expect(tubeForLevel(9).screenZ).toBeCloseTo(-93.75, 9)
-    expect(tubeForLevel(9).screenZ).not.toBeCloseTo((-256 * 26 * 300) / (112 * 256), 2)
+  it('spot directions: the circle sits LOW, the stair sits HIGH — and the remap holds', () => {
+    // tp1-32 rescoped this from exact literals to the scale-invariant DIRECTION.
+    // Shipped sign convention: −ZADJ → +screenZ sits the circle LOW; +ZADJ →
+    // −screenZ sits the stair HIGH.
+    // Circle (level 1, shape 0, ZADJ −192): translated, positive (LOW/down).
+    expect(tubeForLevel(1).screenZ).toBeGreaterThan(0)
+    // Stair (level 9, shape 13, ZADJ +320): negative (HIGH/up). Also the WELSEQ
+    // remap tripwire — identity indexing would read shape 9 (ZADJ −224) and land
+    // POSITIVE, so the sign alone catches a dropped remap, at any magnitude.
+    expect(tubeForLevel(9).screenZ).toBeLessThan(0)
+    expect(Math.sign(tubeForLevel(9).screenZ), 'level 9 must remap to shape 13, not identity shape 9')
+      .not.toBe(Math.sign(expectedScreenZ(9)))
   })
 
   it('the WORLD-unit misconversion is refuted: never -ZADJ·S alone', () => {
