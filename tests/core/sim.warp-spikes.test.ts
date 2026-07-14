@@ -33,7 +33,7 @@ function warpingState(opts: {
   lives?: number
 }): GameState {
   const s = playingState(1)
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.enemies = []
   s.bullets = []
   s.mode = 'warp'
@@ -150,7 +150,7 @@ describe('spikes crash the Claw during the warp (Story 3-3)', () => {
   // bullets are cleared) and crashes the Claw on the real level-clear → warp path.
   it('persists spikes into the warp and crashes on them via the real clear path', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = []
     s.player.lane = 0
     s.spikes[0] = SPIKE_MAX_DEPTH                 // laid during the level, player's lane

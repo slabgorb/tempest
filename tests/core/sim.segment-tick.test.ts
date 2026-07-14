@@ -38,7 +38,7 @@ function rotatable(seed: number): GameState {
   const s = playingState(seed)
   s.player.lane = 0
   s.enemies = []
-  s.spawn = { remaining: 5, timer: 999 }
+  s.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
   return s
 }
 

@@ -18,7 +18,7 @@ const FIRING: Input = { spin: 0, fire: true, zap: false, start: false }
 // Clear a fresh level-1 game and take the single step that enters the warp.
 function enterWarp(): GameState {
   const s = playingState(1)
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.enemies = []
   return stepGame(s, NEUTRAL, 1 / 60)
 }

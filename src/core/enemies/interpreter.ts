@@ -28,6 +28,7 @@ import {
   LevelParams, PULSAR_CLIMB_SPEED, PULSAR_NEAR_FAR_DEPTH, SPIKER_TURNAROUND_DEPTH,
   SPIKE_MAX_DEPTH, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB, PUCHDE_FRAMES, wttfraForLevel,
   WARP_ALONG_SPAN, FUSE_CHASE_ON_TUBE, wfuschForLevel, PLAYER_RIM_DEPTH,
+  FUSE_TURNBACK_DEPTH, FUSE_RANGE_FLOOR_DEPTH, FUSE_EARLY_WAVE_MAX,
 } from '../rules'
 import { CAM, CAM_ENTRY, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
 import { assertNever } from '../assert'
@@ -107,8 +108,15 @@ export interface CamContext {
   readonly playerLane: number
   /** Per-lane spike height, in depth units. VELTST reads it; VSTRAI lays it. */
   readonly spikes: number[]
-  /** Enemies still to be released this level — JSTRAI's "ANY NYMPHS LEFT?". */
-  readonly spawnRemaining: number
+  /**
+   * NYMCOU (ALCOMN.MAC:916) — nymphs still QUEUED this wave, i.e.
+   * `spawn.nymphs.length`. Four programs key on it: CHASER's pulsar bounce
+   * (1831), JPULMO's "SEND PULSAR UP" (1791), JFUSEUP's turn-back (2110), and
+   * JSTRAI's tanker conversion (2236). Under tp1-6 this is the REAL queue count
+   * held up by slot back-pressure — not the old spawn timer's countdown, which
+   * kept ticking however full the board was.
+   */
+  readonly nymphCount: number
   /**
    * Every invader on the board, INCLUDING the one being run. CHASER's pincer rule is the
    * only reader: it counts the chasers already circling (INCCOU) and, when there is
@@ -257,7 +265,7 @@ function chaser(e: Enemy, ctx: CamContext): number | undefined {
   // A pulsar is the one invader that will not take the rim while the wave still owes
   // enemies: `LDA NYMCOU / IFNE` → "SEND IT DOWN" (INVAC2 ^= INVDIR). It bounces down the
   // well and climbs again, and only converts once the nymphs are spent.
-  if (e.kind === 'pulsar' && ctx.spawnRemaining > 0) {
+  if (e.kind === 'pulsar' && ctx.nymphCount > 0) {
     e.direction = -1
     return undefined
   }
@@ -310,7 +318,7 @@ function jsmove(e: Enemy, ctx: CamContext): number | undefined {
 function jpulmo(e: Enemy, ctx: CamContext): number | undefined {
   if (e.direction === 1) return jsmove(e, ctx)
   moveAlong(e, ctx)
-  if (ctx.spawnRemaining === 0 || e.depth <= PULSAR_NEAR_FAR_DEPTH) e.direction = 1
+  if (ctx.nymphCount === 0 || e.depth <= PULSAR_NEAR_FAR_DEPTH) e.direction = 1
   return undefined
 }
 
@@ -352,8 +360,10 @@ function jstrai(e: Enemy, ctx: CamContext): { camSta: number, became?: Enemy } {
   e.lane = target
   e.direction = 1
 
-  // "ANY NYMPHS, OR NON SPIKER TYPE CLIMBERS?" — none left, so it converts.
-  if (ctx.spawnRemaining === 0) {
+  // JSTRAI's conversion key (ALWELG.MAC:2236): the CODE reads `LDA NYMCOU` and
+  // nothing else — its comment's "OR NON SPIKER TYPE CLIMBERS" is wishful prose.
+  // None queued, so it converts.
+  if (ctx.nymphCount === 0) {
     return { camSta: 0, became: { ...e, kind: 'tanker', contains: 'flipper' } }
   }
   return { camSta: 1 }
@@ -437,6 +447,41 @@ function jfuseup(e: Enemy, ctx: CamContext): void {
   // fuseball never falls into ATOP and never becomes a chaser. KILINV agrees — it books a
   // fuse standing at CURSY as a MOVER, branching around the chaser count (2302-2311).
   moveAlong(e, ctx)
+
+  // THE TURN-BACK (W-024, tp1-6). Climbing with nymphs still queued (`LDY NYMCOU /
+  // IFNE`, 2110) on an early wave (`LDY CURWAV / CPY I,17.` — 0-based, so displayed
+  // waves 1-17), the climb ends at INVAY $20: "TURN BACK BEFORE TOP" (2115). And the
+  // descent leg reverses at $80, "AT BOTTOM OF RANGE?" (2131-2133) — so the fuse
+  // YO-YOS between depth 0.5 and 0.929 for as long as the wave owes enemies. With the
+  // queue spent it is `RTS ;NONE LEFT. HEAD FOR TOP` (2118): no cap, it arrives.
+  //
+  // In the ROM each end triggers a lateral roll and the roll's LANDING is what flips
+  // INVDIR (JJUMPM's `EOR I,INVDIR ;REVERSE UP DOWN DIRECTION`, 1929-1931); our roll
+  // is the instant jitter hop below (tp1-25's standing model), so the reversal
+  // happens at the trigger itself — same envelope, one landing early. (TEA ratified
+  // the envelope-not-trace pin; see tp1-6's Design Deviations.)
+  const earlyWave = ctx.level <= FUSE_EARLY_WAVE_MAX
+  if (e.direction === 1 && ctx.nymphCount > 0 && earlyWave && e.depth >= FUSE_TURNBACK_DEPTH) {
+    if (e.depth >= RIM_DEPTH) {
+      // A fuse that IS at the rim (a state the patrol cap normally prevents —
+      // fixture-placed, or caught by a re-armed queue) leaves next frame, but
+      // the rim frame itself stays lethal: the ROM rolls it along CURSY and
+      // FUSELR's own VFUSKI keeps checking the kill from the rim until the
+      // landing's `EOR I,INVDIR` finally sends it down.
+      e.direction = -1
+    } else {
+      // Seat it back on the $20 line. The ROM leaves INVAY one WFUSIL-frame
+      // past $20 at the trigger; our dt step is coarser than that byte, so an
+      // unclamped overshoot would poke visibly above the line the arcade
+      // patrols under.
+      e.depth = FUSE_TURNBACK_DEPTH
+      e.direction = -1
+    }
+  } else if (e.direction === -1) {
+    // Nymphs gone mid-descent sends it up too — the landing override at 1932-1943
+    // (`LDA NYMCOU / IFEQ` → "SEND UP") — not just the $80 floor.
+    if (e.depth <= FUSE_RANGE_FLOOR_DEPTH || ctx.nymphCount === 0) e.direction = 1
+  }
 
   e.jitterTimer -= ctx.dt
   if (e.jitterTimer > 0) return

@@ -64,7 +64,7 @@ function isolated(seed: number, level = 1): GameState {
   s.player.lane = 8
   s.enemies = []
   s.bullets = []
-  s.spawn = { remaining: 5, timer: 999 }
+  s.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
   s.spikes = new Array(s.tube.laneCount).fill(0)
   return s
 }
@@ -175,7 +175,7 @@ describe('the warp dive — the squared error, felt as time (AC5, AC6)', () => {
     s.tube = tube
     s.spikes = new Array(tube.laneCount).fill(0) // no spikes: no AVOID SPIKES countdown
     s.player.lane = 4
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = []
     s.bullets = []
 

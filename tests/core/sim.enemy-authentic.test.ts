@@ -70,7 +70,7 @@ function isolated(seed: number): GameState {
   s.player.lane = 8
   s.enemies = []
   s.bullets = []
-  s.spawn = { remaining: 5, timer: 999 } // pending but never fires within a test
+  s.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) } // pending but never fires within a test
   s.spikes = new Array(s.tube.laneCount).fill(0)
   return s
 }

@@ -63,32 +63,22 @@ describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
     expect(p20.enemyCount).toBeGreaterThan(p16.enemyCount)
   })
 
-  it('keeps spawn cadence tightening across the cycle boundary', () => {
-    // AC#1: shorter intervals = faster spawning at higher levels.
-    //
-    // `flipInterval` used to be asserted here too. tp1-4 deleted it: a flipper's flip
-    // cadence is not a per-level number at all, it is written into the wave's CAM
-    // program (W-005/W-006), and the wave picks the program from CAMWAV — so "flips
-    // faster at higher levels" is not a thing the ROM does, or can do.
-    const p16 = levelParams(16)
-    const p20 = levelParams(20)
-    expect(p20.spawnInterval).toBeLessThan(p16.spawnInterval)
-  })
+  // 'keeps spawn cadence tightening across the cycle boundary' stood here, pinning
+  // `spawnInterval`. tp1-6 (W-003) deleted the metronome it measured: there is no
+  // spawn timer anywhere in ALWELG — release pacing is ININYM's 16-frame stagger
+  // under slot back-pressure, and the per-wave enemy BUDGET (still asserted above
+  // via enemyCount) is what actually ramps. tp1-7's TNYMMX transcription owns the
+  // authentic per-wave counts. (`flipInterval` fell the same way in tp1-4, and
+  // `pulseInterval` in tp1-5 — the ramp keeps losing numbers that were never the
+  // ROM's to scale.)
 
-  it('clamps timing intervals to playable floors at very high levels', () => {
-    // AC#2: a level-50 ramp must not drive any cadence to zero — the game has
-    // to stay finite/playable arbitrarily deep into the difficulty curve.
-    //
-    // This used to check `pulseInterval` too. tp1-5 (W-026) removed it from LevelParams
-    // altogether: the pulse is not a per-level interval in the ROM, it is ONE global
-    // counter on a fixed 40-frame period (PULSON/PULTIM), so the ramp cannot reach it to
-    // drive it anywhere. That is a stronger guarantee than a floor, and it is structural —
-    // there is no longer a number here for a level to scale.
+  it('clamps timing floors so no cadence hits zero at very high levels', () => {
+    // AC#2's survivor: with spawnInterval and pulseInterval both structural now,
+    // the ramp's remaining per-level cadences are the speeds — assert the ramp
+    // keeps them finite and ordered instead.
     const p = levelParams(50)
-    expect(p.spawnInterval).toBeGreaterThanOrEqual(0.3)
-    // And the floors must actually bind here (otherwise "floor" is meaningless):
-    // a floored value never exceeds the unfloored level-16 value.
-    expect(p.spawnInterval).toBeLessThanOrEqual(levelParams(16).spawnInterval)
+    expect(p.flipperSpeed).toBeGreaterThan(0)
+    expect(p.flipperSpeed).toBeLessThanOrEqual(levelParams(33).flipperSpeed)
   })
 })
 

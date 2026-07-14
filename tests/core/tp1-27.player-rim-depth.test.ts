@@ -101,7 +101,7 @@ function base(level: number, playerLane: number): GameState {
   s.level = level
   s.tube = tubeForLevel(level)   // NOT optional: s.level alone leaves level 1's tube
   s.spikes = new Array(s.tube.laneCount).fill(0)
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.player.lane = playerLane
   s.enemies = []
   return s

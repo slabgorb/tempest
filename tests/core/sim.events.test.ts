@@ -38,7 +38,7 @@ function eventsOfType<T extends GameEvent['type']>(
 // so no stray enemy materialises mid-step and forges an event we did not author.
 function playing(enemies: Enemy[]): GameState {
   const s = playingState(1)
-  s.spawn = { remaining: 0, timer: 999 }
+  s.spawn = { nymphs: Array.from({ length: 0 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
   s.enemies = enemies
   return s
 }
@@ -53,7 +53,7 @@ const threeFlippers = (): Enemy[] => [
 describe('fire events', () => {
   it('emits a fire event at the rim when the player fires', () => {
     const s = playing([])
-    s.spawn.remaining = 1 // keep the empty board OUT of the level-clear path (which wipes bullets)
+    s.spawn = { nymphs: [{ lane: 0, py: 30000 }] } // keep the empty board OUT of the level-clear path (which wipes bullets)
     s.player.lane = 4
     const out = stepGame(s, FIRE, DT)
 
@@ -73,7 +73,7 @@ describe('fire events', () => {
 
   it('emits no fire event when the bullet cap is already reached', () => {
     const s = playing([])
-    s.spawn.remaining = 1 // keep the empty board OUT of the level-clear path (which wipes bullets)
+    s.spawn = { nymphs: [{ lane: 0, py: 30000 }] } // keep the empty board OUT of the level-clear path (which wipes bullets)
     s.bullets = Array.from({ length: MAX_BULLETS }, () => ({ lane: 0, depth: 0.5 }))
     const out = stepGame(s, FIRE, DT)
     expect(out.bullets).toHaveLength(MAX_BULLETS)   // nothing fired
@@ -140,7 +140,7 @@ describe('enemy-death events from bullets', () => {
 describe('superzapper events', () => {
   it('a full blast emits one superzapper-activate and an enemy-death per kill across the window (10-2)', () => {
     const s = playing(threeFlippers())
-    s.spawn.remaining = 1 // keep the emptied board OUT of the level-clear path
+    s.spawn = { nymphs: [{ lane: 0, py: 30000 }] } // keep the emptied board OUT of the level-clear path
     // The first press opens a multi-frame window (10-2): ONE activate fires on the
     // press carrying the total kill count, and the three kills land one-per-frame
     // across the window. Collect the whole window's stream and assert the net.

@@ -41,7 +41,7 @@ function measureRimFramesPerLane(level: number): number {
   s0.level = level
   s0.tube = tubeForLevel(level)
   s0.spikes = new Array(s0.tube.laneCount).fill(0)
-  s0.spawn.remaining = 0
+  s0.spawn = { nymphs: [] }
   // Wave 33 wraps onto wave 1's well (a closed 16-lane circle) and wave 1's flipper
   // program, NOJUMP — a straight climb, so it arrives on the lane it started on.
   s0.player.lane = 12

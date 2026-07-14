@@ -65,7 +65,7 @@ const SECOND_WINDOW_MAX = 6
 function playing(enemies: Enemy[]): GameState {
   const s = initialState(1)
   s.mode = 'playing'
-  s.spawn = { remaining: 0, timer: 999 }
+  s.spawn = { nymphs: Array.from({ length: 0 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
   s.enemies = enemies
   return s
 }
@@ -296,7 +296,7 @@ describe('superzapper 10-2 — first press kills on a per-frame cadence', () => 
   it('a board of only flippers fully clears across the window (no tanker needed)', () => {
     // Keep spawn budget so the emptied board does not auto-warp mid-window.
     const s = playing(threeFlippers())
-    s.spawn = { remaining: 3, timer: 999 }
+    s.spawn = { nymphs: Array.from({ length: 3 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
     const { final, trace } = runZap(s)
     expect(final.enemies).toHaveLength(0)
     expect(trace.reduce((n, f) => n + f.deaths, 0)).toBe(3)
@@ -463,7 +463,7 @@ describe('superzapper 10-2 — state machine across activations', () => {
     // First press → used-once (board clears over the window; keep spawn budget so
     // the emptied board does not auto-warp).
     let s = playing([makeEnemy('flipper', 1, 0.5, levelParams(1))])
-    s.spawn = { remaining: 5, timer: 999 }
+    s.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
     s = runZap(s).final
     expect(s.player.superzapper).toBe('used-once')
 
@@ -609,7 +609,7 @@ describe('superzapper 10-14 — empty-board SECOND press (weak shot is wasted-bu
     // only warps an empty board with spawn.remaining === 0). The charge must
     // survive the wasted press and remain a live 'used-once' weak shot.
     const s = playing([])
-    s.spawn = { remaining: 1, timer: 999 }
+    s.spawn = { nymphs: Array.from({ length: 1 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
     s.player.superzapper = 'used-once'
     const wasted = stepGame(s, ZAP, DT)
     expect(wasted.player.superzapper).toBe('used-once') // wasted, not spent

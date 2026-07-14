@@ -27,8 +27,7 @@ const DT = 1 / 60
 function firingState(seed: number): GameState {
   const s = playingState(seed)
   s.enemies = []
-  s.spawn.remaining = 99
-  s.spawn.timer = 9999
+  s.spawn = { nymphs: Array.from({ length: 99 }, (_, i) => ({ lane: i % 16, py: 30000 + 16 * i })) }
   return s
 }
 

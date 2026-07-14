@@ -66,7 +66,7 @@ function flipperOnWave(level: number, opts: {
   // this the whole file silently tests wave 1's tube.
   s.tube = tubeForLevel(level)
   s.spikes = new Array(s.tube.laneCount).fill(0)
-  s.spawn.remaining = 0          // no reinforcements — one enemy, one program
+  s.spawn = { nymphs: [] }          // no reinforcements — one enemy, one program
   s.player.lane = opts.playerLane
   s.enemies = [makeEnemy('flipper', opts.lane, opts.depth, levelParams(level))]
   return s

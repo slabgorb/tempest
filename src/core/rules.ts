@@ -1,7 +1,7 @@
 // src/core/rules.ts
 
-import { type Rng, nextFloat } from '@arcade/shared/rng'
-import type { Enemy, EnemyKind, TankerCargo } from './state'
+import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
+import type { Enemy, EnemyKind, Nymph, TankerCargo } from './state'
 import { flipperCamForWave } from './enemies/cam'
 import { assertNever } from './assert'
 
@@ -435,11 +435,40 @@ export interface LevelParams {
   enemyCount: number
   flipperSpeed: number   // depth units per second
   flipperCam: number     // WFLICAM — the CAM program THIS wave's flippers run (tp1-4)
-  spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
   fuseballSpeed: number  // depth units/s climb for fuseballs
   tankerSpeed: number    // depth units/s climb for tankers
 }
+
+// ─── THE 7-INVADER CAP AND THE NYMPH QUEUE (tp1-6) ───────────────────────────
+//
+// NINVAD (ALCOMN.MAC:809, `NINVAD= 7`): the ROM's active-invader arrays hold
+// SEVEN slots — the hardware cannot express an 8th live invader. Every
+// activation, hatch and split child alike, goes through ACTINV's slot scan
+// (ALWELG.MAC:1219-1263) and is refused when no slot is free.
+export const NINVAD = 7
+// WINVMX (ALCOMN.MAC:732, "MAX # OF INVADERS-1"): the byte MOVNYM compares the
+// live count against. TINVMX (ALWELG.MAC:695, `.BYTE T1,1,99.,6`) is a single
+// constant record spanning every wave 1-99 — the cap NEVER varies by wave, and
+// CONTOUR folds waves >= 99 back inside the record, so there is no wave that
+// can walk off it. The gate itself is STRICTLY GREATER: `CMP WINVMX / IFCS /
+// IFNE` (1113-1115) — both flags of ONE compare — so nymphs still advance at 6
+// live (and hatch to 7); they freeze only once all NINVAD slots are booked.
+export const WINVMX = NINVAD - 1
+
+// ─── THE FUSEBALL TURN-BACK (W-024, tp1-6) ───────────────────────────────────
+//
+// JFUSEUP (ALWELG.MAC:2110-2118): climbing with nymphs left (`LDY NYMCOU /
+// IFNE`) on an early wave (`LDY CURWAV / CPY I,17.` — CURWAV is 0-based, so
+// displayed waves 1-17), the climb is capped at INVAY $20: "TURN BACK BEFORE
+// TOP". The same $20 byte as the spiker's turnaround, kept as its OWN constant
+// (the tp1-5 lesson: one number, two rules — they must be able to move apart).
+export const FUSE_TURNBACK_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
+// The descent leg reverses at INVAY $80 — "AT BOTTOM OF RANGE?" (2131-2133) —
+// so the early-wave fuse yo-yos between depth 0.5 and 0.929 while nymphs remain.
+export const FUSE_RANGE_FLOOR_DEPTH = (0xf0 - 0x80) / WARP_ALONG_SPAN  // = 0.5
+// `CPY I,17.` on the 0-based CURWAV: the last DISPLAYED wave that is "early".
+export const FUSE_EARLY_WAVE_MAX = 17
 
 // Authentic flipper climb speed (story 6-9, REBASED by tp1-1). The ROM steps the
 // flipper's climb byte from 1.375 along/frame at L1 to 3.375 at L33+ (then flat),
@@ -490,7 +519,8 @@ export function levelParams(level: number): LevelParams {
     // WFLICAM (NEWFLI, ALWELG.MAC:1428-1433): the wave's flipper program. This is
     // the whole of W-006 — wave 1 gets NOJUMP, so its flippers never flip.
     flipperCam: flipperCamForWave(level),
-    spawnInterval: Math.max(0.3, 1.2 / ramp),
+    // No spawnInterval: the metronome was W-003's divergence and tp1-6 deleted it.
+    // Release pacing is ININYM's 16-frame stagger plus slot back-pressure (below).
     spikerSpeed: 0.22 * ramp,
     // No pulseInterval: the pulse is not a per-pulsar timer any more, and it does not
     // ramp with the level. It is ONE global counter with a fixed 40-frame period
@@ -500,9 +530,33 @@ export function levelParams(level: number): LevelParams {
   }
 }
 
-export function spawnForLevel(level: number): { remaining: number; timer: number } {
-  const p = levelParams(level)
-  return { remaining: p.enemyCount, timer: p.spawnInterval }
+/**
+ * ININYM (ALWELG.MAC:315-340) — the wave's whole enemy budget enters as a
+ * staggered nymph queue (INIENE:303-304 loads NWNYMC into NYMCOU; ours is the
+ * queue's length). Nymph i is seeded at NYMPY = ((i & $F) << 4) | lane: the
+ * ROM's shift is `TXA / ASL ASL ASL ASL` on an EIGHT-BIT accumulator, so the
+ * band WRAPS at index 16 — a big wave's nymphs 16+ seed back into the same
+ * 256-frame window as 0-15 and the cabinet opens it with interleaved
+ * double-density hatching. The one all-zero ASSEMBLED byte is bumped to $0F
+ * (`IFEQ / LDA I,0F`) — post-wrap, so index 16 on lane 0 is rescued exactly
+ * like index 0 — and a nymph is never born already inactive.
+ *
+ * (The first GREEN shipped this shift unbounded and stretched every budget
+ * past 16 — level 7 and up — slower than the arcade; review round-trip 1.)
+ *
+ * The ROM rolls the lane as `RANDOM AND I,0F` over its fixed 16 lines; our open
+ * wells have laneCount 15, so we roll the tube's real lane range instead —
+ * validity over a mask the geometry cannot honor.
+ */
+export function spawnForLevel(level: number, rng: Rng, laneCount: number): { nymphs: Nymph[] } {
+  const nymphs: Nymph[] = []
+  const count = levelParams(level).enemyCount
+  for (let i = 0; i < count; i++) {
+    const lane = nextInt(rng, laneCount)
+    const py = ((i & 0x0f) << 4) | lane
+    nymphs.push({ lane, py: py === 0 ? 0x0f : py })
+  }
+  return { nymphs }
 }
 
 export function fuseballScore(depth: number): number {

@@ -314,7 +314,8 @@
     "reasoning": "This is arguably the single biggest gameplay-fidelity gap found in this pass: the authentic 7-invader ceiling (with the rest queued as nymphs) is core to Tempest's difficulty pacing — it's what keeps a single wave from becoming an overwhelming swarm. Without it, our level's spawn budget can all become simultaneously active and firing, changing the felt difficulty curve across every level. [REFUTATION] Confirmed NINVAD=7 (ALCOMN.MAC:809) sizes every active-invader parallel array (INVAC1:843, INVAC2:859, INVAYL:874, INVACT:875, INVAL1:883, INVAL2:885, INVAY:887, all `.BLKB NINVAD`). Confirmed DSPINV (ALDISP.MAC:625-650) walks exactly NINVAD-1 downto 0 (7 slots) every display frame, drawing only slots with a nonzero INVAY. This is a genuine hard ceiling: the ROM's invader arrays physically cannot hold an 8th concurrently-active invader. Checked our side: sim.ts stepEnemies (121-140) pushes a freshly-made enemy onto `s.enemies` whenever `s.spawn.timer` elapses and `s.spawn.remaining>0` -- gated only by a per-level spawn BUDGET and spawn-rate TIMER, never by `s.enemies.length` or any concurrent-count check. Grepped the whole file for any other writer/gate on active-enemy count and found none. The cap is real in the ROM and genuinely absent in our sim.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-6"
   },
   {
     "id": "DA-018",
@@ -347,7 +348,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 333,
+      "line": 396,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",
