@@ -273,7 +273,7 @@ describe('flipper rim-grab and determinism (story 6-9 guards)', () => {
       s.enemies = [
         makeEnemy('flipper', 1, 0.2, levelParams(1)),
         { ...makeEnemy('fuseball', 9, 0.3, levelParams(1)), jitterTimer: 0.01, vulnerable: true },
-        { ...makeEnemy('pulsar', 12, 0.4, levelParams(1)), pulseTimer: 0.01, pulsing: false },
+        { ...makeEnemy('pulsar', 12, 0.4, levelParams(1)), pulsing: false },
       ]
       return s
     }

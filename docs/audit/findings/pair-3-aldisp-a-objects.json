@@ -307,7 +307,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 155,
+      "line": 160,
       "verbatim": "      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))"
     },
     "claim": "INVAY/INVAC1/INVAC2 (the active-invader arrays) are sized NINVAD=7, and DSPINV's display loop (ALDISP.MAC:626-650) walks exactly 7 slots every frame — the ROM can never have more than 7 invaders actively climbing/flipping/firing at once; additional spawns queue as nymphs (DA-012) until a slot frees. Our `stepEnemies` spawn block (sim.ts:121-140) pushes a freshly-made enemy onto `s.enemies` whenever the spawn timer elapses and `spawn.remaining > 0`, with no check against how many enemies are already active — `s.enemies.length` is unbounded by any concurrent-count gate.",
@@ -347,7 +347,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 267,
+      "line": 296,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",

@@ -205,7 +205,37 @@ export function enemyFireHoldoffSeconds(level: number): number {
   return enemyFireHoldoffFrames(level) / ROM_FPS
 }
 
-export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
+// ─── THE PULSE: ONE GLOBAL CLOCK (W-026, story tp1-5) ────────────────────────
+//
+// MOVINV ticks the pulse ONCE per frame, AFTER the invader loop and outside it
+// (ALWELG.MAC:1536-1570): `LDA PULSON / CLC / ADC PULTIM`. There is one counter, so
+// there is one phase — every pulsar on the board strobes in unison, whenever it
+// hatched. The SIGN of that counter IS the pulse: ALCOMN.MAC:775 names it "PULSE
+// STATUS (MINUS=OFF)", and JPULMO's kill test asks nothing more than `LDA PULSON /
+// IFPL`. Ours gave every pulsar a private 0.6 s/3.0 s timer seeded at spawn, so two
+// pulsars that hatched seven frames apart strobed seven frames apart — a thing the
+// cabinet cannot do.
+//
+// The counter walks a triangle between two rails, negating its increment at each
+// (1557-1568): at PULSON >= 15, and again at PULSON <= -64 (the ROM spells the lower
+// rail `CMP I,-63. / IFCC`, an UNSIGNED compare against 0xC1, so it fires on -64 and
+// below). PULTIM is 4 below wave 49 (WPULTIM, 610-613).
+export const PULSE_STEP = 4        // PULTIM — WPULTIM's value for waves 1-48
+export const PULSE_SON_MAX = 15    // `CMP I,15. / BCS NEGPUL`
+export const PULSE_SON_MIN = -64   // `CMP I,-63. / IFCC` — an unsigned compare: -64 and below
+//
+// THE SEED IS THE DUTY CYCLE, and it is easy to miss. INEWLI opens every wave and every
+// life with `LDA I,-1 / STA PULSON` (ALWELG.MAC:46-48) — NEGATIVE, so the wave starts
+// with the pulse off. It also pins the counter's residue for the rest of the wave: from
+// -1 in steps of 4, PULSON can only ever land on 3 (mod 4). The reachable values are
+// therefore -65 .. 15 — twenty-one of them, two of which are turning points, so the
+// period is 2*21 - 2 = 40 frames — and the lit half (PULSON >= 0) is exactly {3, 7, 11,
+// 15}: the peak once, the other three twice. SEVEN frames on, thirty-three off.
+//
+// Seed the same machine at 0 instead and it lands on {0,4,8,12,16} and gives NINE. The
+// audit says nine (and its refuter says the period is 42); neither read INEWLI. The
+// period is 40 and the pulse is lit for 7 — see the tp1-5 deviations.
+export const PULSE_SON_INIT = -1
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 // fuzz_move probability gate (rev-3 §D l.240-250): a fuseball only slides a lane
 // on a passing roll, so its approach is biased-but-not-relentless. The exact
@@ -235,6 +265,14 @@ export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.3
 export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth
 // Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab.
 export const SPLIT_CHILD_DEPTH = 0.85
+// SPLCHA's "SPLITTING TOO CLOSE TO PLAYER?" (ALWELG.MAC:1494-1502): `CMP I,20` against
+// the depth the parent DIED at. Inside $20 of the rim the children take NEWGEN — the
+// generic program for their appearance code, which for a flipper is NOJUMP — instead of
+// the wave's flipping one. "YES. NO FLIPPING": a tanker shot in the player's face does
+// not spray flippers that flip straight onto him (W-032). Same $20 the spiker turns
+// around on, and the same conversion — but a separate name, because they are separate
+// rules and only one of them is about the player.
+export const SPLIT_TOO_CLOSE_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
 
 export interface LevelParams {
   enemyCount: number
@@ -242,7 +280,6 @@ export interface LevelParams {
   flipperCam: number     // WFLICAM — the CAM program THIS wave's flippers run (tp1-4)
   spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
-  pulseInterval: number  // seconds between pulsar pulses
   fuseballSpeed: number  // depth units/s climb for fuseballs
   tankerSpeed: number    // depth units/s climb for tankers
 }
@@ -298,7 +335,9 @@ export function levelParams(level: number): LevelParams {
     flipperCam: flipperCamForWave(level),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
-    pulseInterval: Math.max(1.2, 3.0 / ramp),
+    // No pulseInterval: the pulse is not a per-pulsar timer any more, and it does not
+    // ramp with the level. It is ONE global counter with a fixed 40-frame period
+    // (PULSE_STEP / PULSE_SON_*), ticked in sim.ts's stepPulseClock (W-026).
     fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)
     tankerSpeed: flipperSpeed,         // tankers climb straight up at flipper speed
   }

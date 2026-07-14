@@ -2,7 +2,7 @@
 //
 // RED suite for story tp1-5 — the four findings that ride along with the CHASER:
 //
-//   W-026  the pulse is ONE GLOBAL phase, ~9 frames on / ~31 off — not a per-enemy
+//   W-026  the pulse is ONE GLOBAL phase, 7 frames on / 33 off — not a per-enemy
 //          0.6 s timer. Every pulsar on the board pulses in unison.
 //   W-027  a pulse only kills from inside the potency zone (INVAY < PULPOT).
 //   W-023  a fuseball below wave 17 does not chase — it picks left/right at random.
@@ -58,16 +58,20 @@ const pulsarsOf = (s: GameState): Pulsar[] => s.enemies.filter((e): e is Pulsar 
 /**
  * Force the pulse ON for this frame.
  *
- * SEAM, and a deliberate one: today the pulse is a PER-PULSAR timer, so forcing it
- * means writing this pulsar's own two fields. W-026 replaces that with one global
- * phase — at which point these writes stop meaning anything and the fixture must
- * seed the GLOBAL phase instead. The RULE each test below pins (a pulse kills only
- * from inside the potency zone, and never from mid-jump) is unchanged by that move;
- * only this helper is. Re-point it, do not delete the tests.
+ * SEAM, and a deliberate one — RE-POINTED BY DEV, exactly as this comment asked. It used
+ * to write the pulsar's own two fields, because the pulse was a per-pulsar timer. W-026
+ * has landed: the pulse is now ONE global phase (PULSON/PULTIM on GameState), a pulsar has
+ * no clock of its own left to write, and the fixture seeds the board's counter instead.
+ *
+ * `son` is stepped by PULTIM (+4) and the pulse is lit while it is >= 0, so seeding it at
+ * 8 leaves it lit (12) after stepPulseClock ticks — which happens after the invaders move
+ * and before the kill is resolved, so it is the value the kill will read. The RULE each
+ * test below pins (a pulse kills only from inside the potency zone, and never from
+ * mid-jump) is untouched by the move; only this helper is.
  */
-function pulsing(p: Pulsar): Pulsar {
+function pulsing(s: GameState, p: Pulsar): Pulsar {
+  s.pulse.son = 8
   p.pulsing = true
-  p.pulseTimer = 99   // long enough that today's clock cannot switch it off mid-test
   return p
 }
 
@@ -157,17 +161,27 @@ describe('tp1-5 — the pulse is ONE GLOBAL phase (W-026)', () => {
     expect(outOfStep, 'frames where one pulsar was lit and the other was not').toBe(0)
   })
 
-  it('is ON for exactly 9 frames of a 40-frame cycle', () => {
+  it('is ON for exactly 7 frames of a 40-frame cycle', () => {
     // PULSON is a signed byte stepped by PULTIM (= 4 for waves 1-48, WPULTIM,
     // ALWELG.MAC:610-613) and bounced between its two rails (1558-1568): it negates
-    // PULTIM at PULSON >= 15 and again at PULSON <= -64. The limit cycle is
-    // therefore the triangle wave -64 .. +16 in steps of 4 — 21 distinct values,
-    // two of them endpoints, so 2*21 - 2 = 40 frames. The pulse is ON while
-    // PULSON >= 0, which is {0,4,8,12,16}: the peak once, the other four twice = 9.
+    // PULTIM at PULSON >= 15 and again at PULSON <= -64.
     //
-    // 9 ON of 40 at the ROM's 28.44 fps is 0.32 s of a 1.41 s cycle. Ours is ON for
-    // PULSE_DURATION = 0.6 s and off for pulseInterval = 3.0 s at level 1 — a 3.6 s
-    // cycle, more than twice as long, with an ON window nearly twice as wide.
+    // ── This test said NINE, and nine is wrong. The seed decides it. ─────────────────
+    // The count above was derived (by TEA, from the audit, which says 9 on / ~31 off)
+    // by assuming the counter walks {0,4,8,12,16}. It cannot. INEWLI opens every wave
+    // and every life with `LDA I,-1 / STA PULSON` (ALWELG.MAC:46-48) — so PULSON starts
+    // at -1, and stepping by 4 forever it can only ever land on 3 (mod 4). The set
+    // {0,4,8,12,16} is unreachable; the reachable one is -65 .. 15, twenty-one values.
+    //
+    // Twenty-one values, two of them turning points, still gives 2*21 - 2 = 40 frames —
+    // so the PERIOD the audit claimed is right, and the refuter's "~42" is not. But the
+    // lit half (PULSON >= 0) is {3, 7, 11, 15}: the peak once, the other three twice.
+    // SEVEN frames on, thirty-three off. Dev landed on 7, this test demanded 9, and the
+    // 1981 source settles it — see the tp1-5 deviations.
+    //
+    // 7 ON of 40 at the ROM's 28.44 fps is 0.25 s of a 1.41 s cycle. Ours used to be ON
+    // for PULSE_DURATION = 0.6 s and off for pulseInterval = 3.0 s at level 1 — a 3.6 s
+    // cycle, more than twice as long, with an ON window well over twice as wide.
     let s = base(1, 0)
     s.enemies = [makeEnemy('pulsar', 8, 0.05, levelParams(1))]
 
@@ -194,7 +208,7 @@ describe('tp1-5 — the pulse is ONE GLOBAL phase (W-026)', () => {
     // begin until frame ~85 and does not end until ~102, so this window holds at
     // most one complete run.
     expect(runs.length).toBeGreaterThanOrEqual(2)
-    for (const len of runs) expect(len).toBe(9)
+    for (const len of runs) expect(len).toBe(7)
     expect(starts[1] - starts[0]).toBe(40)
   })
 })
@@ -211,7 +225,7 @@ describe('tp1-5 — a pulse only kills from inside the potency zone (W-027)', ()
     // depth at all: a pulsar that hatched at the far end and happens to be strobing
     // kills a player it cannot even reach.
     const s0 = base(1, 6)
-    const p = pulsing(makeEnemy('pulsar', 6, 0.20, levelParams(1)))  // 0.20 < 0.357
+    const p = pulsing(s0, makeEnemy('pulsar', 6, 0.20, levelParams(1)))  // 0.20 < 0.357
     expect(p.depth).toBeLessThan(PULSAR_NEAR_FAR_DEPTH)              // premise
     s0.enemies = [p]
 
@@ -223,7 +237,7 @@ describe('tp1-5 — a pulse only kills from inside the potency zone (W-027)', ()
   it('DOES kill from inside it', () => {
     // The other side of the same rule — so the fix cannot be "pulsars never kill".
     const s0 = base(1, 6)
-    const p = pulsing(makeEnemy('pulsar', 6, 0.50, levelParams(1)))  // 0.50 > 0.357
+    const p = pulsing(s0, makeEnemy('pulsar', 6, 0.50, levelParams(1)))  // 0.50 > 0.357
     expect(p.depth).toBeGreaterThan(PULSAR_NEAR_FAR_DEPTH)           // premise
     s0.enemies = [p]
 
@@ -267,7 +281,7 @@ describe('tp1-5 — a pulse only kills from inside the potency zone (W-027)', ()
     // branch beside it was not, so a pulsar mid-flip electrocutes a player that the
     // identical flipper mid-flip cannot lay a finger on.
     const s0 = base(1, 6)
-    const p = pulsing(makeEnemy('pulsar', 6, 0.50, levelParams(1)))
+    const p = pulsing(s0, makeEnemy('pulsar', 6, 0.50, levelParams(1)))
     p.jumpAngle = 3                    // caught between two lines
     s0.enemies = [p]
 

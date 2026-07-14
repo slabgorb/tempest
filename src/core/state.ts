@@ -1,7 +1,7 @@
 // src/core/state.ts
 import { Tube, tubeForLevel } from './geometry'
 import { type Rng, createRng } from '@arcade/shared/rng'
-import { START_LIVES, spawnForLevel } from './rules'
+import { START_LIVES, spawnForLevel, PULSE_SON_INIT, PULSE_STEP } from './rules'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import type { GameEvent } from './events'
 
@@ -59,6 +59,18 @@ interface EnemyBase {
   // lanes: `lane` holds at the source and settles on `lane + rot` when the angle
   // runs out, which is the window the player can rotate through.
   jumpAngle?: number
+  // It reached the rim and CHASER converted it: it is pinned at the top, running
+  // TOPPER, and circling the player (W-009, tp1-5). Absent = still climbing a lane.
+  //
+  // A chaser is a STATE, not a kind. The ROM's CHASER (ALWELG.MAC:1824-1874) does not
+  // touch the invader's appearance bits: a flipper that takes the rim is still drawn as
+  // a flipper and still scores as one. What changes is where it is (INVAY == CURSY),
+  // what it runs (CAMPC = TOPPER), and which of the two counters it belongs to — it
+  // leaves INMCOU and joins INCCOU. This flag IS that membership: count the invaders
+  // carrying it and you have INCCOU, which is the only reader the ROM has (CHASER's
+  // pincer rule, 1845-1869). Fuseballs never carry it — KILINV (2302-2311) books a fuse
+  // at the rim as a MOVER, not a chaser, and JFUSEUP never calls CHASER.
+  chasing?: boolean
 }
 
 export interface Flipper extends EnemyBase {
@@ -87,8 +99,11 @@ export interface Fuseball extends EnemyBase {
 
 export interface Pulsar extends EnemyBase {
   kind: 'pulsar'
-  pulseTimer: number    // seconds until the pulse state next toggles
-  pulsing: boolean      // true while the lane is electrified
+  // True while the lane is electrified. NOT a clock any more (W-026): it is this
+  // pulsar's copy of the ONE global phase, re-stamped from PulseState every frame by
+  // stepPulseClock. The private pulseTimer that used to sit beside it is gone — it let
+  // two pulsars strobe out of step, which the cabinet cannot do.
+  pulsing: boolean
 }
 
 export type Enemy = Flipper | Tanker | Spiker | Fuseball | Pulsar
@@ -96,6 +111,16 @@ export type Enemy = Flipper | Tanker | Spiker | Fuseball | Pulsar
 export interface SpawnState {
   remaining: number     // enemies left to spawn this level
   timer: number         // seconds until next spawn
+}
+
+// The ROM's pulse clock — PULSON/PULTIM, one counter for the whole board (W-026).
+// A signed byte and its increment; the SIGN of `son` is the pulse ("PULSE STATUS
+// (MINUS=OFF)", ALCOMN.MAC:775). It lives on GameState rather than on the pulsars
+// because that is what it is: global, and ticked once a frame whether or not a pulsar
+// is on the board. See rules.ts (PULSE_STEP / PULSE_SON_*) for the rails and the seed.
+export interface PulseState {
+  son: number           // PULSON — lit while >= 0
+  tim: number           // PULTIM — the per-frame increment; negated at each rail
 }
 
 export interface WarpState {
@@ -128,6 +153,7 @@ export interface GameState {
   score: number
   lives: number
   spawn: SpawnState
+  pulse: PulseState     // PULSON/PULTIM — the board's single pulse phase (W-026)
   warp: WarpState
   select: SelectState
   entry: HighScoreEntryState | null  // non-null only while mode === 'highscore'
@@ -154,6 +180,7 @@ export function initialState(seed: number): GameState {
     score: 0,
     lives: START_LIVES,
     spawn: spawnForLevel(1),
+    pulse: { son: PULSE_SON_INIT, tim: PULSE_STEP },  // INEWLI, ALWELG.MAC:46-48
     warp: { progress: 0, velocity: 0, warning: 0 },
     select: { selectedLevel: 1 },
     entry: null,

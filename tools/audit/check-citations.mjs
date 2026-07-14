@@ -100,7 +100,24 @@ export function checkFindings(findings, { repoRoot, sourceDir }) {
           `Re-anchor to a tracked file in this repo.`,
       )
     } else if (f.remediated_by) {
-      if (!f.ours?.file) errors.push(`${id}: remediated_by requires \`ours\` to keep its historical citation`)
+      // A remediated finding keeps whatever citation it was AUDITED with — and a
+      // NO_COUNTERPART was audited with none (story tp1-5).
+      //
+      // The requirement below assumes every finding has an `ours` line to freeze.
+      // NO_COUNTERPART is the class where our code had NO counterpart line to quote,
+      // because the rule was missing outright: W-032 was "the ROM gives the children of a
+      // close split a non-flipping cam, and we do not do this anywhere". Fixing that means
+      // ADDING code, so there is no historical quote to preserve — `ours` was null when it
+      // was audited and null is still the truthful answer. Demanding one would force a fix
+      // story to invent a citation for a line that never diverged, which is exactly the
+      // kind of evidence this gate exists to refuse.
+      //
+      // A fix story MAY still attach an `ours` to a NO_COUNTERPART, pointing at the code
+      // that now implements the rule — S-010 (tp1-2) does — and that is accepted too. Both
+      // are records of the same fix, and neither is re-opened against the working tree.
+      if (f.class !== 'NO_COUNTERPART' && !f.ours?.file) {
+        errors.push(`${id}: remediated_by requires \`ours\` to keep its historical citation`)
+      }
     } else if (f.class === 'NO_COUNTERPART') {
       if (f.ours !== null) errors.push(`${id}: NO_COUNTERPART requires \`ours\` to be null`)
     } else if (!f.ours?.file) {

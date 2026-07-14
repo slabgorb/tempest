@@ -124,7 +124,7 @@ const threeFlippers = (): Enemy[] => [
 const mixedBoard = (): Enemy[] => [
   { ...makeEnemy('flipper', 1, 0.3, levelParams(1)), fireCooldown: 999 },
   { ...makeEnemy('tanker', 3, 0.5, levelParams(1), 'flipper'), fireCooldown: 999 },
-  { ...makeEnemy('pulsar', 5, 0.6, levelParams(1)), pulseTimer: 999, pulsing: false, fireCooldown: 999 },
+  { ...makeEnemy('pulsar', 5, 0.6, levelParams(1)), pulsing: false, fireCooldown: 999 },
   { ...makeEnemy('flipper', 8, 0.2, levelParams(1)), fireCooldown: 999 },
 ]
 

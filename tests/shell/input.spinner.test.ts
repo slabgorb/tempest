@@ -279,24 +279,45 @@ describe('the keyboard can never buy rotation the sim did not step (Reviewer, ro
 })
 
 describe('the escape constraint — the Claw must out-rotate the ROM (AC6)', () => {
-  it('a deep flipper walks the rim at 7.11 lanes/sec', () => {
-    // One lane per (moveFrames + flipFrames) ROM frames. L33+: 1 + 3 = 4 frames.
-    // 28.44 / 4 = 7.11 lanes/sec — the fastest thing the ROM can send at the player.
-    expect(fastestFlipperRimSpeed()).toBeCloseTo(ROM_FPS / 4, 9)
-    expect(fastestFlipperRimSpeed()).toBeCloseTo(7.111, 3)
+  it('the fastest chaser walks the rim at 4.06 lanes/sec, not the guessed 7.11', () => {
+    // RE-DERIVED BY tp1-5. This said 7.11 lanes/sec, from "1 move frame + a 3-frame flip
+    // at L33+ = 4 frames a lane" — and every number in that sentence came from
+    // `flipPatternForLevel`, an invented per-level envelope that tp1-4 DELETED when it
+    // read the CAM. A flip is 8 angle-steps at every wave (W-008), and the enemy that
+    // actually walks the rim is the CHASER, which did not exist in this codebase until
+    // tp1-5 built it. The shell was defending against a thing the game could not produce.
+    //
+    // TOPPER (ALWELG.MAC:2447-2460) is the real cadence: a `VSLOOP 4` crouch, then a jump
+    // burning WTTFRA angle-steps a frame. WTTFRA tops out at 3 from wave 33 (TWTTFRA,
+    // 704-706), so the fastest lane the ROM can walk costs 4 + ceil(8/3) = 7 frames.
+    //
+    // The guess erred in the SAFE direction — it overstated the enemy, so the margin it
+    // sized was too wide rather than too narrow, which is why nothing ever failed on it.
+    expect(fastestFlipperRimSpeed()).toBeCloseTo(ROM_FPS / 7, 9)
+    expect(fastestFlipperRimSpeed()).toBeCloseTo(4.063, 3)
+
+    // Not the stale number, and named so it cannot quietly come back.
+    expect(fastestFlipperRimSpeed()).not.toBeCloseTo(ROM_FPS / 4, 3)
   })
 
-  it('the player OUT-ROTATES the fastest flipper, with margin', () => {
+  it('the player OUT-ROTATES the fastest chaser, with margin', () => {
     // The assertion that makes deep waves winnable — and the one the broken build
-    // failed. A margin below 1.0 means the flipper closes on you no matter what you do.
+    // failed. A margin below 1.0 means the chaser closes on you no matter what you do.
     const margin = keyboardTurnRate() / fastestFlipperRimSpeed()
     expect(margin).toBeGreaterThan(1.2)
-    expect(margin).toBeCloseTo(1.27, 2)
+    expect(margin).toBeCloseTo(2.215, 3)  // 9.0 / 4.06 — it WIDENED when the enemy got slower
 
-    // The broken value, named so that it can never quietly come back.
+    // The broken per-step keyboard, named so that it can never quietly come back.
+    //
+    // It used to be pinned here as "slower than the fastest flipper, so it could not
+    // escape at all". That claim died with the 7.11: against the chaser's real 4.06 the
+    // broken rate (4.27) would in fact have crawled clear, barely. The rate was still
+    // broken — it was a tick counter, not a control, and it silently changed speed with
+    // the sim's step rate (see the header) — but the honest statement of the defect is
+    // the one below, which is what this test now guards.
     const BROKEN_PER_STEP_RATE = SPIN_SENSITIVITY * ROM_FPS // 4.27 lanes/sec
-    expect(BROKEN_PER_STEP_RATE).toBeLessThan(fastestFlipperRimSpeed())
     expect(keyboardTurnRate()).toBeGreaterThan(BROKEN_PER_STEP_RATE)
+    expect(BROKEN_PER_STEP_RATE / fastestFlipperRimSpeed()).toBeLessThan(1.1) // no real margin
   })
 })
 

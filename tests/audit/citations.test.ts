@@ -131,6 +131,40 @@ describe('checkFindings', () => {
     ).toMatch(/X-005.*requires `ours`/)
   })
 
+  it('lets a remediated NO_COUNTERPART keep its null `ours` — but nothing else may', () => {
+    // tp1-5. A NO_COUNTERPART finding is one where our code had NO counterpart line: the
+    // rule was missing outright (W-032 — the ROM hands the children of a close split a
+    // non-flipping cam, and we did not do that anywhere). Fixing it means ADDING code, so
+    // there is no historical `ours` quote to freeze, and demanding one would make a fix
+    // story invent a citation for a line that never diverged.
+    const base = {
+      title: 't', source: { file: 'ALWELG.MAC', line: 1, verbatim: 'anything' },
+      claim: 'c', reasoning: 'r', recommendation: 'fix', size: 'm',
+    }
+    expect(checkFindings(
+      [{ ...base, id: 'X-030', class: 'NO_COUNTERPART', ours: null, remediated_by: 'tp1-5' }],
+      { repoRoot, sourceDir: null },
+    )).toEqual([])
+
+    // The exemption is the CLASS's, not remediated_by's: a remediated DIVERGENCE still owes
+    // the historical quote it was audited with, or the audit record is simply lost.
+    expect(checkFindings(
+      [{ ...base, id: 'X-031', class: 'DIVERGENCE', ours: null, remediated_by: 'tp1-5' }],
+      { repoRoot, sourceDir: null },
+    ).join('\n')).toMatch(/X-031.*historical citation/)
+
+    // A remediated NO_COUNTERPART MAY instead point `ours` at the code that now implements
+    // the rule — S-010 (tp1-2) does exactly that, and it is a record of the same fix. Both
+    // shapes are accepted, and neither is re-opened against the working tree.
+    expect(checkFindings(
+      [{
+        ...base, id: 'X-032', class: 'NO_COUNTERPART', remediated_by: 'tp1-5',
+        ours: { file: 'src/core/rules.ts', line: 19, verbatim: 'a quote nothing will re-open' },
+      }],
+      { repoRoot, sourceDir: null },
+    )).toEqual([])
+  })
+
   it('rejects duplicate ids', () => {
     const f = {
       id: 'X-006', class: 'NO_COUNTERPART', title: 't', ours: null,
