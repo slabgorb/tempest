@@ -1,6 +1,7 @@
 // src/shell/input.ts
 import { Input } from '../core/input'
 import { ROM_FPS, SPIN_SENSITIVITY } from '../core/rules'
+import { chaserRimFramesPerLane } from '../core/enemies/interpreter'
 
 // ─── Both controls are SPINNERS. Neither is a per-frame tick. (tp1-1) ────────
 //
@@ -50,37 +51,52 @@ const WHEEL_SCALE = 0.01
 // How fast a held arrow key spins the knob, in spin-units per SECOND.
 //
 // This number is NOT restored from what shipped before — it is derived from the ROM,
-// because the escape constraint decides it. A flipper that reaches the rim walks it at
-// one lane per (moveFrames + flipFrames) ROM frames. At L33+ that is 1 + 3 = 4 frames,
-// i.e. 28.44/4 = 7.11 lanes/sec. **The player must be able to out-rotate that**, or a
-// deep wave is unwinnable: you cannot escape a pincer you are slower than.
+// because the escape constraint decides it. An invader that reaches the rim becomes a
+// CHASER and walks it at TOPPER's cadence: a crouch, then a jump, then round again. At
+// wave 33+, the fastest the ROM can make it, that is 7 frames a lane — 28.44/7 = 4.06
+// lanes/sec. **The player must be able to out-rotate that**, or a deep wave is
+// unwinnable: you cannot escape a pincer you are slower than.
 //
-// The broken per-step keyboard gave 4.27 lanes/sec — a margin of 0.60x. It could not
-// escape a deep flipper AT ALL. 60 spin-units/sec gives 60 x 0.15 = 9.0 lanes/sec, a
-// 1.27x margin over the fastest thing the ROM can send at you. (That it also matches
-// the pre-rebase feel is a happy accident, not the reason.)
+// 60 spin-units/sec gives 60 x 0.15 = 9.0 lanes/sec, a 2.2x margin over the fastest thing
+// the ROM can send at you. (That it also matches the pre-rebase feel is a happy accident,
+// not the reason.)
+//
+// tp1-5 re-derived the chaser's real cadence and it came out SLOWER than the 4-frame
+// guess this constant was originally sized against (7.11 lanes/sec), so the margin widened
+// from 1.27x to 2.2x on its own. KEY_SPIN_RATE is deliberately left alone: the constraint
+// it exists to satisfy is a floor, not a target, and re-tuning the feel of the keyboard is
+// not this story's business. If anything ever wants the margin tightened, that is a
+// playtest decision, made against the real number, which is finally what the shell holds.
 //
 // Pinned by tests/shell/input.spinner.test.ts, in lanes per SECOND.
 const KEY_SPIN_RATE = 60
 
-// ROM frames a deep-wave flipper takes to walk one lane of the rim: 1 frame of
-// move + a 3-frame flip, at L33+.
+// The wave that produces the FASTEST chaser the ROM can build. TOPPER's jump burns WTTFRA
+// angle-steps a frame, and TWTTFRA (ALWELG.MAC:704-706) steps that from 2 to 3 at wave 33
+// and never again — so the deepest wave is the quickest lap of the rim, and 33 is where it
+// tops out.
 //
-// These two numbers came from `flipPatternForLevel`, which tp1-4 deleted — the CAM
-// (W-005..W-008) refutes it: a flip is 8 angle-steps at every wave, and the climb
-// between flips is written into the program, not ramped per level. The number is
-// kept HERE, and unchanged, on purpose. It is not a flipper fact: it is the escape
-// constraint this module exists to satisfy, and the enemy that actually walks the
-// rim is the CHASER (TOPPER), which story tp1-5 builds. Revise it there, from
-// TOPPER's real cadence — a `VSLOOP 4` crouch plus a jump of JUMP_ANGLE_STEPS /
-// WTTFRA frames — and re-derive KEY_SPIN_RATE's margin against it. Lowering this
-// number silently WIDENS the margin, so leaving it high is the safe side to sit on
-// until the chaser exists to measure.
-const DEEP_FLIPPER_RIM_FRAMES_PER_LANE = 4
+// This replaces DEEP_FLIPPER_RIM_FRAMES_PER_LANE = 4, which tp1-1 left behind with a note
+// saying so: it was measured against the per-kind flipper stepper, and tp1-4 deleted that
+// stepper. The enemy that actually walks the rim is the CHASER, and until story tp1-5
+// there was no chaser to measure — the constant described a thing that no longer existed.
+// It is now DERIVED, from TOPPER's own bytecode, by chaserRimFramesPerLane.
+//
+// The old number was WRONG IN THE SAFE DIRECTION, which is why nothing failed: 4 frames a
+// lane overstated the chaser (the truth is 7), so the margin it sized was too wide rather
+// than too narrow. Worth stating plainly, because the correction has an edge to it — the
+// real chaser is SLOWER than the number the shell was defending against, so the margin
+// gets wider, not tighter, and no deep wave was ever unwinnable on this account.
+const FASTEST_CHASER_WAVE = 33
 
-/** The rim speed of the fastest flipper the ROM can produce, in lanes/sec. */
+/**
+ * The rim speed of the fastest chaser the ROM can produce, in lanes/sec — the thing the
+ * player must out-rotate. (Named for the flipper because a flipper is what usually
+ * becomes one; a chaser is a rim STATE, not a kind, so a pulsar that takes the rim walks
+ * it at exactly this rate too.)
+ */
 export function fastestFlipperRimSpeed(): number {
-  return ROM_FPS / DEEP_FLIPPER_RIM_FRAMES_PER_LANE
+  return ROM_FPS / chaserRimFramesPerLane(FASTEST_CHASER_WAVE)
 }
 
 /** Lanes/sec the Claw turns while an arrow key is held. Must beat the flipper. */

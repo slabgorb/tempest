@@ -67,7 +67,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 147,
+      "line": 148,
       "verbatim": "export const WARP_AVOID_SPIKES_SECONDS = 0.5"
     },
     "claim": "'SECOND\t=20.\t\t\t;FRAMES/SECOND' (ALCOMN.MAC:87, redeclared identically at ALEXEC.MAC:312) sits under the header ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85) and is used in exactly one role: as the reload unit for countdown timers. Every use is a pause load - 'LDA I,4*SECOND\t\t;LONGER PAUSE' (ALEXEC.MAC:330), 2*SECOND (333, 402), 1*SECOND (355), 0*SECOND (387), 'LDA I,SECOND\t\t;RESTART FRACTIONAL SECONDS TIMER' (ALWELG.MAC:219) - plus QUASEC = SECOND/4 (ALCOMN.MAC:88), used once, at 'LDA I,6*QUASEC\t\t;WARNING DELAY' (ALWELG.MAC:3164). It appears NOWHERE in MAINLN, ALHARD's IRQ, or any speed table: it never gates the loop and cannot set the frame rate. It is the author's ASSUMED frames-per-second for authoring pause durations, and it is inconsistent with his own ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581) and with the machine (FR-001). The one place it reaches our code is WARP_AVOID_SPIKES_SECONDS: 6*QUASEC = 30 frames, which at the real 28.44 fps is 1.055 s - not the 1.5 s WD-009 derived from SECOND=20, and not the 0.5 s we ship (which is 30/60).",
@@ -87,7 +87,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 193,
+      "line": 198,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "The skill-contour table header reads ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581), immediately above TCHARFR (582) whose first record is '\t.BYTE TA,1,20.,80.,-3' (583). 28 per second is 256/9 = 28.44 rounded - an independent, in-source corroboration of the loop cadence derived in FR-001, written by the author beside the very numbers he was tuning. Our enemyFireHoldoffFrames (rules.ts:97-102) reproduces that table exactly: 80 at wave 1, -3/wave to 23 at wave 20, 20 for 21-64, 10 for 65+.",
@@ -188,7 +188,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 162,
+      "line": 166,
       "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
     },
     "claim": "TCHARIN is one TB record for every wave ('\t.BYTE TB,1,99.,-64.', ALWELG.MAC:601), and TB means 'byte + WINVIL', so an enemy charge is always exactly 64*8/256 = 2.0 along-units/frame faster than the invader that fired it. At the real base that offset is 2.0 * (256/9) / 224 = 0.254 depth/s, and the wave-1 bolt's absolute speed is 3.375 along/frame = 0.4286 depth/s. We ship ENEMY_BOLT_SPEED_OFFSET = 0.72 depth/s - 2.83x the ROM's offset - and W-020's proposed replacement, 0.536, is itself the same number computed with 60 (2.0 * 60/224).",
@@ -250,7 +250,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 300,
+      "line": 362,
       "verbatim": "    spikerSpeed: 0.22 * ramp,"
     },
     "claim": "TSPIIN's first record ('TSPIIN:\t.BYTE TB,1,20.,0', ALWELG.MAC:602) is type TB (byte + WINVIL) with byte 0, so for waves 1-20 the spiker's climb speed IS the flipper's: 1.375 along-units/frame at wave 1 = 0.1746 depth/s at the real base. We ship spikerSpeed = 0.22 * ramp = 0.22 depth/s at level 1 - 26% FASTER than the arcade's spiker, not the '40% slower' W-014 reports (a figure obtained by comparing 0.22 against the 60-based 0.368).",
@@ -270,7 +270,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 109,
+      "line": 110,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "TIMAX ('TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0', ALWELG.MAC:3539) resolves with CSUSTA=3, CSUINT=1 to {0, 19, 5, 0, 0}: the first zap window is 19 GAME frames = 19/28.44 = 0.668 s and the second is 5 frames = 0.176 s. We ship ZAP_WINDOW_FIRST = 13 and ZAP_WINDOW_SECOND = 5, ticked at 60/s (FR-012), so our windows last 0.217 s and 0.083 s - the first is 3.1x short in wall time, the second 2.1x.",

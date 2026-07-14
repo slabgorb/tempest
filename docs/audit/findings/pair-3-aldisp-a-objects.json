@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 82,
+      "line": 83,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "The ROM sizes CHARY/CHARL1 (NCHARG=NPCHARG+NICHARG slots) so exactly the first 8 charge slots are the player's (DSPCHG: `CPX I,NPCHAR` picks PTCURS for indices below that boundary). Our MAX_BULLETS gate (sim.ts:96, `if (s.bullets.length >= MAX_BULLETS) return`) caps the player at the same 8 simultaneous shots.",
@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 152,
+      "line": 153,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
@@ -307,7 +307,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 155,
+      "line": 165,
       "verbatim": "      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))"
     },
     "claim": "INVAY/INVAC1/INVAC2 (the active-invader arrays) are sized NINVAD=7, and DSPINV's display loop (ALDISP.MAC:626-650) walks exactly 7 slots every frame — the ROM can never have more than 7 invaders actively climbing/flipping/firing at once; additional spawns queue as nymphs (DA-012) until a slot frees. Our `stepEnemies` spawn block (sim.ts:121-140) pushes a freshly-made enemy onto `s.enemies` whenever the spawn timer elapses and `spawn.remaining > 0`, with no check against how many enemies are already active — `s.enemies.length` is unbounded by any concurrent-count gate.",
@@ -347,7 +347,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 267,
+      "line": 301,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",

@@ -7,6 +7,21 @@ const RECOMMENDATIONS = ['fix', 'accept', 'wont_fix']
 const SIZES = ['s', 'm', 'l']
 const NODE_MODULES = /(^|\/)node_modules(\/|$)/
 
+/**
+ * Is this a whole citation — something a reader could actually go and re-open?
+ *
+ * A file to open, a line to find, and a quote to compare against. A citation missing any
+ * one of the three is not evidence, which is the only thing this gate is for.
+ */
+function isCitation(o) {
+  return (
+    typeof o === 'object' && o !== null && !Array.isArray(o) &&
+    typeof o.file === 'string' && o.file.length > 0 &&
+    Number.isInteger(o.line) && o.line > 0 &&
+    typeof o.verbatim === 'string'
+  )
+}
+
 const lineCache = new Map()
 function lineAt(path, n) {
   if (!lineCache.has(path)) {
@@ -100,7 +115,38 @@ export function checkFindings(findings, { repoRoot, sourceDir }) {
           `Re-anchor to a tracked file in this repo.`,
       )
     } else if (f.remediated_by) {
-      if (!f.ours?.file) errors.push(`${id}: remediated_by requires \`ours\` to keep its historical citation`)
+      // A remediated finding keeps whatever citation it was AUDITED with — and a
+      // NO_COUNTERPART was audited with none (story tp1-5).
+      //
+      // The requirement below assumes every finding has an `ours` line to freeze.
+      // NO_COUNTERPART is the class where our code had NO counterpart line to quote,
+      // because the rule was missing outright: W-032 was "the ROM gives the children of a
+      // close split a non-flipping cam, and we do not do this anywhere". Fixing that means
+      // ADDING code, so there is no historical quote to preserve — `ours` was null when it
+      // was audited and null is still the truthful answer. Demanding one would force a fix
+      // story to invent a citation for a line that never diverged, which is exactly the
+      // kind of evidence this gate exists to refuse.
+      //
+      // A fix story MAY still attach an `ours` to a NO_COUNTERPART, pointing at the code
+      // that now implements the rule — S-010 (tp1-2) does — and that is accepted too. Both
+      // are records of the same fix, and neither is re-opened against the working tree.
+      // Two shapes, and ONLY two. The exemption below is for a MISSING citation, not for
+      // an unchecked one: before this guard, `remediated_by` + `NO_COUNTERPART` fell
+      // through with no test at all, so an `ours` that was present but shapeless — no
+      // file, no line, no quote, or not even an object — sailed past a gate whose whole
+      // job is to refuse citations that cannot be re-opened. "May be null" and "may be
+      // anything" are not the same permission.
+      if (f.class === 'NO_COUNTERPART') {
+        if (f.ours !== null && f.ours !== undefined && !isCitation(f.ours)) {
+          errors.push(
+            `${id}: a remediated NO_COUNTERPART's \`ours\` must be null, or a whole ` +
+              `citation ({file, line, verbatim}) naming the code that now implements the ` +
+              `rule — not ${JSON.stringify(f.ours)}`,
+          )
+        }
+      } else if (!f.ours?.file) {
+        errors.push(`${id}: remediated_by requires \`ours\` to keep its historical citation`)
+      }
     } else if (f.class === 'NO_COUNTERPART') {
       if (f.ours !== null) errors.push(`${id}: NO_COUNTERPART requires \`ours\` to be null`)
     } else if (!f.ours?.file) {

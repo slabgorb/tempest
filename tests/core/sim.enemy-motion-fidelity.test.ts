@@ -65,11 +65,6 @@ const PULSAR_NEAR_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / ALONG_SPAN // ≈
 // $a0 → depth ≈ 0.357. The pulsar tests below sit each sample WELL clear of it.
 const PULSAR_NEAR_FAR_DEPTH = depthFromAlong(0xa0) // ≈ 0.357
 
-// Rotational (wrapped) lane distance on an n-lane closed tube.
-const rdist = (a: number, b: number, n: number): number => {
-  const d = Math.abs(a - b) % n
-  return Math.min(d, n - d)
-}
 
 // A board frozen except for the enemy under test: the Claw parked on a fixed
 // lane, no other enemies, no bullets, no standing spikes. `spawnRemaining`
@@ -159,53 +154,28 @@ describe('spiker far-end conversion when nothing is pending (story 6-15)', () =>
   })
 })
 
-// ── AC 2a: fuseball steers TOWARD the player (gated, but never away) ─────────
-
-describe('fuseball steers toward the player (story 6-15)', () => {
-  // Run a single fuseball that starts a few lanes off the player and watch its
-  // wrapped lane-distance to the Claw over a short window (before it climbs out).
-  // A toward-biased fuseball NEVER increases that distance (the fuzz_move gate
-  // only skips a step, it never reverses direction); today's 50/50 random hop
-  // walks AWAY about half the time, so the distance overshoots its start.
-  function runSeed(seed: number): { init: number; max: number; min: number } {
-    const s0 = isolated(seed)
-    const n = s0.tube.laneCount
-    const player = s0.player.lane // 8
-    const start = (player + 4) % n // 4 lanes away; the short way is toward the player
-    let s: GameState = s0
-    s.enemies = [{ ...makeEnemy('fuseball', start, 0, levelParams(1)), jitterTimer: 0, vulnerable: false }]
-
-    const init = rdist(start, player, n)
-    let max = init
-    let min = init
-    for (let i = 0; i < 60; i++) {
-      s = stepGame(s, NEUTRAL, DT)
-      const fb = s.enemies.find((e) => e.kind === 'fuseball')
-      if (!fb) break // grabbed/culled — stop sampling
-      const d = rdist(fb.lane, player, n)
-      max = Math.max(max, d)
-      min = Math.min(min, d)
-    }
-    return { init, max, min }
-  }
-
-  const SEEDS = [1, 7, 13, 42, 99]
-
-  it('never drifts farther from the player than where it started (no away-steps)', () => {
-    for (const seed of SEEDS) {
-      const { init, max } = runSeed(seed)
-      expect(max, `seed ${seed}: fuseball stepped AWAY from the player`).toBeLessThanOrEqual(init)
-    }
-  })
-
-  it('actually closes the gap (it is steering, not frozen)', () => {
-    // Liveness across the seed set: a correct steerer reduces the distance at
-    // least once somewhere; this rejects a do-nothing implementation that would
-    // vacuously satisfy the "never increases" assertion above.
-    const closed = SEEDS.some((seed) => runSeed(seed).min < runSeed(seed).init)
-    expect(closed, 'no seed ever moved the fuseball toward the player').toBe(true)
-  })
-})
+// ── AC 2a: fuseball steers TOWARD the player — REFUTED BY THE ROM (W-023, tp1-5) ──
+//
+// Two tests stood here, and the primary source overturned both. Story 6-15 taught the
+// fuseball to steer at the player from wave 1, and pinned that with "never drifts farther
+// from the player than where it started" and "actually closes the gap". Its own comment
+// called the alternative a bug: "today's 50/50 random hop walks AWAY about half the time".
+//
+// The 50/50 hop was the arcade. A fuseball's every movement decision — JFUSEUP's and
+// MAYBLR's alike — ends in one of two calls, FUCHPL (chase the player) or LEFRIT
+// ("RANDOMLY CHOOSE LEFT OR RIGHT", ALWELG.MAC:2171-2178), and which one it takes is
+// decided by the two chase bits in WFUSCH. Those come from TWFUSC, whose FIRST record
+// begins at WAVE 17 (686-690) — below it CONTOUR yields 0, neither bit is set, and the
+// branch is always the coin. 6-15 built the fuseball's whole reputation for being unfair
+// out of a rule that does not exist until wave 17, and these two tests then froze it.
+//
+// The rule that replaces them is pinned in tests/core/tp1-5.pulsar-fuse-split.test.ts:
+// run the same seed twice and move only the PLAYER — a fuseball that rolls a coin walks
+// the identical path both times, and one that steers does not. That is a strictly
+// stronger statement than either test here, because it is falsifiable by the very
+// behaviour these two demanded.
+//
+// (The wider kill window below is 6-15's OTHER fuseball AC, and it stands untouched.)
 
 // ── AC 2b: fuseball has the wider hit_tol[4]=6 kill window ────────────────────
 
@@ -260,14 +230,16 @@ describe('fuseball wider hit tolerance (story 6-15)', () => {
 
 describe('pulsar far/near dual climb speed (story 6-15)', () => {
   // Measure a pulsar's climb rate over a short window that stays entirely on one
-  // side of the L0157 ($a0 ≈ depth 0.357) boundary. pulseTimer is parked and the
-  // pulsar sits off the Claw's lane, so only the climb moves it. (The old fixture also
-  // parked a `flipTimer`; tp1-4 deleted it — a pulsar's flips come from PULSCH now.)
+  // side of the L0157 ($a0 ≈ depth 0.357) boundary. The pulsar sits off the Claw's lane,
+  // and PULSCH spends its first PUCHDE (20) frames doing nothing but moving, so across a
+  // 10-frame window only the climb moves it. (The old fixture parked a `flipTimer` and
+  // then a `pulseTimer`; tp1-4 deleted the first and tp1-5 the second — a pulsar's flips
+  // come from PULSCH now, and its pulse from the board's one global phase.)
   function climbRate(level: number, startDepth: number): number {
     let s = isolated(2)
     s.level = level
     s.enemies = [{
-      ...makeEnemy('pulsar', 2, startDepth, levelParams(1)), pulseTimer: 999, pulsing: false,
+      ...makeEnemy('pulsar', 2, startDepth, levelParams(1)), pulsing: false,
     }]
     const before = startDepth
     const frames = 10
@@ -319,7 +291,7 @@ describe('determinism of the 6-15 motion paths (core-purity rule)', () => {
       s.enemies = [
         { ...makeEnemy('spiker', 5, 0.02, levelParams(1)), direction: -1 },     // hop RNG
         { ...makeEnemy('fuseball', 12, 0.1, levelParams(1)), jitterTimer: 0.01, vulnerable: true }, // steer RNG
-        { ...makeEnemy('pulsar', 2, 0.1, levelParams(1)), pulseTimer: 0.01, pulsing: false }, // flip RNG
+        { ...makeEnemy('pulsar', 2, 0.1, levelParams(1)), pulsing: false }, // flip RNG
       ]
       return s
     }

@@ -78,9 +78,14 @@ describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
   it('clamps timing intervals to playable floors at very high levels', () => {
     // AC#2: a level-50 ramp must not drive any cadence to zero — the game has
     // to stay finite/playable arbitrarily deep into the difficulty curve.
+    //
+    // This used to check `pulseInterval` too. tp1-5 (W-026) removed it from LevelParams
+    // altogether: the pulse is not a per-level interval in the ROM, it is ONE global
+    // counter on a fixed 40-frame period (PULSON/PULTIM), so the ramp cannot reach it to
+    // drive it anywhere. That is a stronger guarantee than a floor, and it is structural —
+    // there is no longer a number here for a level to scale.
     const p = levelParams(50)
     expect(p.spawnInterval).toBeGreaterThanOrEqual(0.3)
-    expect(p.pulseInterval).toBeGreaterThanOrEqual(1.2)
     // And the floors must actually bind here (otherwise "floor" is meaningless):
     // a floored value never exceeds the unfloored level-16 value.
     expect(p.spawnInterval).toBeLessThanOrEqual(levelParams(16).spawnInterval)

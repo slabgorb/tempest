@@ -94,7 +94,7 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
 
   it('pulsars do not fire below level 60 — positive control: the tanker does', () => {
     let s = fireBoard(1, [
-      { ...makeEnemy('pulsar', 4, 0.3, levelParams(1)), pulseTimer: 999, pulsing: false },
+      { ...makeEnemy('pulsar', 4, 0.3, levelParams(1)), pulsing: false },
       makeEnemy('tanker', 8, 0.4, levelParams(1), 'flipper'),
     ]) // playingState() starts at level 1
     const fireLanes = new Set<number>()

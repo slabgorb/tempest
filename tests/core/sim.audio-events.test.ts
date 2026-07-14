@@ -50,7 +50,7 @@ function playing(enemies: Enemy[]): GameState {
 }
 
 const aPulsar = (lane: number, depth: number): Enemy => ({
-  ...makeEnemy('pulsar', lane, depth, levelParams(1)), pulseTimer: 999, pulsing: false,
+  ...makeEnemy('pulsar', lane, depth, levelParams(1)), pulsing: false,
 })
 
 // A freshly-cleared 'playing' state (no enemies, empty budget) that enters warp

@@ -21,14 +21,16 @@
 //   * The pulse CLOCK is global in the ROM (PULSON/PULTIM) and ticks in MOVINV
 //     AFTER the invader loop (1536-1570), not inside the CAM. Ours ticks in sim.ts
 //     for the same reason: it is a clock, not a program.
-import { Enemy, EnemyKind } from '../state'
+import { Enemy, EnemyKind, PulseState } from '../state'
 import { Tube, wrapLane } from '../geometry'
 import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
 import {
   LevelParams, PULSAR_CLIMB_SPEED, PULSAR_NEAR_FAR_DEPTH, SPIKER_TURNAROUND_DEPTH,
   SPIKE_MAX_DEPTH, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB, PUCHDE_FRAMES, wttfraForLevel,
+  WARP_ALONG_SPAN,
 } from '../rules'
-import { CAM, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
+import { CAM, CAM_ENTRY, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
+import { assertNever } from '../assert'
 
 /**
  * A jump is EIGHT angle-steps (W-008). JJUMPM (ALWELG.MAC:1892-1976) advances the
@@ -41,9 +43,41 @@ import { CAM, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
  */
 export const JUMP_ANGLE_STEPS = 8
 
+/**
+ * The rim — the ROM's CURSY, the line the cursor sits on. An invader climbing in INVDIR
+ * up reaches it when `CMP CURSY / BEQ ATOP / IFCC` fires (ALWELG.MAC:1744-1747), and that
+ * is where CHASER takes it. Our depth axis is INVAY inverted and clamped, so the top of
+ * the climb IS depth 1 and no epsilon is needed: jsmove's own Math.min lands an
+ * overshooting invader exactly here.
+ */
+const RIM_DEPTH = 1
+
+/** One unit of the ROM's 224-unit depth axis — the `INC INVAY` CHASER nudges a flip back by. */
+const ALONG_UNIT = 1 / WARP_ALONG_SPAN
+
 /** Is this invader caught mid-jump, between two lines? (The ROM's $80 INVMOT bit.) */
 export function isJumping(e: Enemy): boolean {
   return e.jumpAngle !== undefined
+}
+
+/**
+ * ROM frames a CHASER takes to walk one lane of the rim, at `level`.
+ *
+ * TOPPER (ALWELG.MAC:2447-2460) is a fixed loop — crouch, jump, repeat — so every lap
+ * round it costs the same: the `VSLOOP` crouch, plus however many frames its "DOUBLE
+ * SPEED JUMP" needs to spend a flip's eight angle-steps at WTTFRA of them per frame.
+ * The landing frame doubles as the next crouch's first, which is why the crouch is not
+ * counted twice.
+ *
+ * The crouch is read straight out of the bytecode — TOPPER's own VSLOOP operand — so
+ * this cannot drift from the CAM the interpreter actually runs. src/shell/input.ts sizes
+ * the keyboard's escape margin against it (the player must out-rotate the fastest chaser
+ * the ROM can build), and tests/shell/tp1-5.rim-speed.test.ts checks the two agree by
+ * MEASURING the cadence out of a running game rather than trusting either.
+ */
+export function chaserRimFramesPerLane(level: number): number {
+  const crouch = CAM[CAM_ENTRY.TOPPER + 1]   // `VSLOOP 4` — the operand byte
+  return crouch + Math.ceil(JUMP_ANGLE_STEPS / wttfraForLevel(level))
 }
 
 /** How far through its tumble, 0 → 1. The renderer swings the bowtie by this. */
@@ -70,6 +104,16 @@ export interface CamContext {
   readonly spikes: number[]
   /** Enemies still to be released this level — JSTRAI's "ANY NYMPHS LEFT?". */
   readonly spawnRemaining: number
+  /**
+   * Every invader on the board, INCLUDING the one being run. CHASER's pincer rule is the
+   * only reader: it counts the chasers already circling (INCCOU) and, when there is
+   * exactly one, hunts it down to take the opposite way round. The caller passes the
+   * array it is mapping, and the interpreter mutates invaders in place, so this is a
+   * LIVE view — an invader that converted earlier this frame is already visible here.
+   */
+  readonly enemies: readonly Enemy[]
+  /** PULSON/PULTIM. The CAM never ticks the pulse; VCHKPU only ever ASKS about it. */
+  readonly pulse: PulseState
   /** The shared movement cursor, advanced in place (the caller owns it). */
   readonly rng: Rng
 }
@@ -90,6 +134,17 @@ const APPEARANCE: Readonly<Record<EnemyKind, number>> = {
  */
 export function camForNewEnemy(kind: EnemyKind, params: LevelParams): number {
   return kind === 'flipper' ? params.flipperCam : TNEWCAM[APPEARANCE[kind]]
+}
+
+/**
+ * NEWGEN's program: the GENERIC one for an appearance code, ignoring the wave. SPLCHA
+ * (ALWELG.MAC:1494-1502) hands it to the children of a tanker split too close to the
+ * player — "YES. NO FLIPPING", because TNEWCAM[ZABFLI] is NOJUMP (W-032). It is the same
+ * table camForNewEnemy reads for every non-flipper; the only difference is that a
+ * flipper takes it too, instead of the wave's flipping program.
+ */
+export function genericCamFor(kind: EnemyKind): number {
+  return TNEWCAM[APPEARANCE[kind]]
 }
 
 /** VSLOPB's wave parameters (WTABLE, ALWELG.MAC:728-751). */
@@ -114,14 +169,19 @@ function speedFor(e: Enemy, ctx: CamContext): number {
     case 'pulsar':
       return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed
     // A sixth EnemyKind would otherwise fall out of here as `undefined` and turn every
-    // speed — and then every depth — into NaN, silently. tp1-5 adds a sixth.
+    // speed — and then every depth — into NaN, silently. `assertNever` makes that a `tsc`
+    // error instead. It is imported, not local, because the same rule binds `scoreFor`,
+    // `enemyCanShoot`, `makeEnemy` and `stepGame` — and for a while this comment claimed a
+    // sixth kind "now fails tsc, at the switch that forgot it" while three of those four
+    // still compiled clean and returned `undefined`. A guard in one place is not a rule.
     default:
-      throw new Error(`CAM: no move rate for enemy kind ${String((e as Enemy).kind)}`)
+      return assertNever(e, 'enemy kind')
   }
 }
 
 /**
- * Which way to turn to face `to`, as POLDEL decides it (ALWELG.MAC:1876-1889).
+ * Which way to turn to face `to`, as POLDEL computes the delta (ALWELG.MAC:3395-3408)
+ * and JCHPLA reads its sign (1876-1889).
  *
  * POLDEL takes the raw difference and then, ONLY on a closed tube, folds it into the
  * shorter way round: `AND I,0F` and sign-extend when it lands past 8
@@ -137,22 +197,116 @@ function speedFor(e: Enemy, ctx: CamContext): number {
  * reports him as lying the OTHER way, and AVOIDR — whose whole purpose is to flee —
  * turns and charges him. Both of AVOIDR's waves (10 and 15) are open sheets, so that
  * was every wave it runs on.
+ *
+ * ── There is no "no opinion". The answer is never zero. ─────────────────────────────
+ * JCHPLA does not test the delta for zero; it `ASL`s the sign bit into the carry and
+ * takes the CCW branch on carry CLEAR. Carry clear is delta POSITIVE *or ZERO*, so an
+ * invader standing on the player's own lane is sent CCW — deliberately, unconditionally,
+ * and every time. We used to return 0 there and leave `rot` untouched, which made the
+ * direction a function of whatever the invader happened to be carrying: the same enemy,
+ * in the same place, with the same player, flipping two different ways depending on its
+ * history. CHASER calls JCHPLA to pick its side of the pincer, so that was a live bug.
+ *
+ * The half-tube delta folds NEGATIVE for the same reason. On sixteen lanes a delta of
+ * exactly 8 has bit 3 set, so `ORA I,0F8` sign-extends it to -8: a tie does not break
+ * toward CCW, it breaks toward CW. That is the ROM's tie, not ours to round.
  */
-function shortestRot(tube: Tube, from: number, to: number): -1 | 0 | 1 {
-  if (to === from) return 0
-  if (!tube.closed) return to > from ? 1 : -1   // ;PREVENT WRAP
+function shortestRot(tube: Tube, from: number, to: number): -1 | 1 {
+  if (!tube.closed) return to >= from ? 1 : -1   // ;PREVENT WRAP — and zero is positive
   const n = tube.laneCount
   const forward = (((to - from) % n) + n) % n
-  return forward <= n - forward ? 1 : -1
+  return forward * 2 < n ? 1 : -1               // `BIT A,EIGHT`: half a board round is CW
 }
 
 // ── The opcode handlers ──────────────────────────────────────────────────────
 // One per CAM subroutine. Those the ROM ends with `STA CAMSTA` return the new
 // CAMSTA; the interpreter carries it between opcodes as the zero-page byte does.
 
-/** JSMOVE (ALWELG.MAC:1731-1777): move one step along the lane, in INVDIR. */
-function jsmove(e: Enemy, ctx: CamContext): void {
-  e.depth = Math.max(0, Math.min(1, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))
+/**
+ * The move itself, without the arrival: one step along the lane, in INVDIR. This is the
+ * body shared by JSMOVU and JSMOVD, and the ONLY mover a fuseball gets — JFUSEUP inlines
+ * its own copy (2095-2110) precisely so that a fuse reaching the top does not fall into
+ * ATOP and convert.
+ */
+function moveAlong(e: Enemy, ctx: CamContext): void {
+  e.depth = Math.max(0, Math.min(RIM_DEPTH, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))
+}
+
+/**
+ * CHASER (ALWELG.MAC:1824-1874) — an invader that reaches the rim stops climbing and
+ * starts circling. Returns the CAM program counter to resume from, or undefined to leave
+ * the PC where it was.
+ *
+ * The invader does not change into anything: its appearance bits, its score and its
+ * drawing are untouched. What CHASER changes is where it is (pinned at CURSY), what it
+ * runs (CAMPC = TOPPER), and which counter it belongs to — it leaves INMCOU and joins
+ * INCCOU. Hence `chasing`, a state, and not a sixth EnemyKind.
+ *
+ * The returned PC is TOPPER *minus one*, exactly as the ROM stores it (`LDA I,TOPPER-CAM-1
+ * / STA CAMPC`): the dispatcher's own INC completes the jump, so the invader begins
+ * TOPPER's crouch in the same frame it arrives, without losing one to the conversion.
+ */
+function chaser(e: Enemy, ctx: CamContext): number | undefined {
+  e.depth = RIM_DEPTH   // "PLACE EXACTLY AT TOP"
+
+  // A pulsar is the one invader that will not take the rim while the wave still owes
+  // enemies: `LDA NYMCOU / IFNE` → "SEND IT DOWN" (INVAC2 ^= INVDIR). It bounces down the
+  // well and climbs again, and only converts once the nymphs are spent.
+  if (e.kind === 'pulsar' && ctx.spawnRemaining > 0) {
+    e.direction = -1
+    return undefined
+  }
+
+  // "STILL FLIPPING? YES. FINISH FLIP BEFORE AT TOP STATUS" — the ROM nudges INVAY back
+  // down by one along-unit so the arrival does not fire again next frame, and lets the
+  // jump land first. A conversion mid-flip would strand the invader between two lines.
+  if (isJumping(e)) {
+    e.depth = RIM_DEPTH - ALONG_UNIT
+    return undefined
+  }
+
+  // THE PINCER (1845-1869). `LDA INCCOU / CMP I,1 / IFNE`: with exactly ONE other chaser
+  // already circling, the ROM does not ask which way the player is — it hunts that other
+  // chaser down, reads its INVROT and takes the opposite. Two chasers come at you from
+  // both sides; they never queue up on the same flank. With none, or with two or more, it
+  // falls back to the shortest way round.
+  const others = ctx.enemies.filter((o) => o !== e && o.chasing === true)
+  if (others.length === 1) e.rot = others[0].rot === 1 ? -1 : 1
+  else jchpla(e, ctx)
+
+  e.chasing = true                     // INC INCCOU
+  return CAM_ENTRY.TOPPER - 1
+}
+
+/**
+ * JSMOVE (ALWELG.MAC:1731-1777): move one step along the lane, then — climbing — test the
+ * arrival. `CMP CURSY / BEQ ATOP / IFCC` is what makes an invader a chaser; it is reached
+ * from the up branch only, so nothing converts on the way back down.
+ *
+ * (The ROM's other arrival branch here, the carrier that splits when it comes within $20
+ * of the top, is resolveTankerArrivals in sim.ts.)
+ */
+function jsmove(e: Enemy, ctx: CamContext): number | undefined {
+  moveAlong(e, ctx)
+  if (e.direction === 1 && e.depth >= RIM_DEPTH) return chaser(e, ctx)   // ATOP
+  return undefined
+}
+
+/**
+ * JPULMO (ALWELG.MAC:1780-1799), the move half. Climbing, it is JSMOVU — arrival and all,
+ * which is how a pulsar reaches CHASER's "SEND IT DOWN" clause. Descending, it turns
+ * round once it has sunk out of the potency zone, and turns round WHEREVER IT IS if the
+ * nymphs have run out (`LDY NYMCOU / IFEQ / LDA I,0FF ;SEND PULSAR UP` — 0xFF is past
+ * every rail the compare below can test, so the reverse is unconditional).
+ *
+ * The kill this routine ends with is resolvePlayerHits' (see the header): one predicate,
+ * once, after the move.
+ */
+function jpulmo(e: Enemy, ctx: CamContext): number | undefined {
+  if (e.direction === 1) return jsmove(e, ctx)
+  moveAlong(e, ctx)
+  if (ctx.spawnRemaining === 0 || e.depth <= PULSAR_NEAR_FAR_DEPTH) e.direction = 1
+  return undefined
 }
 
 /**
@@ -211,10 +365,15 @@ function jeltst(e: Enemy, ctx: CamContext): number {
   return ctx.spikes[e.lane] > e.depth ? 0 : 1
 }
 
-/** JCHPLA (ALWELG.MAC:1876-1889): aim the rotation the SHORTEST way to the player. */
+/**
+ * JCHPLA (ALWELG.MAC:1876-1889): aim the rotation the SHORTEST way to the player.
+ *
+ * It ALWAYS aims. The ROM's `ASL` / `IFCC` writes INVROT on both arms of the branch, so
+ * there is no case in which an invader is left carrying the direction it walked in with —
+ * not even standing on the player's own lane (see shortestRot).
+ */
 function jchpla(e: Enemy, ctx: CamContext): void {
-  const rot = shortestRot(ctx.tube, e.lane, ctx.playerLane)
-  if (rot !== 0) e.rot = rot
+  e.rot = shortestRot(ctx.tube, e.lane, ctx.playerLane)
 }
 
 /** JCHROT (ALWELG.MAC:1722-1726): reverse the rotation bit. It persists until it does. */
@@ -264,7 +423,10 @@ function jjumpm(e: Enemy, ctx: CamContext): number {
  */
 function jfuseup(e: Enemy, ctx: CamContext): void {
   if (e.kind !== 'fuseball') return
-  jsmove(e, ctx)
+  // moveAlong, NOT jsmove: JFUSEUP has its own mover and its own clamp at the top, so a
+  // fuseball never falls into ATOP and never becomes a chaser. KILINV agrees — it books a
+  // fuse standing at CURSY as a MOVER, branching around the chaser count (2302-2311).
+  moveAlong(e, ctx)
 
   e.jitterTimer -= ctx.dt
   if (e.jitterTimer > 0) return
@@ -272,9 +434,20 @@ function jfuseup(e: Enemy, ctx: CamContext): void {
 
   let rolling = false
   if (nextFloat(ctx.rng) < FUSEBALL_MOVE_PROB) {
-    const dir = shortestRot(ctx.tube, e.lane, ctx.playerLane)
-    if (dir !== 0) {
-      e.lane = wrapLane(ctx.tube, e.lane + dir)
+    // W-023: it does NOT chase. Every fuseball decision — JFUSEUP's, MAYBLR's — ends in
+    // one of two calls, FUCHPL (chase) or LEFRIT (coin), and which one it takes is
+    // decided by the two chase bits in WFUSCH. Those come from TWFUSC, whose FIRST record
+    // begins at wave 17 (ALWELG.MAC:686-690); below that CONTOUR's end-of-table path
+    // yields 0, neither bit is set, and the branch is always LEFRIT — "RANDOMLY CHOOSE
+    // LEFT OR RIGHT" (2171-2178), which reads a bit of RANDOM and sets INVROT from it.
+    // The player is not an input to the decision at all.
+    //
+    // Ours steered by shortestRot: it walked at the player from wave 1, which is the
+    // fuseball's whole reputation for being unfair, and it was never the arcade's.
+    e.rot = nextFloat(ctx.rng) < 0.5 ? 1 : -1
+    const to = wrapLane(ctx.tube, e.lane + e.rot)
+    if (to !== e.lane) {          // an open sheet clamps at its edge: no roll, no landing
+      e.lane = to
       rolling = true
     }
   }
@@ -285,9 +458,16 @@ function jfuseup(e: Enemy, ctx: CamContext): void {
  * JCHKPU (ALWELG.MAC:1709-1719): "CHECK FOR PULSING NOW OR IN NEXT 4 FRAMES".
  * CAMSTA is 0 for no pulse and 0x80 for a pulse, so PULSCH's `VBR0PC PULSC3`
  * branches to the flip exactly when the pulsar is NOT about to pulse.
+ *
+ * The ROM ANDs the sign of PULSON with the sign of PULSON + 4*PULTIM (`ASL / ASL / CLC /
+ * ADC PULSON / AND PULSON / AND I,80 / EOR I,80`), so it answers "no pulse" only when the
+ * pulse is dark NOW *and* still dark four frames from now — a pulsar will not start a
+ * flip it would be caught mid-way through when the lane lights up. It asks the GLOBAL
+ * counter, not the pulsar: under W-026 there is nothing per-pulsar left to ask.
  */
-function jchkpu(e: Enemy): number {
-  return e.kind === 'pulsar' && e.pulsing ? 0x80 : 0
+function jchkpu(ctx: CamContext): number {
+  const soon = ctx.pulse.son + 4 * ctx.pulse.tim
+  return ctx.pulse.son < 0 && soon < 0 ? 0 : 0x80
 }
 
 /**
@@ -339,9 +519,13 @@ export function runCam(enemy: Enemy, ctx: CamContext): Enemy {
         break
 
       // ── movement ──────────────────────────────────────────────────────────
-      case CAM_OPS.VSMOVE:
-        jsmove(e, ctx)
+      // A move can reach the rim, and CHASER re-points the PC when it does — the ROM's
+      // own `STA CAMPC` from inside JSMOVE, completed by the dispatcher's INC below.
+      case CAM_OPS.VSMOVE: {
+        const to = jsmove(e, ctx)
+        if (to !== undefined) pc = to
         break
+      }
       case CAM_OPS.VSTRAI: {
         const { camSta: sta, became } = jstrai(e, ctx)
         camSta = sta
@@ -351,9 +535,11 @@ export function runCam(enemy: Enemy, ctx: CamContext): Enemy {
       case CAM_OPS.VSFUSE:
         jfuseup(e, ctx)
         break
-      case CAM_OPS.VSPUMO:                       // JPULMO: the pulsar's move (dual-speed, in jsmove)
-        jsmove(e, ctx)
+      case CAM_OPS.VSPUMO: {                     // JPULMO: the pulsar's move (dual-speed, in speedFor)
+        const to = jpulmo(e, ctx)
+        if (to !== undefined) pc = to
         break
+      }
 
       // ── jumping ───────────────────────────────────────────────────────────
       case CAM_OPS.VJUMPS:
@@ -374,7 +560,7 @@ export function runCam(enemy: Enemy, ctx: CamContext): Enemy {
         camSta = jeltst(e, ctx)
         break
       case CAM_OPS.VCHKPU:
-        camSta = jchkpu(e)
+        camSta = jchkpu(ctx)
         break
 
       // The cursor kills. The ROM asks per invader, here; we answer for every
