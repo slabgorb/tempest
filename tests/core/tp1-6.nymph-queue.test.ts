@@ -25,9 +25,11 @@
 // ── What the ROM does (ALWELG.MAC unless noted) ──────────────────────────────
 //
 //   INIENE:303   NWNYMC -> NYMCOU: the wave's whole budget enters as nymphs
-//   ININYM:315   seed nymph i at NYMPY = (i<<4)|randomLane, and the one all-zero
-//                combination is bumped to $0F — so pys are STAGGERED ~16 frames
-//                apart, strictly increasing, in per-index bands [16i, 16i+15]
+//   ININYM:315   seed nymph i at NYMPY = ((i & $F)<<4)|randomLane — the shift is
+//                four ASLs on an 8-BIT accumulator, so the bands WRAP at index 16
+//                (rework pin below) — and the all-zero assembled byte is bumped
+//                to $0F. pys are STAGGERED ~16 frames apart within one 256-frame
+//                window, in per-index bands [16(i mod 16), 16(i mod 16)+15]
 //   MOVNYM:1124  every frame, each active nymph: py -= 1; at 0 -> CONYMP (hatch)
 //         :1148  while py >= $40 the nymph ROTATES one line every other frame
 //                (`LDA QFRAME / AND I,1`) — the far-end crawl
@@ -42,6 +44,7 @@
 // everything else stepGame owns (the purity/determinism tests at the bottom).
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
+import { createRng } from '@arcade/shared/rng'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import { levelParams, SIM_STEP, spawnForLevel } from '../../src/core/rules'
 import { initialState, GameState } from '../../src/core/state'
@@ -83,9 +86,10 @@ describe('tp1-6 — the wave budget enters as a staggered nymph queue (W-002)', 
       expect(Number.isInteger(n.py), 'NYMPY is a frame count, not seconds').toBe(true)
     }
 
-    // ININYM (315-340): nymph i is seeded at (i<<4)|lane — bands of 16 frames,
-    // one nymph per band, strictly increasing, and never 0 (the all-zero seed is
-    // bumped to $0F so a nymph cannot be born already hatched / inactive).
+    // ININYM (315-340): nymph i is seeded at ((i & $F)<<4)|lane — bands of 16
+    // frames, one nymph per band FOR THE FIRST SIXTEEN (level 1's budget of 6
+    // never wraps, so here the sorted bands are strict), never 0 (the all-zero
+    // assembled byte is bumped to $0F). The wrap itself is pinned below.
     const pys = s.spawn.nymphs.map((n) => n.py).sort((a, b) => a - b)
     for (let i = 0; i < pys.length; i++) {
       expect(pys[i], `sorted nymph ${i} sits in its 16-frame band`).toBeGreaterThanOrEqual(Math.max(1, 16 * i))
@@ -98,6 +102,46 @@ describe('tp1-6 — the wave budget enters as a staggered nymph queue (W-002)', 
     const b = initialState(7).spawn.nymphs
     expect(a).toEqual(b)
     expect(a.length).toBeGreaterThan(0) // guard: agreement over an empty queue proves nothing
+  })
+})
+
+// ── The 8-bit wrap (review rework, round-trip 1) ─────────────────────────────
+//
+// ININYM's stagger is `TXA / ASL ASL ASL ASL` (ALWELG.MAC:328-332) — four shifts
+// on an EIGHT-BIT accumulator. Index 16 shifts its high bit out through carry and
+// lands back in band 0: the cabinet seeds nymphs 16+ INTO THE SAME 256-frame
+// window as 0-15, so a big wave opens with interleaved double-density hatching.
+// An unbounded `(i << 4)` stretches every wave with budget > 16 — level 7 today,
+// and every TNYMMX wave >= 4 once tp1-7 lands — materially slower than the
+// arcade's. The Reviewer caught this; the GREEN port and the original band test
+// above both assumed the unwrapped read.
+
+describe('tp1-6 rework — ININYM\'s index shift is 8-BIT: bands wrap at nymph 16', () => {
+  it('a budget past 16 seeds nymphs 16+ back into the 0-15 bands, all inside one byte', () => {
+    const rng = createRng(99)
+    const { nymphs } = spawnForLevel(7, rng, 16)
+    expect(nymphs.length, 'precondition: level 7 owes more than 16 enemies').toBeGreaterThan(16)
+    nymphs.forEach((n, i) => {
+      const band = ((i & 0x0f) << 4)
+      expect(n.py, `nymph ${i} seeds in band $${band.toString(16)} — the shift is a byte`)
+        .toBeGreaterThanOrEqual(Math.max(1, band))
+      expect(n.py, `nymph ${i} seeds in band $${band.toString(16)} — the shift is a byte`)
+        .toBeLessThanOrEqual(band + 15)
+    })
+    // NYMPY is one byte: no seed can sit past $FF, ever.
+    for (const n of nymphs) expect(n.py, 'the seed window is a single byte').toBeLessThanOrEqual(0xff)
+  })
+
+  it('the zero-bump applies POST-wrap: nymph 16 on lane 0 is bumped to $0F like nymph 0', () => {
+    // `IFEQ / LDA I,0F` tests the ASSEMBLED byte, after the wrap — so index 16
+    // (and 32, …) with lane 0 takes the same $0F rescue as index 0. laneCount 1
+    // pins every lane roll to 0, making both zero cases reachable on demand.
+    const rng = createRng(1)
+    const { nymphs } = spawnForLevel(7, rng, 1)
+    expect(nymphs.length, 'precondition: the wrap case exists').toBeGreaterThan(16)
+    expect(nymphs[0].py, 'index 0, lane 0: the classic bump').toBe(0x0f)
+    expect(nymphs[16].py, 'index 16, lane 0: wrapped to zero and bumped — not born dead').toBe(0x0f)
+    for (const n of nymphs) expect(n.py, 'no nymph is ever born at py 0').toBeGreaterThan(0)
   })
 })
 
