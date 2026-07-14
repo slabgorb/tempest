@@ -12,6 +12,14 @@ export interface Tube {
   // module-level FAR_RATIO 0.2. perspectiveDepth reads it, so project/boundaryRail/
   // laneWidth/flipPivot all foreshorten by THIS well's ratio, not a global.
   readonly farRatio: number
+  // tp1-31 (DB-008): the per-well SCREEN Z VANISH PT translation (ZADJL, from
+  // HOLZAD/HOLZDH ALDISP.MAC:1387-1388) — a whole-well screen translate in
+  // canvas-y ring units. ZADJ is added POST-divide in ROM screen units (WORSCR:
+  // SCREEN Z = [FACTOR/(PY-EY)]*(PZ-EZ)+SZCENT, ALDISP.MAC:2049-2051, FACTOR =
+  // 256 via the math-box high-byte load; ADC ZADJL at :2274), where the rim
+  // spans 256·112/(16+H) — so the rim-relative port is -ZADJ·(16+H)·S/256.
+  // The level-start slide toward this target lives in GameState.camera.
+  readonly screenZ: number
 }
 
 // --- Story 10-12 / tp1-9: true perspective depth projection ------------------
@@ -53,7 +61,8 @@ export function makeCircleTube(
   // A synthetic circle's ratio IS its far/near radius ratio (60/300 = 0.2 for the
   // canonical level-1 ring), concentric about `center` so its vanishing point is
   // the centre. perspectiveDepth reads this the same way it reads a ROM well's.
-  return { laneCount, closed: true, far, near, farRatio: farRadius / nearRadius }
+  // tp1-31: synthetic tubes carry no screen translate.
+  return { laneCount, closed: true, far, near, farRatio: farRadius / nearRadius, screenZ: 0 }
 }
 
 export function wrapLane(tube: Tube, lane: number): number {
@@ -203,6 +212,17 @@ const ROM_EYE_Z: readonly number[] = [
   0x50, 0x50, 0x50, 0x68, 0x50, 0x50, 0x68, 0xb0, 0xa0, 0x50, 0x90, 0x80, 0x20, 0xb0, 0x60, 0xa0,
 ]
 
+// tp1-31 (DB-008): HOLZDH:HOLZAD (ALDISP.MAC:1387-1388) — ";CENTER ADJUST", the
+// signed 16-bit per-well SCREEN Z VANISH PT (ZADJL, ALCOMN.MAC:543), combined.
+// X is never adjusted ("X SCREEN CENTER" = 0, ALDISP.MAC:2507).
+const ROM_ZADJ: readonly number[] = [
+  -192, -224, -192, -128, -192, -192, -144, 96, 256, -224, 64, 0, -352, 320, -192, 256,
+]
+// WORSCR's fixed-point projection factor: the numerator rides the math-box HIGH
+// byte (×256), so screen = 256·world/(PY−EY) (ALDISP.MAC:2049-2051) — ZADJ is in
+// THOSE units, where the rim spans 256·112/(16+H).
+const ROM_SCREEN_FACTOR = 256
+
 const ROM_CENTER = 0x80
 // Map the ROM rim radius (±112) onto the original circle's near radius (300) so
 // level 1 keeps its size. The far end is the same ring scaled toward the per-well
@@ -238,7 +258,11 @@ function makeRingTube(tube: number): Tube {
     // far[i] = VP + R·(near[i] − VP); VP.x = 0, so far.x is simply R·x.
     far.push({ x: x * farRatio, y: vpY + (y - vpY) * farRatio })
   }
-  return { laneCount: closed ? 16 : 15, closed, far, near, farRatio }
+  // tp1-31 (DB-008): ZADJ is a ROM SCREEN-unit quantity (post-divide — see
+  // Tube.screenZ); the rim there spans ROM_SCREEN_FACTOR·112/(16+H) against our
+  // 300, so the rim-relative translate is -ZADJ·(16+H)·RING_SCALE/256, canvas-y.
+  const screenZ = (-ROM_ZADJ[tube] * (16 + H) * RING_SCALE) / ROM_SCREEN_FACTOR
+  return { laneCount: closed ? 16 : 15, closed, far, near, farRatio, screenZ }
 }
 
 // The 16 geometries in arcade cycle order: GEOMETRIES[(level - 1) mod 16].

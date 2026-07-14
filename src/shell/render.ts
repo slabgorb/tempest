@@ -164,14 +164,18 @@ const STAR_PICTURE_DOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>>
 // Step the starfield one frame and stroke every live plane. A plane's Z maps to
 // a radial reach: far (Z≈STAR_SPAWN_Z) sits near centre, near (Z≈STAR_RETIRE_Z)
 // flings its dots to the edges — the "flying down the tube" rush. Warp-only.
-function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+function drawStarfield(ctx: CanvasRenderingContext2D): void {
   // NOTE: this no longer STEPS the starfield — it only strokes it. Advancing state
   // inside a draw call was the whole defect (FR-017): draw runs once per rendered
   // frame, so the dive's speed tracked the monitor and kept running while paused.
   // advanceStarfield() below is driven from the sim's per-step hook instead.
-  const cx = W / 2
-  const cy = H / 2
-  const reach = Math.hypot(W, H) * 0.6
+  //
+  // tp1-31: anchored at the SCENE ORIGIN — DSTARF draws each plane at the world
+  // centre (PXL = PZL = 0x80, ALDISP.MAC:2945-2948), which is (0,0) in the
+  // phosphor scene space. (The old W/2,H/2 anchor predated the phosphor
+  // refactor's centre-origin scene transform and displaced the whole field by
+  // half a screen — see sprint/archive/tp1-9-session-superseded-a1.md.)
+  const reach = 720 * 0.6 // scene units — the phosphor scene is a 720-unit box
   const span = STAR_SPAWN_Z - STAR_RETIRE_Z
   ctx.fillStyle = STAR_COLOR
   ctx.shadowColor = STAR_COLOR
@@ -186,7 +190,7 @@ function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): voi
     ctx.shadowBlur = 4 + t * 8
     for (const [ux, uy] of STAR_PICTURE_DOTS[plane.picture]) {
       ctx.beginPath()
-      ctx.arc(cx + ux * r, cy + uy * r, size, 0, Math.PI * 2)
+      ctx.arc(ux * r, uy * r, size, 0, Math.PI * 2)
       ctx.fill()
     }
   }
@@ -262,14 +266,22 @@ export function drawTube(
   ctx.shadowBlur = 10
   ctx.beginPath(); ctx.moveTo(fa.x, fa.y); ctx.lineTo(a.x, a.y); ctx.stroke()
   ctx.beginPath(); ctx.moveTo(fb.x, fb.y); ctx.lineTo(b.x, b.y); ctx.stroke()
-  // Vanishing-point glow (closed tubes converge on the center).
+  // Vanishing-point glow. tp1-31: since tp1-9 the far ring converges on the
+  // PER-WELL vanishing point, not the origin — anchor the glow on the far
+  // ring's own centre (its centroid tracks the VP displacement) so it sits in
+  // the hole on every well, not floating ~109 ring units off the level-1 ring.
   if (tube.closed) {
+    let gx = 0
+    let gy = 0
+    for (const p of tube.far) { gx += p.x; gy += p.y }
+    gx /= tube.far.length
+    gy /= tube.far.length
     ctx.fillStyle = color
     ctx.shadowColor = color
     ctx.shadowBlur = 24
     ctx.globalAlpha = 0.5
     ctx.beginPath()
-    ctx.arc(0, 0, 5 + Math.sin(renderTime * 3) * 1.5, 0, Math.PI * 2)
+    ctx.arc(gx, gy, 5 + Math.sin(renderTime * 3) * 1.5, 0, Math.PI * 2)
     ctx.fill()
     ctx.globalAlpha = 1
   }
@@ -967,12 +979,18 @@ export function render(
   const wellHex = fx.zapFlash != null
     ? LEVEL_COLORS[fx.zapFlash % LEVEL_COLORS.length]
     : paletteHex(wellName)
+  // tp1-31 (DB-008): the per-well SCREEN Z VANISH PT translate + its level-start
+  // slide. The ROM adds ZADJL to every projected point inside WORSCR
+  // (ALDISP.MAC:2274), so the WHOLE scene shifts — tube, spikes, enemies, claw,
+  // and the warp starfield (DSTARF swaps the eye but keeps ZADJL). The sim owns
+  // the animation: render just applies the current camera.screenZ.
+  pctx.translate(0, s.camera.screenZ)
   drawTube(pctx, s, wellHex, currentLane(s.tube, s.player.lane))
   drawSpikes(pctx, s)
   if (s.mode === 'warp') {
     // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
     // The 8-plane starfield streams out behind the Claw for the dive spectacle.
-    drawStarfield(pctx, W, H)
+    drawStarfield(pctx)
     drawWarp(pctx, s, color)
   } else {
     // Not warping — clear the starfield so the next dive starts from centre.
