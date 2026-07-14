@@ -234,10 +234,17 @@ function stepPulseClock(s: GameState): void {
 //      Both children are born at the parent's EXACT depth. There is no clamp in the
 //      cabinet. This used to read `Math.min(t.depth, SPLIT_CHILD_DEPTH)` — a deliberate
 //      softening (0.85, "so a rim-split is not an instant grab") that predates the
-//      fidelity epic. A carrier that arrives under its own steam bursts at 0.9286, which
-//      is ABOVE PLAYER_RIM_DEPTH (0.92), and drops both children there: a player caught
-//      on a flanking lane is grabbed on the burst frame, with no counterplay. That is the
-//      arcade, and tp1-24 ratified it.
+//      fidelity epic. A carrier that arrives under its own steam bursts at 0.9286, and
+//      drops both children there — high in the well, but BELOW the grab line.
+//
+//      They are not born lethal. tp1-24 claimed they were ("a player caught on a flanking
+//      lane is grabbed on the burst frame … that is the arcade"), and that was wrong: it
+//      measured the child's depth against an INVENTED PLAYER_RIM_DEPTH of 0.92. The grab
+//      line is the RIM (CURSY = $10 = depth 1.0) and only a CHASER can grab, and ATOP is
+//      tested BEFORE this carrier check (ALWELG.MAC:1744-1750) — so a carrier that reaches
+//      the rim becomes a chaser instead of bursting, and a newborn child is ALWAYS below
+//      the grab line. It must climb the last stretch and take the rim before it can grab
+//      anyone. The player on a landing lane gets his reaction time back (tp1-27, W-049).
 //
 //   3. WHAT PROGRAM THEY RUN (W-032, below) — and it is rule 3 that makes rule 2
 //      survivable.

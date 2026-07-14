@@ -383,11 +383,18 @@ export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.3
 //
 // It was 0.85, and its comment said "Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is
 // not an instant grab" — a deliberate softening, written before the fidelity epic, that
-// clamped a tanker's children safely below the grab line. The cabinet does the opposite on
-// purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own INVAY into TEMP0 and
-// ACTINV (1219-1226) seats each child straight back out of it, so both are born at the
-// parent's EXACT depth. A carrier that arrives on its own bursts at $20 — 0.9286, ABOVE the
-// 0.92 grab line — and a player on a flanking lane is grabbed on the burst frame.
+// clamped a tanker's children safely below the grab line. (That 0.92 was itself invented;
+// the grab line is the RIM — see PLAYER_RIM_DEPTH above, and tp1-27 / W-049.) The cabinet
+// does the opposite on purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own
+// INVAY into TEMP0 and ACTINV (1219-1226) seats each child straight back out of it, so both
+// are born at the parent's EXACT depth. A carrier that arrives on its own bursts at $20 —
+// 0.9286 — so the children are born high in the well rather than at a soft 0.85.
+//
+// They are NOT born lethal, and tp1-24's claim that they were is retracted (tp1-27). The
+// burst line ($20) sits BELOW the grab line ($10 = the rim), and ATOP is tested BEFORE the
+// carrier check (1744-1750): a carrier that actually reaches the rim becomes a CHASER
+// instead of bursting. So a newborn child is always below the grab line and must climb the
+// last stretch — and become a chaser — before it can touch anyone.
 //
 // The constant is deleted rather than renumbered because there is no number that belongs
 // here: the children's depth is not a constant at all, it is the parent's. Do not
