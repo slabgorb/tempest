@@ -8,6 +8,77 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Entries describe what changed
 for the player. Purely internal work is summarised under *Internal*.
 
+## [Unreleased]
+
+### Changed
+- **Every well now has its own camera.** The far end of the tube was a fixed
+  one-fifth the size of the near rim on every level; the cabinet computes the
+  ratio per well — between a tenth and a sixth — and builds the far ring around
+  the well's own vanishing point, which sits off-centre on every well but one.
+  The warp starfield recedes on the ROM's hyperbolic depth curve instead of a
+  straight line.
+- **Each well sits where the cabinet framed it on screen**, and at the start of
+  a new wave the camera glides into the next well's framing over about a
+  quarter of a second instead of cutting. A fresh life still snaps straight
+  into place.
+
+### Fixed
+- The warp starfield had been drawn half a screen off-centre since an earlier
+  rendering refactor; it is back at the centre of the scene.
+- The glow at the vanishing point follows the well's actual far ring instead of
+  being nailed to the middle of the screen.
+
+## [1.0.12] - 2026-07-14
+
+### Changed
+- **The well changes colour as you go deeper — and for sixteen waves it
+  vanishes.** Colours now come from the cabinet's own palette table: six banks,
+  one per group of sixteen waves, driving the well and the HUD. One bank paints
+  the well black, so **waves 65–80 are played on an invisible well** — the
+  difficulty spike the 1981 cabinet actually shipped. (Enemies still wear their
+  fixed colours; recolouring them from the same table is next.) With six or
+  seven shots in flight, your ammo tint is now blue — a colour the palette
+  keeps distinct from cyan.
+- **Enemies enter the wave as a queue of nymphs, at most seven on the board.**
+  The whole wave's budget is seeded up front as staggered nymphs, and one
+  hatches only when a slot frees up — how fast you clear the board is what lets
+  more in. The old spawn timer is gone, tanker splits pass through the same
+  seven-slot gate, and firing the Superzapper freezes the queue rather than
+  letting it dump on you.
+- While nymphs are still queued on the early waves, **the fuseball patrols the
+  middle of the lane** instead of riding the rim — and its touch kills only at
+  the rim itself.
+
+### Fixed
+- **An enemy can only grab your Claw from the rim itself.** The old grab line
+  was an invented threshold slightly below the rim, so an invader still
+  climbing could grab a player the cabinet would never have touched.
+
+## [1.0.11] - 2026-07-14
+
+### Changed
+- **An enemy that reaches the rim now hunts you along it.** It pins to the top
+  of the well and circles toward your Claw — and when a second one arrives
+  while the first is still circling, it takes the opposite way round, so the
+  pair pinches you from both flanks. Invaders used to reach the rim and simply
+  stand there.
+- **All pulsars strobe in unison** — one global pulse, nine frames in every
+  forty, not a private timer each. And a pulsing lane kills only within the
+  pulse's actual reach, not from anywhere on the lane.
+- **The fuseball was never a hunter.** Ours steered at the player from wave 1;
+  the cabinet's chase rule does not exist until wave 18 — before that, every
+  move is a coin flip — and from wave 18 on, the table deliberately steers it
+  *away* from your Claw. Waves 100 and beyond now keep the deep-wave rule
+  instead of walking off the end of the cabinet's table.
+- **Tanker children are born at their parent's exact depth.** A tanker bursting
+  near the rim used to have its children pushed back down to a safer distance;
+  the cabinet has no such clamp.
+
+### Fixed
+- The arrow keys were inverted: holding LEFT or RIGHT now turns the Claw the
+  way it reads on screen. The mousewheel spinner is untouched — it was always
+  right.
+
 ## [1.0.10] - 2026-07-13
 
 ### Changed
