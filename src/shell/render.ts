@@ -6,7 +6,7 @@ import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform 
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
-import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
+import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z, starReachFraction } from './starfield'
 import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
@@ -187,9 +187,12 @@ export function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: numbe
   // DB-017: each plane takes its own colour through the palette (blue until wave 5,
   // then per-plane index). starColor may resolve to black in the invisible-well
   // waves, which paletteHex renders as background — a faithful vanish.
+  // tp1-9 (DB-016): radial reach is the ROM's hyperbolic divide 40/(z+24), not a
+  // linear spread from centre — a fresh plane already sits ~15% out, not piled on
+  // the centre point, and it whips past at the end.
   starfield.planes.forEach((plane, i) => {
     const t = (STAR_SPAWN_Z - plane.z) / span // 0 (far, centre) → 1 (near, edge)
-    const r = t * reach
+    const r = starReachFraction(plane.z) * reach
     const size = 0.6 + t * 1.8
     const hex = paletteHex(starColor(level, i))
     ctx.fillStyle = hex

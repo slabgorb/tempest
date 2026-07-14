@@ -30,13 +30,20 @@ function expectValidTube(t: Tube): void {
 }
 
 describe('tubeForLevel — level 1 is the authentic ROM circle', () => {
-  it('keeps the original circle size: near rim radius ~300, far ~60', () => {
+  it('keeps the original NEAR rim size (~300); the far ring is foreshortened by the per-well ROM ratio', () => {
     const t = tubeForLevel(1)
     const nr = t.near.map((p) => Math.hypot(p.x, p.y))
-    const fr = t.far.map((p) => Math.hypot(p.x, p.y))
-    expect(Math.max(...nr)).toBeCloseTo(300, 0) // cardinal rim points sit at exactly 300
+    expect(Math.max(...nr)).toBeCloseTo(300, 0) // cardinal rim points sit at exactly 300 — level 1 keeps its size
     expect(Math.min(...nr)).toBeGreaterThan(295)
-    expect(Math.max(...fr)).toBeCloseTo(60, 0)
+    // tp1-9 (DB-006/DB-007): the far ring is no longer a concentric near*0.2. It is
+    // near scaled by R = (16+H)/(240+H) = 40/264 (H = 0x18) ABOUT the projected
+    // vanishing point, so its radius-from-origin is displaced. Its SIZE relative to
+    // the near ring is exactly that ratio — measured translation-invariantly by the
+    // opposite-point diameter (points 0 and 8 are antipodal on the 16-point circle).
+    const nearDiam = Math.hypot(t.near[0].x - t.near[8].x, t.near[0].y - t.near[8].y)
+    const farDiam = Math.hypot(t.far[0].x - t.far[8].x, t.far[0].y - t.far[8].y)
+    expect(farDiam / nearDiam).toBeCloseTo(40 / 264, 4)
+    expect(t.farRatio).toBeCloseTo(40 / 264, 4)
   })
 
   it('is a 16-lane closed tube with 16 boundary points on each rim', () => {
