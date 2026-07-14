@@ -57,5 +57,7 @@ export function flatTube(lanes: number): Tube {
     near.push({ x: -NEAR_HALF_WIDTH + 2 * NEAR_HALF_WIDTH * t, y: NEAR_Y })
     far.push({ x: -FAR_HALF_WIDTH + 2 * FAR_HALF_WIDTH * t, y: FAR_Y })
   }
-  return { laneCount: lanes, closed: false, far, near }
+  // tp1-9: Tubes now carry their far/near scale ratio for perspectiveDepth. The
+  // flat model-view tube's ratio is its far/near half-width (80/150).
+  return { laneCount: lanes, closed: false, far, near, farRatio: FAR_HALF_WIDTH / NEAR_HALF_WIDTH }
 }

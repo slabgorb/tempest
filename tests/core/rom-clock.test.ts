@@ -45,7 +45,6 @@ import {
   enemyFireHoldoffFrames,
   enemyCanShoot,
 } from '../../src/core/rules'
-import { FAR_RATIO } from '../../src/core/geometry'
 
 // The ROM's own arithmetic: a 256 Hz IRQ, nine ticks to the game frame.
 const IRQ_HZ = 256
@@ -198,17 +197,13 @@ describe('the player charge — the "manufactured agreement" (AC5)', () => {
 
 describe('the 60s that are NOT frame rates — do not "fix" these (AC2 guard)', () => {
   // AC2 says zero bare 60s remain in src/core "used as a frame rate". src/core has
-  // three 60s that are NOT rates, and a find-and-replace rebase silently destroys
-  // the game by changing them. This is the negative control.
-
-  it('FAR_RATIO stays 60/300 — a projection DISTANCE ratio, not a clock', () => {
-    // geometry.ts:18. The far end sits at 1/FAR_RATIO times the near end's eye
-    // distance. Rebasing this to ROM_FPS/300 would collapse the tube's perspective.
-    // (The real FAR_RATIO finding is per-well and belongs to tp1-9 / cluster C5 —
-    // NOT to this story.)
-    expect(FAR_RATIO).toBe(60 / 300)
-    expect(FAR_RATIO).toBe(0.2)
-  })
+  // 60s that are NOT rates, and a find-and-replace rebase silently destroys the
+  // game by changing them. This is the negative control.
+  //
+  // The projection's 60/300 FAR_RATIO used to be guarded here as one such 60.
+  // tp1-9 (cluster C5) REMOVED it: the far/near ratio is now per-well
+  // R = (16+H)/(240+H) with no bare 60 for the rebase to misread, so that guard
+  // retired with the constant. The level-number 60s below still stand.
 
   it('the pulsar can-shoot gate stays at LEVEL 60 — a level number, not a clock', () => {
     // rules.ts:82. `level >= 60`. Rebasing it to `level >= 28` would let pulsars
