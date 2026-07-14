@@ -73,6 +73,7 @@ import * as G from '../../src/shell/glyphs'
 import { flipperGlyph, tankerGlyph, pulsarColor, paletteColor } from '../../src/shell/glyphs'
 import * as Render from '../../src/shell/render'
 import { makeCircleTube } from '../../src/core/geometry'
+import { ROM_FPS } from '../../src/core/rules'
 import type { GlyphStroke, PaletteColor } from '../../src/shell/glyphs'
 import type { Enemy } from '../../src/core/state'
 import type { GameState } from '../../src/core/state'
@@ -314,12 +315,15 @@ describe('AC4 — palette resolvers guard non-finite level and out-of-range slot
     for (const level of BANK_LEVEL) expect(paletteColor(level, 0)).toBe('white')
   })
 
-  it('the enemy/star/well resolvers survive a non-finite level without throwing', () => {
-    expect(() => flipperGlyph(NaN)).not.toThrow()
-    expect(() => tankerGlyph(NaN, 'pulsar')).not.toThrow()
-    expect(() => pulsarColor(NaN, false)).not.toThrow()
-    expect(() => G.starColor?.(NaN, 3)).not.toThrow()
-    expect(() => Render.resolveWellColor?.(NaN, null)).not.toThrow()
+  it('the enemy/star/well resolvers fall back to bank 0 on a non-finite level (value, not just no-throw)', () => {
+    // Assert the concrete fallback VALUE — a bare `.not.toThrow()` through `?.` would
+    // pass vacuously if an export were ever missing (the call would silently no-op).
+    // Calling directly (no `?.`) also means a deleted export fails loudly here.
+    expect(flipperGlyph(NaN)[0]?.color, 'flipper → bank 0 red').toBe('red')
+    expect(bodyOf(tankerGlyph(NaN, 'pulsar'))?.color, 'tanker body → bank 0 purple').toBe('purple')
+    expect(pulsarColor(NaN, false), 'dormant pulsar → bank 0 cyan').toBe('cyan')
+    expect(ROM_PALETTE.has(G.starColor(NaN, 3)), 'starColor(NaN) → a ROM colour').toBe(true)
+    expect(String(Render.resolveWellColor(NaN, null)), 'resolveWellColor(NaN) → a hex').toMatch(/^#[0-9a-f]{6}$/i)
   })
 })
 
@@ -404,7 +408,8 @@ describe('WIRING — drawEnemy threads s.level to the pixels, and the emblem sur
   it('a flipper drawn at wave 1 is a DIFFERENT pixel than at wave 17 (level is threaded, not constant)', () => {
     const lo = stylesFor(enemyAt({ kind: 'flipper' }), 1)
     const hi = stylesFor(enemyAt({ kind: 'flipper' }), 17)
-    expect(lo.length, 'the flipper strokes at least once').toBeGreaterThan(0)
+    expect(lo.length, 'the flipper strokes at least once at wave 1').toBeGreaterThan(0)
+    expect(hi.length, 'and at wave 17 — else hi[0] is undefined and the compare is vacuous').toBeGreaterThan(0)
     expect(lo[0], 'red (bank 0) ≠ purple (bank 1)').not.toBe(hi[0])
   })
 
@@ -417,5 +422,42 @@ describe('WIRING — drawEnemy threads s.level to the pixels, and the emblem sur
     const shared = [...lo].filter((h) => hi.has(h))
     expect(shared.length, 'exactly the emblem pixel survives both levels').toBe(1)
     expect([...lo].some((h) => !hi.has(h)), 'the body pixel changed between banks').toBe(true)
+  })
+})
+
+// ===========================================================================
+// WIRING — drawStarfield threads level + plane index to the pixels (DB-017)
+// ===========================================================================
+// The pure `starColor` mapping is pinned above, but that does NOT prove drawStarfield
+// FEEDS it `s.level` and the per-plane index: mutating `starColor(level, i)` →
+// `starColor(1, i)` inside drawStarfield leaves the pure-mapping tests green. This is
+// the exact mutation-gameable hole this story exists to close (the well got
+// resolveWellColor, the enemies got the WIRING test above — the starfield needs one
+// too). drawStarfield reads the module-global starfield, so we populate it via the
+// exported advanceStarfield, then stroke it onto a recording ctx and read the pixels.
+describe('WIRING — drawStarfield threads level + plane index (DB-017 is not source-scanned)', () => {
+  const starStyles = (level: number): string[] => {
+    const { ctx, styles } = makeRecCtx()
+    Render.drawStarfield(ctx, 800, 600, level)
+    return styles.filter((s) => s.startsWith('#'))
+  }
+
+  it('render.ts exports drawStarfield so its wiring can be behaviourally guarded', () => {
+    expect(typeof Render.drawStarfield, 'render.ts must export drawStarfield').toBe('function')
+  })
+
+  it('each plane resolves through the level + its own index — not a hardcoded wave or index', () => {
+    // Populate the shared starfield to steady state (~8 live planes, indices 0-7).
+    // advanceStarfield(1/ROM_FPS) advances exactly one ROM frame; ~40 gets us there.
+    for (let i = 0; i < 40; i++) Render.advanceStarfield(1 / ROM_FPS)
+    const at5 = starStyles(5) // bank 0, per-plane
+    const at21 = starStyles(21) // bank 1 — the SAME planes, a different wave-group
+    expect(at5.length, 'the starfield strokes live planes').toBeGreaterThan(0)
+    // PLANE INDEX is wired: wave 5 spreads planes across ≥2 distinct hues.
+    // (A hardcoded plane index would paint every plane one colour → size 1.)
+    expect(new Set(at5).size, 'planes take DIFFERENT colours by index').toBeGreaterThanOrEqual(2)
+    // LEVEL is wired: the same planes recolour when the bank changes.
+    // (A hardcoded level would give identical pixels at wave 5 and wave 21.)
+    expect(at5, 'the same planes recolour per wave-group bank').not.toEqual(at21)
   })
 })
