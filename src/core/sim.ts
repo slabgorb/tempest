@@ -18,6 +18,7 @@ import { nextInt, nextFloat } from '@arcade/shared/rng'
 import { qualifiesForHighScore, insertHighScore } from '@arcade/shared/highscore'
 import { stepNameEntry } from '@arcade/shared/name-entry'
 import { runCam, camForNewEnemy, genericCamFor, isJumping, type CamContext } from './enemies/interpreter'
+import { assertNever } from './assert'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -128,8 +129,12 @@ export function makeEnemy<K extends EnemyKind>(
       // `pulsing` is seeded dark and re-stamped from the board's one global phase on the
       // very next tick (stepPulseClock) — a pulsar has no clock of its own to seed (W-026).
       case 'pulsar':   return { kind: 'pulsar', lane, depth, ...cam, pulsing: false }
+      // TypeScript narrows a generic `K extends EnemyKind` to `never` here just as it does
+      // a bare union, so the sixth kind is a compile error and not the runtime `throw` that
+      // used to stand in this spot — which only ever fired once a player was already in the
+      // game (lang-review #3).
+      default: return assertNever(kind, 'enemy kind')
     }
-    throw new Error(`unknown enemy kind ${String(kind)}`)
   })()
   // The switch above returns exactly the kind it was asked for; TypeScript cannot
   // check that against the type parameter, so say it once, here, rather than making
@@ -781,7 +786,11 @@ function hasRealInput(input: Input): boolean {
 
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
   const s = cloneState(state)
-  switch (s.mode) {
+  // Switch on the mode we ARRIVED in, not on the live field — half these arms reassign
+  // `s.mode` mid-body, which would otherwise re-widen the discriminant and rob the
+  // `default` below of the `never` it needs to be a compile-time guard (lang-review #3).
+  const mode = s.mode
+  switch (mode) {
     case 'attract':
       // The attract screen plays itself when idle (Story 10-3). `start` begins a
       // real game (→ select); any other real input returns to the title; otherwise
@@ -839,6 +848,8 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
         }
       }
       break
+    default:
+      assertNever(mode, 'game mode')
   }
   // Record this frame's fire so the next frame can detect a fresh press (6-2).
   s.prevFire = input.fire

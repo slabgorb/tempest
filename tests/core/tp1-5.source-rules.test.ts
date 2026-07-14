@@ -67,7 +67,11 @@ function assertNeverParams(file: string): string {
     `assertNever is neither defined in nor imported into ${file}`,
   )
   expect(from, 'assertNever must come from a relative module inside src/').toMatch(/^\./)
-  const rel = join(dirname(file), from).replace(/\.js$/, '.ts')
+  // `tsconfig` is on `moduleResolution: bundler`, so this repo writes relative imports
+  // WITHOUT an extension (`from './assert'`). The original resolver only rewrote a
+  // trailing `.js`, so an extensionless import resolved to a path with no extension at
+  // all and the read threw ENOENT before the assertion was ever reached. Accept both.
+  const rel = join(dirname(file), from).replace(/(\.js)?$/, '.ts')
   return must(
     /function assertNever\s*\(([^)]*)\)/.exec(stripComments(read(rel)))?.[1],
     `assertNever not found in ${rel}`,
@@ -136,24 +140,13 @@ describe('tp1-5 — speedFor is exhaustive at COMPILE time (lang-review #3)', ()
     // A helper that takes `unknown` and throws is not an exhaustiveness check — it
     // is the runtime throw wearing a better name, and it would let a sixth kind
     // compile. The parameter must be typed `never`.
-    const src = stripComments(read('src/core/enemies/interpreter.ts'))
-    const local = /function assertNever\s*\(([^)]*)\)/.exec(src)?.[1]
-    if (local !== undefined) {
-      expect(local).toMatch(/:\s*never\b/)
-      return
-    }
-    // Imported instead? Then find it where it lives and check it there.
-    const from = must(
-      /import\s*\{[^}]*\bassertNever\b[^}]*\}\s*from\s*'([^']+)'/.exec(src)?.[1],
-      'assertNever is neither defined in nor imported into interpreter.ts',
-    )
-    expect(from, 'assertNever must come from a relative module inside src/').toMatch(/^\./)
-    const rel = join('src/core/enemies', from).replace(/\.js$/, '.ts')
-    const helper = must(
-      /function assertNever\s*\(([^)]*)\)/.exec(stripComments(read(rel)))?.[1],
-      `assertNever not found in ${rel}`,
-    )
-    expect(helper).toMatch(/:\s*never\b/)
+    //
+    // This carried its own inline copy of the resolver, hard-wired to `src/core/enemies`
+    // and to a `.js` extension this repo does not write (tsconfig is on
+    // `moduleResolution: bundler`). The moment assertNever moved out of interpreter.ts
+    // into a leaf module the copy broke, while the shared helper — same intent, one
+    // implementation — kept working. Two copies of a resolver is one copy too many.
+    expect(assertNeverParams('src/core/enemies/interpreter.ts')).toMatch(/:\s*never\b/)
   })
 })
 

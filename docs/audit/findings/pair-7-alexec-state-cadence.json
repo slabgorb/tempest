@@ -82,7 +82,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 89,
+      "line": 90,
       "verbatim": "export const START_LIVES = 3"
     },
     "claim": "NEWGAM reads LVSGAM at the start of every game (ALEXEC.MAC:294-295, `LDA LVSGAM ;GET # LIVES` / `STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)`) — a RAM cell the cabinet operator sets via DIP-switch-derived options, so \"lives per game\" is a configurable cabinet setting, not a compile-time constant. `START_LIVES = 3` (rules.ts:15) is a fixed literal with no equivalent options/settings mechanism anywhere in state.ts or rules.ts.",

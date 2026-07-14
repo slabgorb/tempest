@@ -3,6 +3,7 @@
 import { type Rng, nextFloat } from '@arcade/shared/rng'
 import type { Enemy, EnemyKind, TankerCargo } from './state'
 import { flipperCamForWave } from './enemies/cam'
+import { assertNever } from './assert'
 
 // ─── THE CLOCK (story tp1-1) ─────────────────────────────────────────────────
 //
@@ -156,7 +157,10 @@ export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
 // ...and stops firing once it reaches the arrival zone: an enemy at the rim is
 // grabbing/splitting, not shooting. This also keeps every bolt dodgeable — a
 // point-blank shot from the rim would leave the player no lane to rotate to.
-export const ENEMY_FIRE_MAX_DEPTH = 0.9   // == TANKER_SPLIT_DEPTH; at/after this they grab or split
+// (0.9 is its OWN number, not TANKER_SPLIT_DEPTH's — the comment here used to claim they
+// were equal, and they were, by coincidence, until the tanker's split moved to the ROM's
+// $20. They are separate rules: when a carrier bursts, and when an invader stops firing.)
+export const ENEMY_FIRE_MAX_DEPTH = 0.9   // at/after this an invader is grabbing/splitting, not shooting
 // A bolt's depth/sec beyond its level's flipper speed ("flipper-relative +0xc0"),
 // so a bolt always OUTRUNS a flipper. L1 ≈ 0.18 + 0.72 = 0.9 (ROM ~-202/s).
 export const ENEMY_BOLT_SPEED_OFFSET = 0.72
@@ -171,6 +175,7 @@ export function enemyCanShoot(kind: EnemyKind, level: number): boolean {
     case 'spiker':  return true
     case 'pulsar':  return level >= 60
     case 'fuseball': return false
+    default: return assertNever(kind, 'enemy kind')
   }
 }
 
@@ -262,17 +267,37 @@ export const PULSAR_CLIMB_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / WARP_ALON
 // pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
 // is intentionally not modelled.
 export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.357
-export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth
 // Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab.
 export const SPLIT_CHILD_DEPTH = 0.85
-// SPLCHA's "SPLITTING TOO CLOSE TO PLAYER?" (ALWELG.MAC:1494-1502): `CMP I,20` against
-// the depth the parent DIED at. Inside $20 of the rim the children take NEWGEN — the
-// generic program for their appearance code, which for a flipper is NOJUMP — instead of
-// the wave's flipping one. "YES. NO FLIPPING": a tanker shot in the player's face does
-// not spray flippers that flip straight onto him (W-032). Same $20 the spiker turns
-// around on, and the same conversion — but a separate name, because they are separate
-// rules and only one of them is about the player.
+
+// ─── $20: ONE ROM CONSTANT, READ TWICE (W-032, and the bug tp1-5 first shipped) ──────
+//
+// SPLCHA's "SPLITTING TOO CLOSE TO PLAYER?" (ALWELG.MAC:1494-1502): `LDA TEMP0 / CMP I,20
+// / IFCC` against the depth the parent DIED at. Inside $20 of the rim the children take
+// NEWGEN — the generic program for their appearance code, which for a flipper is NOJUMP —
+// instead of the wave's flipping one. "YES. NO FLIPPING".
 export const SPLIT_TOO_CLOSE_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
+//
+// ...and the auto-split that a CLIMBING carrier triggers reads the SAME BYTE. JSMOVE
+// (1748-1758) tests the top of the well twice, in this order:
+//
+//     CMP CURSY / BEQ ATOP / IFCC   ;AT TOP?                      -> JSR CHASER
+//     ELSE
+//     CMP I,20  / IFCC              ;TOO CLOSE TO TOP FOR CARRIER?
+//                                   -> JSR KILINV  ;SPLIT CARRIER
+//
+// and the KILINV it jumps to is the one that calls SPLCHA (2344). So the carrier bursts
+// INSIDE the too-close band, always, and SPLCHA's compare is a foregone conclusion: a
+// tanker that arrives under its own steam ALWAYS gives its children the non-flipping cam.
+// Flipping children are what you get for shooting it lower down, and nothing else.
+//
+// These are therefore not two numbers that happen to be near each other — they are one
+// number, and writing them apart is what made W-032's fix dead code. TANKER_SPLIT_DEPTH
+// was 0.9 (INVAY 38.4) while the branch judging it read $20 (INVAY 32 = depth 0.9286), so
+// the tanker was destroyed 0.029 depth-units before it could ever enter the band its own
+// rule is written for. The branch was correct, reachable by no board the game can produce,
+// and stamped `remediated_by` regardless. Do not split them apart again.
+export const TANKER_SPLIT_DEPTH = SPLIT_TOO_CLOSE_DEPTH
 
 export interface LevelParams {
   enemyCount: number
@@ -360,6 +385,9 @@ export function scoreFor(enemy: Enemy): number {
     case 'spiker':   return SCORE_SPIKER
     case 'pulsar':   return SCORE_PULSAR
     case 'fuseball': return fuseballScore(enemy.depth)
+    // Without this a sixth kind scores `undefined`, and `score += undefined` is NaN —
+    // a scoreboard that never recovers, from a switch that compiled clean.
+    default: return assertNever(enemy, 'enemy kind')
   }
 }
 

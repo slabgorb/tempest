@@ -30,6 +30,7 @@ import {
   WARP_ALONG_SPAN,
 } from '../rules'
 import { CAM, CAM_ENTRY, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
+import { assertNever } from '../assert'
 
 /**
  * A jump is EIGHT angle-steps (W-008). JJUMPM (ALWELG.MAC:1892-1976) advances the
@@ -146,15 +147,6 @@ export function genericCamFor(kind: EnemyKind): number {
   return TNEWCAM[APPEARANCE[kind]]
 }
 
-/**
- * The compile-time half of the guard the runtime `throw` below only ever gave us at 3am
- * in a running game. Adding a sixth EnemyKind now fails `tsc`, at the switch that forgot
- * it — which is the error that arrives before the code ships (lang-review #3).
- */
-function assertNever(x: never): never {
-  throw new Error(`CAM: no move rate for enemy kind ${String((x as Enemy).kind)}`)
-}
-
 /** VSLOPB's wave parameters (WTABLE, ALWELG.MAC:728-751). */
 function camParam(slot: number, level: number): number {
   switch (slot) {
@@ -177,9 +169,13 @@ function speedFor(e: Enemy, ctx: CamContext): number {
     case 'pulsar':
       return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed
     // A sixth EnemyKind would otherwise fall out of here as `undefined` and turn every
-    // speed — and then every depth — into NaN, silently.
+    // speed — and then every depth — into NaN, silently. `assertNever` makes that a `tsc`
+    // error instead. It is imported, not local, because the same rule binds `scoreFor`,
+    // `enemyCanShoot`, `makeEnemy` and `stepGame` — and for a while this comment claimed a
+    // sixth kind "now fails tsc, at the switch that forgot it" while three of those four
+    // still compiled clean and returned `undefined`. A guard in one place is not a rule.
     default:
-      return assertNever(e)
+      return assertNever(e, 'enemy kind')
   }
 }
 
