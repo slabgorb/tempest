@@ -122,9 +122,13 @@ describe('WD-010: the warp ramp is indexed by CURWAV (0-based), not the displaye
     // rom-clock-timing.test.ts also times this dive, but its band is 1.30-1.90 s and
     // swallows BOTH answers — it was written to catch tp1-1's 4.45x error, not this
     // one. The tight pin lives here.
+    // Count the IN-WELL dive: rim to the well bottom (ILINDDY = warp.inSpace). tp1-13
+    // added a crash-proof SPACE phase after the bottom, before the level advances, so
+    // stopping at `mode !== 'warp'` now overcounts by WARP_SPACE_FRAMES; the 46-frame
+    // figure is the 224-along traverse, which the bottom-crossing bounds exactly.
     let s = enterWarpAt(1)
     let frames = 0
-    while (s.mode === 'warp' && frames < 200) {
+    while (!s.warp.inSpace && frames < 200) {
       s = stepGame(s, NEUTRAL, SIM_STEP)
       frames++
     }
