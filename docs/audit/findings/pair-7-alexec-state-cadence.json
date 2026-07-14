@@ -29,7 +29,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 125,
+      "line": 134,
       "verbatim": "  highScoreTable: HighScoreTable<'level'>  // in-memory top scores (persistence is 4-6)"
     },
     "claim": "ENDGAM (ALEXEC.MAC:429-446) computes HIWAVE — the highest wave any player reached that game — every time a game ends, immediately before the state machine requests HISCHK (the hi-score ladder check, ALEXEC.MAC:450). Our `GameState.highScoreTable` is explicitly typed `HighScoreTable<'level'>` (state.ts:125), i.e. the shared high-score module is parameterised to carry a level/wave reached alongside each score entry, the same pairing the ROM computes at end-of-game.",
@@ -64,7 +64,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 93,
+      "line": 102,
       "verbatim": "  progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level"
     },
     "claim": "The ROM represents \"is the Claw currently diving down the well, how far along, and how fast\" with: CURMOD (ALCOMN.MAC:707), whose SIGN bit alone flags dropping-mode; CURSY/CURSYL (ALCOMN.MAC:833, 708), an integer+fractional byte pair for depth; and CURSVL/CURSVH (ALCOMN.MAC:705-706), an integer+fractional byte pair for acceleration/velocity down the well — 5 bytes across 3 named variables. Our `WarpState` (state.ts:92-96) covers the same three facts with `mode === 'warp'` (a tagged union member, state.ts:8) plus two IEEE-754 doubles, `progress` and `velocity`.",
@@ -82,7 +82,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 88,
+      "line": 89,
       "verbatim": "export const START_LIVES = 3"
     },
     "claim": "NEWGAM reads LVSGAM at the start of every game (ALEXEC.MAC:294-295, `LDA LVSGAM ;GET # LIVES` / `STA AX,LIVES1 ;INITIAL # OF LIVES (GUNS)`) — a RAM cell the cabinet operator sets via DIP-switch-derived options, so \"lives per game\" is a configurable cabinet setting, not a compile-time constant. `START_LIVES = 3` (rules.ts:15) is a fixed literal with no equivalent options/settings mechanism anywhere in state.ts or rules.ts.",
@@ -215,7 +215,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 112,
+      "line": 121,
       "verbatim": "  level: number"
     },
     "claim": "WAVEN1's own comment says the stored byte is the wave number MINUS 1 — i.e. wave 1 (what the player sees) is stored as 0. `GameState.level` (state.ts:112) is initialised to `level: 1` (state.ts:138) and incremented directly (`s.level += 1` in advanceLevel) to match the number actually shown to the player — no off-by-one offset anywhere.",

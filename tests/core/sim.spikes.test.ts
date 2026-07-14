@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { SCORE_SPIKE_SEGMENT } from '../../src/core/rules'
+import { SCORE_SPIKE_SEGMENT, levelParams } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
@@ -10,7 +10,7 @@ describe('spikes', () => {
   it('a spiker raises the spike height in its lane as it climbs', () => {
     let s = playingState(1)
     s.spawn.remaining = 0
-    s.enemies = [{ kind: 'spiker', lane: 6, depth: 0, direction: 1 }]
+    s.enemies = [makeEnemy('spiker', 6, 0, levelParams(1))]
     for (let i = 0; i < 30; i++) s = stepGame(s, NEUTRAL, 1 / 60)
     expect(s.spikes[6]).toBeGreaterThan(0)
   })

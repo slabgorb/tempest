@@ -16,10 +16,10 @@ import { playingState } from './helpers'
 import { initialState } from '../../src/core/state'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { GameEvent } from '../../src/core/events'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import type { Input } from '../../src/core/input'
 import { currentLane } from '../../src/core/geometry'
-import { SPIKE_MAX_DEPTH, MAX_BULLETS } from '../../src/core/rules'
+import { SPIKE_MAX_DEPTH, MAX_BULLETS, levelParams } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -44,9 +44,9 @@ function playing(enemies: Enemy[]): GameState {
 }
 
 const threeFlippers = (): Enemy[] => [
-  { kind: 'flipper', lane: 1, depth: 0.2, flipTimer: 999 },
-  { kind: 'flipper', lane: 5, depth: 0.6, flipTimer: 999 },
-  { kind: 'flipper', lane: 9, depth: 0.9, flipTimer: 999 },
+  makeEnemy('flipper', 1, 0.2, levelParams(1)),
+  makeEnemy('flipper', 5, 0.6, levelParams(1)),
+  makeEnemy('flipper', 9, 0.9, levelParams(1)),
 ]
 
 // --- fire (AC3 / AC4) -------------------------------------------------------
@@ -102,7 +102,7 @@ describe('events channel resets every frame', () => {
 // --- enemy death by bullet (AC4) -------------------------------------------
 describe('enemy-death events from bullets', () => {
   it('emits an enemy-death carrying the killed enemy\'s kind and lane', () => {
-    const s = playing([{ kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 4, 0.5, levelParams(1))])
     s.bullets = [{ lane: 4, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, DT)
 
@@ -116,8 +116,8 @@ describe('enemy-death events from bullets', () => {
 
   it('emits one enemy-death per enemy killed in a single frame', () => {
     const s = playing([
-      { kind: 'flipper', lane: 2, depth: 0.5, flipTimer: 999 },
-      { kind: 'tanker', lane: 7, depth: 0.5, contains: 'flipper' },
+      makeEnemy('flipper', 2, 0.5, levelParams(1)),
+      makeEnemy('tanker', 7, 0.5, levelParams(1), 'flipper'),
     ])
     s.bullets = [{ lane: 2, depth: 0.5 }, { lane: 7, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, DT)
@@ -128,7 +128,7 @@ describe('enemy-death events from bullets', () => {
   })
 
   it('emits no enemy-death when the bullet misses', () => {
-    const s = playing([{ kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 4, 0.5, levelParams(1))])
     s.bullets = [{ lane: 7, depth: 0.5 }]                // wrong lane
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.enemies).toHaveLength(1)
@@ -161,8 +161,8 @@ describe('superzapper events', () => {
 
   it('a weak shot emits a superzapper-activate for the single enemy it destroys', () => {
     const s = playing([
-      { kind: 'flipper', lane: 2, depth: 0.3, flipTimer: 999 },
-      { kind: 'flipper', lane: 7, depth: 0.8, flipTimer: 999 }, // nearest the rim
+      makeEnemy('flipper', 2, 0.3, levelParams(1)),
+      makeEnemy('flipper', 7, 0.8, levelParams(1)), // nearest the rim
     ])
     s.player.superzapper = 'used-once'
     const out = stepGame(s, ZAP, DT)
@@ -188,7 +188,7 @@ describe('superzapper events', () => {
 // --- player grabbed / pulsed (AC4) -----------------------------------------
 describe('player-grab and player-death events', () => {
   it('a flipper at the rim emits player-grab + player-death(cause grab)', () => {
-    const s = playing([{ kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 4, 0.95, levelParams(1))])
     s.player.lane = 4
     const out = stepGame(s, NEUTRAL, DT)
 
@@ -205,7 +205,7 @@ describe('player-grab and player-death events', () => {
 
   it('a pulsing pulsar on the player lane kills with cause pulse', () => {
     const s = playing([
-      { kind: 'pulsar', lane: 4, depth: 0.5, flipTimer: 999, pulseTimer: 999, pulsing: true },
+      { ...makeEnemy('pulsar', 4, 0.5, levelParams(1)), pulseTimer: 999, pulsing: true },
     ])
     s.player.lane = 4
     const out = stepGame(s, NEUTRAL, DT)
@@ -221,7 +221,7 @@ describe('player-grab and player-death events', () => {
   })
 
   it('emits no death events while the player is safe (enemy below the rim)', () => {
-    const s = playing([{ kind: 'flipper', lane: 4, depth: 0.5, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 4, 0.5, levelParams(1))])
     s.player.lane = 4
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.mode).toBe('playing')
@@ -288,7 +288,7 @@ describe('level-clear events', () => {
   })
 
   it('does not emit level-clear while enemies remain', () => {
-    const s = playing([{ kind: 'flipper', lane: 3, depth: 0.4, flipTimer: 999 }])
+    const s = playing([makeEnemy('flipper', 3, 0.4, levelParams(1))])
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.mode).toBe('playing')
     expect(eventsOfType(out, 'level-clear')).toHaveLength(0)
@@ -298,7 +298,7 @@ describe('level-clear events', () => {
 // --- player spawn (AC1 roster) ---------------------------------------------
 describe('player-spawn events', () => {
   it('emits player-spawn on the frame the Claw respawns after a death', () => {
-    const s = playing([{ kind: 'flipper', lane: 9, depth: 0.3, flipTimer: 999 }]) // far, survives
+    const s = playing([makeEnemy('flipper', 9, 0.3, levelParams(1))]) // far, survives
     s.player.lane = 4
     s.player.alive = false
     s.mode = 'dying'

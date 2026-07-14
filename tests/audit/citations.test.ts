@@ -62,6 +62,62 @@ describe('checkFindings', () => {
     expect(errors).toEqual([])
   })
 
+  // Story tp1-3 (2026-07-13). The gate went red on develop, and NOT because a game
+  // constant drifted: SC-001 and SC-009 cite `node_modules/@arcade/shared/dist/
+  // highscore.js`, the BUILT output of a version-pinned git dependency. That dist/ is
+  // gitignored in arcade-shared and regenerated on install, so its line numbers move
+  // under the audit every time the library is re-pinned or rebuilt — line 46 held
+  // `MAX_HIGH_SCORES = 10` when the audit ran and holds a comment today.
+  //
+  // A citation the checker cannot trust is worthless: the whole point of the ours-side
+  // check is that a cited line can be re-opened and byte-compared. So make the category
+  // error impossible rather than repairing this instance and waiting for the next one.
+  // `ours` means OUR source — a tracked file in this repo. A dependency's build output
+  // is neither our code nor stable, and it must be rejected on sight.
+  it('rejects an `ours` citation into node_modules — a rebuilt artifact is not our source', () => {
+    // The fixture cites node_modules with its CURRENT, byte-exact line, so the verbatim
+    // check PASSES. That is deliberate: a naive assertion here (cite a stale line, expect
+    // "an error") passes today for the wrong reason — the checker already emits "ours
+    // node_modules/...:46 does not match verbatim", and that message CONTAINS the string
+    // "node_modules" simply because the path is in it. Such a test would be vacuous: green
+    // whether or not the rule exists. By citing the line correctly, the ONLY thing that can
+    // produce an error is a rule that rejects the PATH.
+    const nmFile = 'node_modules/@arcade/shared/dist/highscore.js'
+    const nmLine = 46
+    const actual = readFileSync(join(repoRoot, nmFile), 'utf8').split('\n')[nmLine - 1]
+
+    const errors = checkFindings(
+      [{
+        id: 'X-020', class: 'DIVERGENCE', title: 't',
+        source: { file: 'ALWELG.MAC', line: 1, verbatim: 'anything' },
+        ours: { file: nmFile, line: nmLine, verbatim: actual },
+        claim: 'c', reasoning: 'r', recommendation: 'fix', size: 's',
+      }],
+      { repoRoot, sourceDir: null },
+    )
+
+    expect(errors.join('\n'), 'a byte-perfect citation into node_modules must STILL be rejected')
+      .toMatch(/X-020/)
+    expect(errors.join('\n')).toMatch(/node_modules/)
+  })
+
+  it('still accepts an `ours` citation to a tracked file in our own tree', () => {
+    // Guard the guard: the node_modules rule must not become a blanket ban on ours-side
+    // citations. src/core/rules.ts:19 is exactly where tempest records that the ladder
+    // depth was delegated to @arcade/shared — a stable, tracked anchor.
+    const line = readFileSync(join(repoRoot, 'src/core/rules.ts'), 'utf8').split('\n')[18]
+    const errors = checkFindings(
+      [{
+        id: 'X-021', class: 'DIVERGENCE', title: 't',
+        source: { file: 'ALWELG.MAC', line: 1, verbatim: 'anything' },
+        ours: { file: 'src/core/rules.ts', line: 19, verbatim: line },
+        claim: 'c', reasoning: 'r', recommendation: 'fix', size: 's',
+      }],
+      { repoRoot, sourceDir: null },
+    )
+    expect(errors).toEqual([])
+  })
+
   it('requires `ours` to be null for NO_COUNTERPART and present otherwise', () => {
     const base = {
       class: 'NO_COUNTERPART', title: 't',

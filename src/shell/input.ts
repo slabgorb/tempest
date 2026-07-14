@@ -1,6 +1,6 @@
 // src/shell/input.ts
 import { Input } from '../core/input'
-import { ROM_FPS, SPIN_SENSITIVITY, flipPatternForLevel } from '../core/rules'
+import { ROM_FPS, SPIN_SENSITIVITY } from '../core/rules'
 
 // ─── Both controls are SPINNERS. Neither is a per-frame tick. (tp1-1) ────────
 //
@@ -63,10 +63,24 @@ const WHEEL_SCALE = 0.01
 // Pinned by tests/shell/input.spinner.test.ts, in lanes per SECOND.
 const KEY_SPIN_RATE = 60
 
+// ROM frames a deep-wave flipper takes to walk one lane of the rim: 1 frame of
+// move + a 3-frame flip, at L33+.
+//
+// These two numbers came from `flipPatternForLevel`, which tp1-4 deleted — the CAM
+// (W-005..W-008) refutes it: a flip is 8 angle-steps at every wave, and the climb
+// between flips is written into the program, not ramped per level. The number is
+// kept HERE, and unchanged, on purpose. It is not a flipper fact: it is the escape
+// constraint this module exists to satisfy, and the enemy that actually walks the
+// rim is the CHASER (TOPPER), which story tp1-5 builds. Revise it there, from
+// TOPPER's real cadence — a `VSLOOP 4` crouch plus a jump of JUMP_ANGLE_STEPS /
+// WTTFRA frames — and re-derive KEY_SPIN_RATE's margin against it. Lowering this
+// number silently WIDENS the margin, so leaving it high is the safe side to sit on
+// until the chaser exists to measure.
+const DEEP_FLIPPER_RIM_FRAMES_PER_LANE = 4
+
 /** The rim speed of the fastest flipper the ROM can produce, in lanes/sec. */
 export function fastestFlipperRimSpeed(): number {
-  const { moveFrames, flipFrames } = flipPatternForLevel(33)
-  return ROM_FPS / (moveFrames + flipFrames)
+  return ROM_FPS / DEEP_FLIPPER_RIM_FRAMES_PER_LANE
 }
 
 /** Lanes/sec the Claw turns while an arrow key is held. Must beat the flipper. */

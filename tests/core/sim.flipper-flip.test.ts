@@ -6,9 +6,15 @@
 // flipper on the player's lane at the rim still grabs — only the in-between
 // state is safe. This is the fairness pay-off of the multi-tick flip: the player
 // can rotate "through" a flipper while it is mid-flip.
+//
+// tp1-4 rewrote the flipper into the CAM, and this invariant survived it intact —
+// only the register changed. The mid-flip bit is no longer `flipping`/`flipProgress`
+// but the CAM's own jump angle (INVAL2): `jumpAngle` set means the invader is caught
+// between two lines, exactly as the ROM's $80 INVMOT bit does.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
+import { levelParams } from '../../src/core/rules'
 import { Input } from '../../src/core/input'
 import { Flipper } from '../../src/core/state'
 
@@ -19,7 +25,7 @@ describe('sim — mid-flip flipper grab immunity', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    const enemy: Flipper = { kind: 'flipper', lane: 4, depth: 0.95, flipTimer: 999 }
+    const enemy: Flipper = makeEnemy('flipper', 4, 0.95, levelParams(1))
     s.enemies = [enemy]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -31,19 +37,11 @@ describe('sim — mid-flip flipper grab immunity', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    // Already mid-flip between lane 4 and 5, animation just begun. A high
-    // flipTimer means no NEW flip logic fires this step, isolating the grab-skip
-    // behaviour: the only thing standing between this flipper and a grab is its
-    // mid-flip state.
-    const enemy: Flipper = {
-      kind: 'flipper',
-      lane: 4,
-      depth: 0.95,
-      flipTimer: 999,
-      flipping: true,
-      flipDir: 1,
-      flipProgress: 0,
-    }
+    // Already mid-jump between lane 4 and 5, the tumble just begun (angle-step 0 of
+    // the eight a jump takes). Nothing else about the fixture differs from the
+    // control above, so the mid-flip state is the ONLY thing standing between this
+    // flipper and a grab.
+    const enemy: Flipper = { ...makeEnemy('flipper', 4, 0.95, levelParams(1)), rot: 1, jumpAngle: 0 }
     s.enemies = [enemy]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)

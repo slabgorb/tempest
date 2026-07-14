@@ -227,10 +227,11 @@ export function createFx(): Fx {
       ex.life -= dt
       const progress = ex.max > 0 ? 1 - Math.max(0, ex.life) / ex.max : 1
       if (ex.kind === 'enemy') {
-        // 4-frame doubling: scale steps 1, 2, 4, 8; brightness 7 then 14.
+        // 4-frame doubling: scale steps 1, 2, 4, 8; brightness 7 then 14. ALVROM sets
+        // CB=07 only for EXPL1 (scale 1) and CB=0E from EXPL2 on, so ONLY frame 0 is dim.
         const frame = Math.min(ENEMY_SCALE_STEPS.length - 1, Math.floor(progress * ENEMY_SCALE_STEPS.length))
         ex.scale = ENEMY_SCALE_STEPS[frame]
-        ex.brightness = frame < 2 ? ENEMY_DIM : ENEMY_BRIGHT
+        ex.brightness = frame < 1 ? ENEMY_DIM : ENEMY_BRIGHT
       } else {
         // Grow-then-shrink (sin arch), with the colour advancing every frame.
         ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)
