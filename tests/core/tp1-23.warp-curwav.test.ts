@@ -56,7 +56,7 @@ function enterWarpAt(level: number): GameState {
   s.tube = tube
   s.spikes = new Array(tube.laneCount).fill(0)
   s.player.lane = 4
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.enemies = []
   s.bullets = []
 

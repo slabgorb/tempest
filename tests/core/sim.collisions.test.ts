@@ -10,7 +10,7 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 describe('bullet ↔ enemy collision', () => {
   it('destroys both and awards score when they overlap', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0            // stop new spawns interfering
+    s.spawn = { nymphs: [] }            // stop new spawns interfering
     s.enemies = [makeEnemy('flipper', 4, 0.5, levelParams(1))]
     s.bullets = [{ lane: 4, depth: 0.5 }]
 
@@ -22,7 +22,7 @@ describe('bullet ↔ enemy collision', () => {
 
   it('misses when on a different lane', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = [makeEnemy('flipper', 4, 0.5, levelParams(1))]
     s.bullets = [{ lane: 7, depth: 0.5 }]
 
@@ -33,7 +33,7 @@ describe('bullet ↔ enemy collision', () => {
 
   it('misses when depths are far apart', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = [makeEnemy('flipper', 4, 0.1, levelParams(1))]
     s.bullets = [{ lane: 4, depth: 0.9 }]
 

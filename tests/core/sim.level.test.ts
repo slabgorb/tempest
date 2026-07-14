@@ -29,7 +29,7 @@ function runWarpToCompletion(start: GameState): GameState {
 describe('level clear → enters warp (not an immediate advance)', () => {
   it('enters warp, NOT the next level, when the budget is empty and enemies are gone', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = []
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -39,7 +39,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
 
   it('advances to the next level + harder spawn budget once the warp completes', () => {
     let s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = []
     s = stepGame(s, NEUTRAL, 1 / 60) // now warping
     expect(s.mode).toBe('warp')
@@ -47,7 +47,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
     const out = runWarpToCompletion(s)
     expect(out.mode).toBe('playing')
     expect(out.level).toBe(2)
-    expect(out.spawn.remaining).toBe(levelParams(2).enemyCount)
+    expect(out.spawn.nymphs.length).toBe(levelParams(2).enemyCount)
     // Geometry actually swapped to level 2's roster shape (see sim.advance-level
     // for the laneCount-VARYING transitions that truly exercise the resize).
     expect(out.tube.laneCount).toBe(tubeForLevel(2).laneCount)
@@ -55,7 +55,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
 
   it('does NOT enter warp while enemies remain', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = [makeEnemy('flipper', 1, 0.2, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -79,7 +79,7 @@ describe('level clear → enters warp (not an immediate advance)', () => {
 
   it('does NOT enter warp when the player is killed by the final enemy', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.lives = 1
     s.player.lane = 4
     s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]

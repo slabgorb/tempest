@@ -19,9 +19,9 @@ describe('initialState', () => {
     expect(s.tube.closed).toBe(true)
   })
 
-  it('seeds the level-1 spawn budget', () => {
+  it('seeds the level-1 spawn budget as a nymph queue', () => {
     const s = initialState(123)
-    expect(s.spawn.remaining).toBe(levelParams(1).enemyCount)
+    expect(s.spawn.nymphs.length).toBe(levelParams(1).enemyCount)
     expect(s.enemies).toEqual([])
     expect(s.bullets).toEqual([])
   })

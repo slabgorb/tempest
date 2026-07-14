@@ -21,7 +21,7 @@ import { initialState, GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { tubeForLevel } from '../../src/core/geometry'
-import { START_LIVES } from '../../src/core/rules'
+import { START_LIVES, levelParams } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const DT = 1 / 60
@@ -131,10 +131,13 @@ describe('framing — start-level select', () => {
   })
 
   // AC: select + start -> playing at the chosen level (generalized startGameAtLevel);
-  // the framing commit must reset a fresh game and must NOT consume the RNG.
-  it('start commits to playing at the selected level with a fresh game, RNG untouched', () => {
+  // the framing commit must reset a fresh game. Since tp1-6 it DOES consume RNG —
+  // not as menu noise, but because committing to a level SEEDS ITS WAVE: ININYM
+  // rolls a random hatch lane per nymph (`LDA RANDOM / AND I,0F`, ALWELG.MAC:
+  // 324-327), the arcade's own wave-init cost. Menu NAVIGATION staying RNG-free
+  // is still pinned by the spin/neutral/gameover tests around this one.
+  it('start commits to playing at the selected level with a fresh, seeded game', () => {
     const s = selectState(42, 4)
-    const rngBefore = { ...s.rng }
     const out = start(s)
     expect(modeOf(out)).toBe('playing')
     expect(out.level).toBe(4)
@@ -146,7 +149,7 @@ describe('framing — start-level select', () => {
     expect(out.player.superzapper).toBe('full')
     expect(out.score).toBe(0)
     expect(out.lives).toBe(START_LIVES)
-    expect(out.rng).toEqual(rngBefore) // framing transitions must not touch RNG
+    expect(out.spawn.nymphs.length).toBe(levelParams(4).enemyCount) // the commit seeded the wave
   })
 })
 

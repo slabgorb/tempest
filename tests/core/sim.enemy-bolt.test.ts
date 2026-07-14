@@ -27,8 +27,7 @@ const DT = 1 / 60
 function boltBoard(seed: number, playerLane = 7): GameState {
   const s = playingState(seed)
   s.player.lane = playerLane
-  s.spawn.remaining = 5
-  s.spawn.timer = 9999
+  s.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
   s.enemies = []
   s.bullets = []
   return s

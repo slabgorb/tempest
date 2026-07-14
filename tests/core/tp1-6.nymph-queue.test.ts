@@ -43,7 +43,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
-import { levelParams, SIM_STEP } from '../../src/core/rules'
+import { levelParams, SIM_STEP, spawnForLevel } from '../../src/core/rules'
 import { initialState, GameState } from '../../src/core/state'
 import type { Nymph } from '../../src/core/state'
 import { tubeForLevel } from '../../src/core/geometry'
@@ -110,11 +110,16 @@ describe('tp1-6 — nymphs march down py and hatch at exactly zero (MOVNYM:1124-
 
     let s = s0
     const hatchedAt: number[] = []
+    const hatchDepths: number[] = []
     let seen = 0
     for (let frame = 1; frame <= 13; frame++) {
       s = stepGame(s, NEUTRAL, FRAME)
       if (s.enemies.length > seen) {
         hatchedAt.push(frame)
+        // Capture depth AT the hatch — by the loop's end an early hatchling has
+        // been climbing for ten frames. (GREEN fixture repair; the intent —
+        // "starts at the bottom" — is unchanged, the measurement point moved.)
+        hatchDepths.push(s.enemies[s.enemies.length - 1].depth)
         seen = s.enemies.length
       }
     }
@@ -127,8 +132,8 @@ describe('tp1-6 — nymphs march down py and hatch at exactly zero (MOVNYM:1124-
     // nymph's line (all three pys are < $40, so their lanes were committed).
     const lanes = s.enemies.map((e) => e.lane).sort((a, b) => a - b)
     expect(lanes).toEqual([2, 5, 11])
-    for (const e of s.enemies) {
-      expect(e.depth, 'a hatchling starts at the bottom (ILINDDY), not mid-well').toBeLessThanOrEqual(0.05)
+    for (const d of hatchDepths) {
+      expect(d, 'a hatchling starts at the bottom (ILINDDY), not mid-well').toBeLessThanOrEqual(0.05)
     }
   })
 })
@@ -259,6 +264,11 @@ describe('tp1-6 — conservation: every queued enemy is delivered, none dropped 
     s.level = 4
     s.tube = tubeForLevel(4)
     s.player.lane = 8
+    // Re-seed for the level we just set: playingState carries initialState's
+    // LEVEL-1 queue (budget 6), and mutating s.level does not re-run INIENE.
+    // (GREEN fixture repair — the original read the level-1 queue and failed
+    // its own >7 precondition; intent unchanged: a real level-4 wave.)
+    s.spawn = spawnForLevel(4, s.rng, s.tube.laneCount)
     const budget = s.spawn.nymphs.length
     expect(budget, 'precondition: the level-4 budget must exceed the cap').toBeGreaterThan(7)
 

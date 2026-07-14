@@ -67,7 +67,7 @@ function wave(level: number, opts: {
   s.level = level
   s.tube = tubeForLevel(level)              // the wave's OWN well — never level 1's
   s.spikes = new Array(s.tube.laneCount).fill(0)
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.player.lane = opts.player
   s.enemies = opts.flippers.map((f) => {
     const e = makeEnemy('flipper', f.lane, f.depth, levelParams(level))

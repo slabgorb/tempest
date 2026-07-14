@@ -25,7 +25,7 @@ describe('scoreFor', () => {
 describe('scoring through a collision', () => {
   it('awards the tanker value when a bullet kills a tanker', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = [makeEnemy('tanker', 4, 0.5, levelParams(1), 'flipper')]
     s.bullets = [{ lane: 4, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -34,7 +34,7 @@ describe('scoring through a collision', () => {
 
   it('grants an extra life when the score crosses a 10,000 boundary', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.score = 9900
     s.lives = 3
     s.enemies = [makeEnemy('flipper', 4, 0.5, levelParams(1))] // +150 → 10050

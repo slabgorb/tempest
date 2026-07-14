@@ -1,12 +1,12 @@
 // src/core/sim.ts
-import { GameState, Enemy, EnemyKind, Tanker, TankerCargo } from './state'
+import { GameState, Enemy, EnemyKind, Nymph, Tanker, TankerCargo } from './state'
 import { Input } from './input'
 import { Tube, wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
-  SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH,
+  SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
@@ -28,7 +28,9 @@ function cloneState(s: GameState): GameState {
     enemyBullets: s.enemyBullets.map((b) => ({ ...b })),
     enemies: s.enemies.map((e) => ({ ...e })),
     spikes: s.spikes.slice(),
-    spawn: { ...s.spawn },
+    // Fresh nymph objects, not a shared array: stepNymphs mutates py/lane in
+    // place, and a shallow spawn copy would write those through to the caller.
+    spawn: { nymphs: s.spawn.nymphs.map((n) => ({ ...n })) },
     pulse: { ...s.pulse },
     warp: { ...s.warp },
     select: { ...s.select },
@@ -143,6 +145,75 @@ export function makeEnemy<K extends EnemyKind>(
 }
 
 /**
+ * MOVNYM (ALWELG.MAC:1107-1174) + CONYMP (1179-1200) — the nymph queue, tp1-6.
+ *
+ * One pass per frame over every queued nymph:
+ *
+ *   * THE GATE (1109-1122). Movement is allowed unless the invader slots are
+ *     booked — `LDA INMCOU / ADC INCCOU / CMP WINVMX / IFCS / IFNE`, both flags
+ *     of ONE compare, so the freeze is STRICTLY GREATER than WINVMX(6): nymphs
+ *     advance at 6 live and hatch to NINVAD(7); a full board holds them — or a
+ *     Superzapper is running (`LDA SUZTIM / IFNE`, "AVOID KAMIKAZE"): the slots
+ *     a zap opens are not refilled until the window closes. Our live count is
+ *     `enemies.length`, which is movers AND chasers, exactly INMCOU + INCCOU.
+ *   * THE MARCH (1130-1134). py -= 1; reaching 0 IS the hatch (CONYMP): the
+ *     invader starts at the bottom (`LDA I,ILINDDY` — depth 0) on the nymph's
+ *     line. A hatch that finds no slot (two pys colliding on a nearly-full
+ *     board) is PUT BACK — `INC X,NYMPY`, "MOVE NYMPH BACK TO OLD POSITION"
+ *     (1199) — queued, never dropped.
+ *   * THE CRAWL (1148-1158). While py >= $40 the nymph rotates one line every
+ *     other frame (`LDA QFRAME / AND I,1`). This block sits OUTSIDE the gate:
+ *     a frozen queue still crawls, it just does not rise.
+ *   * THE ALONE ZONE (1136-1143, 1160-1165). Below $40 the lane is committed
+ *     and marked off limits; a nymph decrementing INTO an occupied lane backs
+ *     off (`INC X,NYMPY ;YES. BACK OFF`) and keeps rotating until it finds an
+ *     open one — no two nymphs commit to the same line within a hatch of each
+ *     other. We track the committed-lane set directly instead of the ROM's
+ *     NEOFLI/OLOFLI bit double-buffer.
+ *
+ * The invader's KIND rolls at hatch time (the ROM's NYMCHA — the per-type
+ * population solver — is story tp1-8; until it lands, rollSpawnKind stands in).
+ */
+function stepNymphs(s: GameState): void {
+  s.qframe += 1
+  const params = levelParams(s.level)
+  const frozen = s.enemies.length > WINVMX || s.player.zapTimer > 0
+  const rotateThisFrame = (s.qframe & 1) === 0
+  // NYMCOU (ALCOMN.MAC:916, "# OF NYMPHS") is the queue's length.
+  const committed = new Set<number>()
+  for (const n of s.spawn.nymphs) {
+    if (n.py < 0x40) committed.add(n.lane)
+  }
+  let hatchedThisFrame = 0
+  const hatched = new Set<Nymph>()
+  for (const n of s.spawn.nymphs) {
+    if (!frozen) {
+      n.py -= 1
+      if (n.py === 0) {
+        // CONYMP -> ACTINV: take a free slot or go back in the queue.
+        if (s.enemies.length + hatchedThisFrame <= WINVMX) {
+          hatchedThisFrame += 1
+          hatched.add(n)
+          const kind = rollSpawnKind(s.level, s.rng)
+          const cargo: TankerCargo = kind === 'tanker' ? rollTankerCargo(s.level, s.rng) : 'flipper'
+          s.enemies.push(makeEnemy(kind, n.lane, 0, params, cargo))
+        } else {
+          n.py += 1
+        }
+      } else if (n.py === 0x3f && committed.has(n.lane)) {
+        n.py += 1 // just entering the alone zone on an occupied line: back off
+      } else if (n.py < 0x40) {
+        committed.add(n.lane)
+      }
+    }
+    if (n.py >= 0x40 && rotateThisFrame) {
+      n.lane = (n.lane + 1) % s.tube.laneCount
+    }
+  }
+  if (hatched.size > 0) s.spawn.nymphs = s.spawn.nymphs.filter((n) => !hatched.has(n))
+}
+
+/**
  * MOVINV (ALWELG.MAC:1508-1534). Every invader runs its CAM program for one frame —
  * one loop, one interpreter, no dispatch on `kind` (W-005). What an invader DOES is
  * the bytecode at its program counter, and the counter persists across frames.
@@ -150,23 +221,9 @@ export function makeEnemy<K extends EnemyKind>(
 function stepEnemies(s: GameState, dt: number): void {
   const params = levelParams(s.level)
 
-  // Spawn from the budget.
-  if (s.spawn.remaining > 0) {
-    s.spawn.timer -= dt
-    if (s.spawn.timer <= 0) {
-      // Draws advance the shared MUTABLE cursor s.rng in place (same order as
-      // the old immutable threading, so the seeded sequence is unchanged).
-      const kind = rollSpawnKind(s.level, s.rng)
-      const lane = nextInt(s.rng, s.tube.laneCount)
-      let cargo: TankerCargo = 'flipper'
-      if (kind === 'tanker') {
-        cargo = rollTankerCargo(s.level, s.rng)
-      }
-      s.enemies.push(makeEnemy(kind, lane, 0, params, cargo))
-      s.spawn.remaining -= 1
-      s.spawn.timer = params.spawnInterval
-    }
-  }
+  // The queue marches (or holds) before the invaders move, so a hatchling runs
+  // its first CAM frame in the frame it is born — as the old spawn block did.
+  stepNymphs(s)
 
   const ctx: CamContext = {
     tube: s.tube,
@@ -175,7 +232,7 @@ function stepEnemies(s: GameState, dt: number): void {
     dt,
     playerLane: currentLane(s.tube, s.player.lane),
     spikes: s.spikes,
-    spawnRemaining: s.spawn.remaining,
+    nymphCount: s.spawn.nymphs.length,
     // The board itself: CHASER's pincer rule counts the chasers already circling and
     // reads the way the other one went (INCCOU). The interpreter mutates in place, so
     // this array is the LIVE view an invader converting later in the loop needs.
@@ -349,6 +406,9 @@ function cullEnemyBullets(s: GameState): void {
 // before the rim; spikers never reach grab depth.
 const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
 
+/** The rim itself — where JFUSKI's `CMP CURSY` kills, and nowhere shallower. */
+const RIM_DEPTH_EXACT = 1
+
 const HIT_DEPTH = 0.06
 // A fuseball's wider kill tolerance (story 6-15): ROM hit_tol[4]=6 is wider than
 // the default enemy tolerance (rev-3 §D l.265), so a bullet registers across a
@@ -395,7 +455,20 @@ function resolveBulletHits(s: GameState): void {
   })
   if (deadBullets.size > 0) s.bullets = s.bullets.filter((_, i) => !deadBullets.has(i))
   if (deadEnemies.size > 0) s.enemies = s.enemies.filter((_, i) => !deadEnemies.has(i))
-  if (spawned.length > 0) s.enemies = s.enemies.concat(spawned)
+  if (spawned.length > 0) s.enemies = activateInvaders(s.enemies, spawned)
+}
+
+/**
+ * ACTINV (ALWELG.MAC:1219-1263) — the one door every new invader walks through.
+ * Split children activate the same way a hatch does: KILINV frees the parent's
+ * slot FIRST, then each child asks "ANY SLOTS?"; on a full board the CW child
+ * (built first by splitTanker, as by KILINV) takes the freed slot and the
+ * second is dropped — `LDA I,0 ;SLOT NOT FOUND FLAG` (1262) has no queue to
+ * fall back to. The board never exceeds NINVAD, whatever bursts.
+ */
+function activateInvaders(enemies: Enemy[], spawned: Enemy[]): Enemy[] {
+  const room = Math.max(0, NINVAD - enemies.length)
+  return enemies.concat(spawned.slice(0, room))
 }
 
 function resolveSpikeHits(s: GameState): void {
@@ -425,11 +498,13 @@ function resolveTankerArrivals(s: GameState): void {
       survivors.push(e)
     }
   }
-  s.enemies = survivors.concat(spawned)
+  s.enemies = activateInvaders(survivors, spawned)
 }
 
 function startLevel(s: GameState): void {
-  s.spawn = spawnForLevel(s.level)
+  // INIENE/ININYM run for every new wave AND every new life (the same INEWLI
+  // path that re-seeds the pulse below): the whole budget re-enters as nymphs.
+  s.spawn = spawnForLevel(s.level, s.rng, s.tube.laneCount)
   s.bullets = []
   s.enemyBullets = [] // no lingering enemy bolts across a respawn/level (no chain-death)
   s.player.superzapper = 'full' // rearm the once-per-level Superzapper
@@ -464,8 +539,16 @@ function resolvePlayerHits(s: GameState): void {
   // BE mid-flip. Under the CAM a pulsar jumps too (PULSCH's VJUMPS), so that spelling
   // would have let a pulsar grab from between two lanes while a flipper beside it
   // could not — an asymmetry the ROM does not have.
+  // The FUSE kill is EXACT-RIM: JFUSKI (ALWELG.MAC:1994-2002) is `LDA X,INVAY /
+  // CMP CURSY / IFEQ` — equality with the cursor's own line, not a band. This
+  // stopped being a nicety when W-024 landed: an early-wave fuseball now PATROLS
+  // at $20 = depth 0.9286, above PLAYER_RIM_DEPTH (0.92), and in the arcade that
+  // patrol is harmless. Other grabbers keep the shared band (JKITST is a
+  // different, leg-based predicate — its looseness is a separate, pre-existing
+  // question flagged by tp1-5's review).
+  const grabDepth = (e: Enemy): number => (e.kind === 'fuseball' ? RIM_DEPTH_EXACT : PLAYER_RIM_DEPTH)
   const grabber = s.enemies.find(
-    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl
+    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= grabDepth(e) && e.lane === pl
       && !isJumping(e),
   )
   // A grab takes precedence over a pulse; a pulse is still reported on the
@@ -631,7 +714,8 @@ function stepZap(s: GameState, input: Input): void {
 // Claw flies down the tube (progress 0 → 1); advanceLevel runs on completion.
 function checkLevelClear(s: GameState): void {
   if (s.mode !== 'playing') return
-  if (s.enemies.length === 0 && s.spawn.remaining === 0) {
+  // A wave with nymphs still queued is not over: they are the enemies it owes.
+  if (s.enemies.length === 0 && s.spawn.nymphs.length === 0) {
     s.events.push({ type: 'level-clear', newLevel: s.level + 1 })
     s.mode = 'warp'
     s.warp.progress = 0

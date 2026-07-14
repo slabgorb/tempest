@@ -108,9 +108,31 @@ export interface Pulsar extends EnemyBase {
 
 export type Enemy = Flipper | Tanker | Spiker | Fuseball | Pulsar
 
+/**
+ * A NYMPH — one of the wave's not-yet-live enemies, climbing in from beyond the
+ * far end (W-002/DA-012, tp1-6). The ROM keeps 64 slots of these (NNYMPH,
+ * ALCOMN.MAC:811) in the NYMPY/NYMPL arrays; we keep a dynamic array and NYMCOU
+ * (ALCOMN.MAC:916, "# OF NYMPHS") is simply `nymphs.length`.
+ */
+export interface Nymph {
+  /** NYMPL — the line it will hatch on. Rotates while far out (py >= $40), then commits. */
+  lane: number
+  /**
+   * NYMPY — integer ROM FRAMES until it hatches, minus 1 per step while movement
+   * is allowed (MOVNYM `SEC / SBC I,1`, ALWELG.MAC:1130-1132). Reaching 0 IS the
+   * hatch (CONYMP). Never seeded at 0: ININYM bumps the one all-zero seed to $0F.
+   */
+  py: number
+}
+
+/**
+ * The wave's enemy supply — a QUEUE, not a timer (W-003). There is no spawn
+ * interval anywhere in ALWELG: nymphs march their py down every frame and stop
+ * ONLY when the invader slots are booked or a Superzapper is running (MOVNYM,
+ * ALWELG.MAC:1107-1123). Release rate is slot back-pressure, nothing else.
+ */
 export interface SpawnState {
-  remaining: number     // enemies left to spawn this level
-  timer: number         // seconds until next spawn
+  nymphs: Nymph[]       // the not-yet-live enemies; NYMCOU == nymphs.length
 }
 
 // The ROM's pulse clock — PULSON/PULTIM, one counter for the whole board (W-026).
@@ -161,6 +183,12 @@ export interface GameState {
   events: GameEvent[]                // gameplay events emitted this frame (5-1); cleared each step
   prevFire: boolean                  // last frame's input.fire — lets menu confirms edge-trigger (6-2)
   demoActive: boolean                // the self-play attract demo is currently running (Story 10-3)
+  // QFRAME — the ROM's free-running frame counter, of which we port the one
+  // consumer we have: nymph rotation happens on every OTHER frame (`LDA QFRAME /
+  // AND I,1`, MOVNYM ALWELG.MAC:1149-1151). It is GLOBAL parity, not per-nymph:
+  // the crawl keeps its half-rate cadence even while the queue's rise is frozen
+  // (a frozen py would freeze a py-derived parity with it).
+  qframe: number
   rng: Rng
   fireRng: Rng                       // SEPARATE stream for enemy-fire rolls (6-5), so fire decisions
                                      // never desync the movement RNG (mirrors the ROM's pokey1_rand)
@@ -168,6 +196,10 @@ export interface GameState {
 
 export function initialState(seed: number): GameState {
   const tube: Tube = tubeForLevel(1)
+  // The rng exists before the spawn state because ININYM DRAWS from it: every
+  // nymph's hatch lane is a random roll (ALWELG.MAC:324-327), so the queue is a
+  // function of the seed like everything else.
+  const rng = createRng(seed)
   return {
     mode: 'attract',
     level: 1,
@@ -179,7 +211,7 @@ export function initialState(seed: number): GameState {
     spikes: new Array(tube.laneCount).fill(0),
     score: 0,
     lives: START_LIVES,
-    spawn: spawnForLevel(1),
+    spawn: spawnForLevel(1, rng, tube.laneCount),
     pulse: { son: PULSE_SON_INIT, tim: PULSE_STEP },  // INEWLI, ALWELG.MAC:46-48
     warp: { progress: 0, velocity: 0, warning: 0 },
     select: { selectedLevel: 1 },
@@ -188,7 +220,8 @@ export function initialState(seed: number): GameState {
     events: [],
     prevFire: false,
     demoActive: false, // the attract screen boots as a static title; the demo seeds on first idle step
-    rng: createRng(seed),
+    qframe: 0,
+    rng,
     // Derive a distinct seed so the fire stream is decorrelated from movement.
     fireRng: createRng(seed ^ 0x9e3779b9),
   }

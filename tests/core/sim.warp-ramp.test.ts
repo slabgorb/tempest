@@ -51,7 +51,7 @@ function clearedPlaying(
   s.tube = tube
   s.spikes = new Array(tube.laneCount).fill(0)
   s.player.lane = playerLane
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.enemies = []
   s.bullets = []
   for (const [lane, h] of spikes) s.spikes[lane] = h

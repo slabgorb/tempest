@@ -23,7 +23,7 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 describe('sim — mid-flip flipper grab immunity', () => {
   it('a SETTLED flipper at the rim on the player lane grabs (control)', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.player.lane = 4
     const enemy: Flipper = makeEnemy('flipper', 4, 0.95, levelParams(1))
     s.enemies = [enemy]
@@ -35,7 +35,7 @@ describe('sim — mid-flip flipper grab immunity', () => {
 
   it('a MID-FLIP flipper at the rim on the player lane does NOT grab', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.player.lane = 4
     // Already mid-jump between lane 4 and 5, the tumble just begun (angle-step 0 of
     // the eight a jump takes). Nothing else about the fixture differs from the
