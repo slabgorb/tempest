@@ -123,11 +123,12 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  // Hold ArrowRight and play `seconds` at `displayHz`. Returns { lanes, stepped }:
-  // total lanes turned, and the sim seconds the loop actually ran to turn them.
+  // Hold the +spin key (ArrowLeft — see the mapping describe below) and play `seconds`
+  // at `displayHz`. Returns { lanes, stepped }: total lanes turned, and the sim seconds
+  // the loop actually ran to turn them.
   function held(seconds: number, displayHz: number): { lanes: number; stepped: number } {
     const ctrl = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowRight' })
+    windowBus.emit('keydown', { key: 'ArrowLeft' })
     const rig = makeRig(ctrl)
     const lanes = rig.run(seconds, displayHz) + rig.drain()
     return { lanes, stepped: rig.stepped() }
@@ -168,7 +169,7 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
 
   it('survives a stuttering frame budget — same second, same rotation', () => {
     const ctrl = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowRight' })
+    windowBus.emit('keydown', { key: 'ArrowLeft' }) // the +spin key
     const rig = makeRig(ctrl)
 
     // A rough second of frames: a 4 ms sprint next to a 240 ms hitch, all within the
@@ -189,11 +190,11 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
     const idleRig = makeRig(idle)
     expect(idleRig.run(1, 60) + idleRig.drain()).toBe(0)
 
-    const left = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowLeft' })
-    const leftRig = makeRig(left)
-    const lanes = leftRig.run(4, 60) + leftRig.drain()
-    expect(lanes / leftRig.stepped()).toBeCloseTo(-keyboardTurnRate(), 9)
+    const right = createInputController(target as unknown as HTMLElement)
+    windowBus.emit('keydown', { key: 'ArrowRight' })
+    const rightRig = makeRig(right)
+    const lanes = rightRig.run(4, 60) + rightRig.drain()
+    expect(lanes / rightRig.stepped()).toBeCloseTo(-keyboardTurnRate(), 9)
   })
 
   it('REJECTS the old per-sample tick: the rate must not track the sample count', () => {
@@ -205,6 +206,45 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
     expect(at144.lanes).not.toBeCloseTo(144 * SPIN_SENSITIVITY, 1)
     expect(at28.lanes).not.toBeCloseTo(28 * SPIN_SENSITIVITY, 1)
     expect(Math.abs(at144.lanes - at28.lanes)).toBeLessThan(keyboardTurnRate() * SIM_STEP)
+  })
+})
+
+describe('which key turns which way — the arrow keys are INVERTED (playtest)', () => {
+  // A player preference, not a ROM fact: the cabinet has no arrow keys to be faithful to.
+  // Steering the Claw around the FAR side of the tube reads backwards under the naive
+  // mapping, so LEFT now drives +spin and RIGHT drives -spin. Pinned because it is a
+  // deliberate inversion: a "tidy-up" that swaps it back must go red here, not in playtest.
+  let target: ReturnType<typeof makeBus>
+  let windowBus: ReturnType<typeof makeBus>
+
+  beforeEach(() => {
+    target = makeBus()
+    windowBus = makeBus()
+    vi.stubGlobal('window', windowBus)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  function spinFor(keys: string[]): number {
+    const ctrl = createInputController(target as unknown as HTMLElement)
+    for (const key of keys) windowBus.emit('keydown', { key })
+    ctrl.tick(1) // one whole second of SIM time
+    return ctrl.sample().spin
+  }
+
+  it('ArrowLeft spins POSITIVE and ArrowRight spins NEGATIVE', () => {
+    expect(spinFor(['ArrowLeft'])).toBeGreaterThan(0)
+    expect(spinFor(['ArrowRight'])).toBeLessThan(0)
+    expect(spinFor(['ArrowLeft'])).toBeCloseTo(-spinFor(['ArrowRight']), 9)
+  })
+
+  it('still cancels when both are held, and still releases on keyup', () => {
+    expect(spinFor(['ArrowLeft', 'ArrowRight'])).toBe(0)
+
+    const ctrl = createInputController(target as unknown as HTMLElement)
+    windowBus.emit('keydown', { key: 'ArrowLeft' })
+    windowBus.emit('keyup', { key: 'ArrowLeft' })
+    ctrl.tick(1)
+    expect(ctrl.sample().spin).toBe(0)
   })
 })
 
@@ -221,7 +261,7 @@ describe('the keyboard can never buy rotation the sim did not step (Reviewer, ro
 
   function heldCtrl(): InputController {
     const ctrl = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowRight' })
+    windowBus.emit('keydown', { key: 'ArrowLeft' }) // the +spin key
     return ctrl
   }
 
