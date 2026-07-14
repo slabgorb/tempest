@@ -186,7 +186,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 233,
+      "line": 248,
       "verbatim": "    { stroke: 'rgba(150,190,255,0.28)', width: 1.5, blur: 6, color }, tube.closed,"
     },
     "claim": "RATS = 0xC0 (ALDISP.MAC:33). WELPIC drives every spoke at that constant intensity (ALDISP.MAC:2625) and OUTLIN drives the rim polylines at the same constant (ALDISP.MAC:2661 `LDA I,RATS` -> VGBRIT), and OUTLIN is called TWICE with the same COLOR and the same VGBRIT — once for the far rim (Y=0x4F) and once for the near rim (Y=0x0F) (ALDISP.MAC:2634-2638). There is no depth cue on the well: the routine that would have added one, SETINT ('SET INTENSITY AS FUNC OF PYL'), is commented out (ALDISP.MAC:1566). The only beam-off in the whole well is the near-to-adjacent-near hop inside SPOKE (ALDISP.MAC:2731-2732), a pen-up move, not a dim line. We instead draw the far ring at alpha 0.28 / width 1.5 versus the near ring's full-alpha width 3.5 (render.ts:206 vs 212), and gradient each spoke from rgba(255,255,255,0.04) at the far end to full colour at the near end (render.ts:192-193).",
@@ -205,7 +205,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 283,
+      "line": 298,
       "verbatim": "    const a = project(s.tube, lane, 0)"
     },
     "claim": "An 'enemy line' (spike) runs from the FAR end of its lane to its tip. FIXSTU (ALDISP.MAC:3100-3128) builds the far endpoint by averaging the screen coords of far rim points i and i+1 (LIFSXL[X] + LIFSXL[Y], Y = (X+1) & 0x0F, then >>1) — i.e. the lane centre at the far ring. TIPACT (ALDISP.MAC:3160-3186) then takes PYL = LINEY[i] (the spike's height, 0 = inactive, ALDISP.MAC:3162-3163), sets PXL/PZL = LINEXM[i]/LINEZM[i] (the pre-computed mid-point between grid lines i and i+1, built at ALDISP.MAC:2534-2552), projects it with WORSCR, and FCONNECs a vector from the far point to it. We do exactly this: a = project(tube, lane, 0) (the far lane-centre) to b = project(tube, lane, h) (render.ts:256-260). Same two endpoints, same lane-centre convention, same 'grows from the far end toward the rim' direction — and, per DB-005, through the same projection curve.",
@@ -222,7 +222,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 278,
+      "line": 293,
       "verbatim": "  ctx.strokeStyle = '#39ff14'"
     },
     "claim": "DSPENL emits ENLFIX in REVERSE byte order (ALDISP.MAC:3024-3031 counts X down from 3), so VGLIST receives 05, 68, 40, 80. VGSTAT stores the colour index as the LSB and 0x60|flags as the MSB (ALVGUT.MAC:226-230), so 05/68 is 'STAT colour = 5'. Colour 5 = GREEN (ALCOMN.MAC: GREEN=5); the source's own comment at ALDISP.MAC:3095 names it CSTATGREEN. 40/80 is the CNTR opcode (VGCNTR, ALVGUT.MAC:239-240). The tip: when the line is not shattered, WHITIP writes 'STAT colour = WHITE' then a JSRL to the DOT picture (ALDISP.MAC:3208-3219, `LDA I,WHITE ;COLOR (SET STAT WHITE)`). Ours: green line #39ff14 (render.ts:251) with a single white dot at b (render.ts:263-266). Match.",
@@ -271,7 +271,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 180,
+      "line": 192,
       "verbatim": "    const r = t * reach"
     },
     "claim": "DSTARF temporarily swaps the eye to a starfield-specific one — EYL = 0xE8 / EYH = 0xFF (eye Y = -24) and YDEUNI = 0x28 = 40 (ALDISP.MAC:2931-2936) — then, for each active plane, sets PXL = PZL = 0x80 ('CENTER OF WORLD', ALDISP.MAC:2945-2948), PYL = PLANEY[i], and calls SCAPI2 (ALDISP.MAC:2970). SCAPI2 projects that centre point with WORSCR and then calls CASCAL (ALDISP.MAC:1423) to SCALE the star picture by YDEUNI/(PY - EY) = 40/(PY + 24). So a plane's stars expand hyperbolically: 40/(240+24) = 0.152 at spawn, through 40/(128+24) = 0.263 at mid-flight, to 40/(16+24) = 1.000 at retirement — a 6.6x expansion that is slow at first and violently fast at the end. Our drawStarfield maps the SAME z LINEARLY to a radius: t = (0xF0 - z)/(0xF0 - 0x10), r = t * reach (render.ts:152-153). At spawn our stars are at r = 0 (all piled on the centre point, invisible); the arcade's are already at 15% of full reach. And ours accelerate outward at a constant rate instead of whipping past at the end.",
@@ -298,7 +298,8 @@
     "reasoning": "The rainbow starfield is what the warp looks like for all but the first four waves — i.e. almost always. Purely a shell change: colour each plane by (planeIndex & 7, 7 -> 4) through the same COLTAB set used for the well (DB-010), and keep blue only while level < 5. [REFUTATION] Re-opened ALDISP.MAC:2949-2961 exactly as cited: LDA CURWAV; CMP I,5; IFCC -> LDA I,BLUE (comment 'BLUE STARS IN WAVES 1-4', line 2952 verbatim match); ELSE -> TXA; AND I,7; CMP I,7; IFEQ -> LDA I,4; ENDIF. X here is INDEX1, the per-plane loop index (0..NPLANE-1, NPLANE=8 per ALCOMN.MAC:808), so for wave>=5 every plane's color index is literally its own index (0-7), with index 7 remapped to 4. Cross-checked this against COLTAB group 0 (ALDISP.MAC:2406-2413, the wave-1 palette): slots 0-7 = WHITE,YELLO,PURPL,RED,TURQOI,GREEN,BLUE,BLUE — since STAR color feeds the same COLRAM/group mechanism as the well (INICOL), and slot 7 is unreachable for stars (remapped to 4=TURQOI), the 8 planes render as white/yellow/purple/red/turquoise/green/blue/turquoise under wave 1-16's palette — this reproduces the finding's specific color list exactly, independently derived rather than taken on faith. Confirmed our side: render.ts:129 `STAR_COLOR = '#7fc3ff'` is a single module constant used unconditionally at render.ts:149-150 (`ctx.fillStyle = STAR_COLOR; ctx.shadowColor = STAR_COLOR`) inside drawStarfield, which is called (render.ts:949) without ever receiving `s.level` or a per-plane index — it is structurally impossible for this function to vary color by level or plane. Not dead code, not a unit trap, not self-refuting. Holds. [CORRECTION] None.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-30"
   },
   {
     "id": "DB-018",

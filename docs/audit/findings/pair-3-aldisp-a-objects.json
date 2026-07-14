@@ -65,7 +65,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 291,
+      "line": 316,
       "verbatim": "    { points: octagon(6), closed: true, color: 'white' },"
     },
     "claim": "DIARA2 (ALVROM.MAC:383-403), the player-charge picture, is built entirely from SCDOT (each expands to a beam-off move plus a zero-length dot — no connecting stroke). The inner 9-dot cluster (radius ~7, center dot + 8 around it) is colored via the dynamic `PSHCTR` color-RAM slot (the ammo tint from DA-003); the outer 8-dot ring (radius 0F=15, line 395-402) is colored with a fixed `CSTAT YELLOW` (line 394) that never changes. Our `playerBulletGlyph` (glyphs.ts:280-285) instead draws two CLOSED, line-stroked octagons (radius 3 and 6), and `drawBullets` (render.ts:285) passes the ammo `tint` as `strokeGlyph`'s `override`, which recolors EVERY stroke — so both rings change color together, and neither is a scatter of unconnected dots.",
@@ -240,7 +240,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 76,
+      "line": 88,
       "verbatim": "  const a = a0 + dA * t"
     },
     "claim": "JUMPX/JUMPZ (ALDISP.MAC:754-779) is a 16-sample lookup table of world-space (X,Z) offsets applied to a flipping/leaping invader's base-line position (IJMPDS, ALDISP.MAC:711-753). Decoding the byte values (DG000=2C=44, DG225=28=40, DG450=1F=31, DG675=10=16, DG900=0, and their negatives) against 22.5-degree steps confirms X[i]=44*cos(i*22.5deg) and — because JUMPZ's 4 bytes are immediately followed in memory by JUMPX's own bytes and both are indexed by the same `AND I,0F` 0-15 value (line 720) — Z[i]=44*sin(i*22.5deg): a genuine 16-point circle of radius 44 world-units. Our `arcAbout()` (render.ts:53-66) computes a continuous circular arc (interpolating angle and radius from source to target) for the same mid-flip tumble.",
@@ -261,7 +261,8 @@
       "verbatim": "  return [{ points: center(verts), closed: true, color: 'red' }]"
     },
     "claim": "ALCOMN.MAC hardcodes flippers to RED. `flipperGlyph()` returns its bowtie stroke with `color: 'red'`.",
-    "reasoning": "A simple, exact palette match worth recording."
+    "reasoning": "A simple, exact palette match worth recording.",
+    "remediated_by": "tp1-30"
   },
   {
     "id": "DA-015",
@@ -295,7 +296,8 @@
       "verbatim": "    color: 'purple',"
     },
     "claim": "The shared tanker-body drawing routine GENTNK (reached by TANKP, TANKF and TANKR alike) sets its X-diamond body to PURPLE, matching ALCOMN.MAC's `TANCOL=PURPLE`. Our `tankerGlyph`'s body stroke is likewise `color: 'purple'`.",
-    "reasoning": "Confirms the base tanker silhouette color is correct across all three cargo variants."
+    "reasoning": "Confirms the base tanker silhouette color is correct across all three cargo variants.",
+    "remediated_by": "tp1-30"
   },
   {
     "id": "DA-017",
@@ -329,7 +331,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 324,
+      "line": 339,
       "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
     },
     "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
@@ -390,7 +392,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 66,
+      "line": 78,
       "verbatim": "function arcAbout("
     },
     "claim": "The ROM indexes its 16-entry JUMPX/JUMPZ circle (DA-013) with a 4-bit integer step counter (`INVAL2 AND 0F`, line 720) that advances one discrete step at a time — 16 fixed positions per full loop, updated once per GAME frame, i.e. on the FRTIMR-gated 256/9 = 28.44 Hz logic cadence (FR-001), not on a 60 Hz one and not on the ~256 Hz IRQ. `arcAbout()` instead evaluates `cos`/`sin`/`hypot` continuously for an arbitrary float `t` each frame, with no 16-step quantization.",

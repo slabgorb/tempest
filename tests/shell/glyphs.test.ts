@@ -28,14 +28,14 @@
 //   }
 //   export type Glyph = readonly GlyphStroke[]
 //   export type TankerCargo = 'flipper' | 'pulsar' | 'fuseball'
-//   export function flipperGlyph(): Glyph
-//   export function tankerGlyph(cargo: TankerCargo): Glyph
+//   export function flipperGlyph(level: number): Glyph
+//   export function tankerGlyph(level: number, cargo: TankerCargo): Glyph
 //   export function spikerGlyph(frame: number): Glyph
 //   export function spikeGlyph(spikeHeight: number): Glyph
 //   export function fuseballGlyph(frame: number): Glyph
 //   export function pulsarBar(variant: number): Glyph            // 0=sharpest .. 4=flat
 //   export function pulsarVariant(pulsing: number): number       // 8-bit -> 0..4
-//   export function pulsarColor(bright: boolean): GlyphColor     // cyan <-> white
+//   export function pulsarColor(level: number, bright: boolean): GlyphColor  // PULPIC slot 0/4
 //   export function enemyBoltGlyph(frame: number): Glyph
 //   export function playerClawGlyph(rotation: number): Glyph     // 8 graphics
 //   export function playerBulletGlyph(): Glyph
@@ -187,20 +187,20 @@ const NCRS8_ROM_DRAWN_DELTAS = [
 // ===========================================================================
 describe('flipperGlyph (Story 6-8: authentic bowtie/butterfly)', () => {
   it('is a single closed RED stroke', () => {
-    const g = flipperGlyph()
+    const g = flipperGlyph(1)
     expect(g).toHaveLength(1)
     expect(g[0].closed).toBe(true)
     expect(g[0].color).toBe<GlyphColor>('red')
   })
 
   it('has 8 segments (8 vertices) per the ROM point-vector', () => {
-    const g = flipperGlyph()
+    const g = flipperGlyph(1)
     expect(g[0].points).toHaveLength(8)
     expect(segDeltasClosed(g[0].points)).toHaveLength(8)
   })
 
   it('is geometrically closed: segment deltas sum to zero', () => {
-    const deltas = segDeltasClosed(flipperGlyph()[0].points)
+    const deltas = segDeltasClosed(flipperGlyph(1)[0].points)
     const sx = deltas.reduce((a, d) => a + d[0], 0)
     const sy = deltas.reduce((a, d) => a + d[1], 0)
     expect(Math.abs(sx)).toBeLessThan(1e-6)
@@ -208,7 +208,7 @@ describe('flipperGlyph (Story 6-8: authentic bowtie/butterfly)', () => {
   })
 
   it('has the central crossing — two vertices coincide (the bowtie, not a simple ring)', () => {
-    const pts = flipperGlyph()[0].points
+    const pts = flipperGlyph(1)[0].points
     let coincident = false
     for (let i = 0; i < pts.length; i++) {
       for (let j = i + 1; j < pts.length; j++) {
@@ -219,7 +219,7 @@ describe('flipperGlyph (Story 6-8: authentic bowtie/butterfly)', () => {
   })
 
   it('matches the authentic _pv_t3 shape (up to scale, start vertex and winding)', () => {
-    const deltas = segDeltasClosed(flipperGlyph()[0].points)
+    const deltas = segDeltasClosed(flipperGlyph(1)[0].points)
     expect(matchClosedShapeUpToScale(deltas, FLIPPER_ROM_DELTAS)).toBe(true)
   })
 })
@@ -229,7 +229,7 @@ describe('flipperGlyph (Story 6-8: authentic bowtie/butterfly)', () => {
 // ===========================================================================
 describe('tankerGlyph (Story 6-8: X-diamond + cargo emblem by split type)', () => {
   it('has an elongated (non-square) PURPLE diamond body', () => {
-    const g = tankerGlyph('flipper')
+    const g = tankerGlyph(1, 'flipper')
     const body = g.find((s) => s.color === 'purple')
     expect(body, 'tanker body stroke (GENTNK purple — Story 10-7)').toBeDefined()
     expect(body!.closed).toBe(true)
@@ -239,18 +239,18 @@ describe('tankerGlyph (Story 6-8: X-diamond + cargo emblem by split type)', () =
   })
 
   it('renders a distinct emblem per cargo type (showing what it splits into)', () => {
-    const f = fingerprint(tankerGlyph('flipper'))
-    const p = fingerprint(tankerGlyph('pulsar'))
-    const z = fingerprint(tankerGlyph('fuseball'))
+    const f = fingerprint(tankerGlyph(1, 'flipper'))
+    const p = fingerprint(tankerGlyph(1, 'pulsar'))
+    const z = fingerprint(tankerGlyph(1, 'fuseball'))
     expect(new Set([f, p, z]).size).toBe(3)
   })
 
   it('omits the emblem for a flipper-cargo tanker but adds one for pulsar/fuseball cargo', () => {
     // ROM: flipper-tanker has NO emblem (l.4798); pulsar (4628) & fuzzball (4711)
     // prepend a cargo emblem, so they carry strictly more strokes than the body.
-    const flipperT = tankerGlyph('flipper')
-    expect(tankerGlyph('pulsar').length).toBeGreaterThan(flipperT.length)
-    expect(tankerGlyph('fuseball').length).toBeGreaterThan(flipperT.length)
+    const flipperT = tankerGlyph(1, 'flipper')
+    expect(tankerGlyph(1, 'pulsar').length).toBeGreaterThan(flipperT.length)
+    expect(tankerGlyph(1, 'fuseball').length).toBeGreaterThan(flipperT.length)
   })
 })
 
@@ -392,8 +392,10 @@ describe('pulsarVariant (Story 6-8: (pulsing+0x40)>>4 jaggedness selector, clamp
 
 describe('pulsarColor (Story 6-8: cyan<->white strobe)', () => {
   it('strobes between cyan and white', () => {
-    expect(pulsarColor(false)).toBe<GlyphColor>('cyan')
-    expect(pulsarColor(true)).toBe<GlyphColor>('white')
+    // tp1-30 made pulsarColor level-keyed (PULPIC slot 0/4 per bank); at level 1
+    // (bank 0) the slots resolve to the historic white/cyan this story pinned.
+    expect(pulsarColor(1, false)).toBe<GlyphColor>('cyan')
+    expect(pulsarColor(1, true)).toBe<GlyphColor>('white')
   })
 })
 

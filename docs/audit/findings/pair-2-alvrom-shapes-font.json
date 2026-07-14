@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 86,
+      "line": 93,
       "verbatim": "  [4, 1], [4, -1], [-2, 1], [1, 1], [-3, -1], [-3, 1], [1, -1], [-2, -1],"
     },
     "claim": "INVA1S (ALDISP.MAC 1907-1916) is an 8-vector chain in unit/perp-unit multipliers: (4,1) (4,-1) (-2,1) (1,1) (-3,-1) (-3,1) (1,-1) (-2,-1). FLIPPER_DELTAS is that exact sequence in that exact order. The deltas sum to (0,0), so the chain closes on itself — our fromDeltas()/closed:true reproduction is equivalent. Colour: ALCOMN.MAC 367 `FLICOL=RED`, applied at ALDISP.MAC 670 `LDA I,FLICOL`; flipperGlyph returns color:'red' (glyphs.ts 86).",
@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 256,
+      "line": 281,
       "verbatim": "  [[0, -2], [2, -1], [3, 4], [-3, -3], [-1, 0], [0, 2], [2, 1], [-3, -1]], // 1 (NCRS1)"
     },
     "claim": "All eight cursor chains agree vertex-for-vertex with CLAW_DELTAS: NCRS1 (0,-2)(2,-1)(3,4)(-3,-3)(-1,0)(0,2)(2,1)(-3,-1); NCRS2 (1,-2)(7,2)(-3,1)(2,-1)(-6,-1)(0,1)(2,1)(-3,-1); NCRS3 (2,-2)(6,2)...; NCRS4 (3,-2)(5,2)...; NCRS5 (5,-2)(3,2)...; NCRS6 (6,-2)(2,2)...; NCRS7 (7,-2)(1,2)...; NCRS8 opens with the beam-off move `VEC 3,1,0` (ALDISP.MAC 1988) then (3,-4)(2,1)(0,2)(-3,1)(2,-1)(0,-2)(-1,0)(-3,3) — which is exactly our graphic 8, post-MOVE. Colour: ALCOMN.MAC 360 `CURCOL=YELLOW`, set at ALDISP.MAC 602; CLAW_GLYPHS use color:'yellow' (glyphs.ts 263).",
@@ -44,7 +44,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 290,
+      "line": 305,
       "verbatim": "    ctx.fillStyle = '#ffffff'"
     },
     "claim": "The enemy-line body carries the fixed VG prologue `ENLFIX` whose comment is `(CSTATGREEN,CNTR)` (ALDISP.MAC 3027); an un-shattered tip inserts a WHITE colour stat (ALDISP.MAC 3208-3215, WHITIP) then a JSRL to JSRDOT (a zero-length VCTR 0,0 = one dot). drawSpikes strokes the shaft '#39ff14' (render.ts 251) and fills exactly one white tip dot (render.ts 263-266). Line colour and tip colour, and the single-dot cap, all match.",
@@ -65,7 +65,8 @@
       "verbatim": "export function pulsarColor(bright: boolean): GlyphColor {"
     },
     "claim": "PULPIC loads TURQOI for pulse-off and WHITE for pulse-on (ALDISP.MAC 861-867), and the pulsar's colour-RAM slot is index 4 = ZTURQOI (ALDISP.MAC 2410). pulsarColor(bright) returns 'white' when bright and 'cyan' otherwise (glyphs.ts 196-198), and GLYPH_HEX.cyan = '#00e5ff' (render.ts 42) — the turquoise/white strobe, same polarity.",
-    "reasoning": "Our 'cyan' is the palette's turquoise slot; the strobe partner (white) is exactly the ROM's."
+    "reasoning": "Our 'cyan' is the palette's turquoise slot; the strobe partner (white) is exactly the ROM's.",
+    "remediated_by": "tp1-30"
   },
   {
     "id": "V-005",
@@ -78,7 +79,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 176,
+      "line": 187,
       "verbatim": "const PULSAR_AMP: readonly number[] = [1, 0.6, 0.35, 0.15, 0] // variant 0 sharpest .. 4 flat"
     },
     "claim": "The ROM has five DISTINCT chains (ALDISP.MAC 2001-2035): PULS4 = (2,-3)(1,6)(1,-6)(1,6)(1,-6)(2,3) — 6 drawn vectors; PULS3 = move(1,0) then (1,-2)(1,4)(1,-4)(1,4)(1,-4)(1,2) — 6 drawn vectors, x-stride 1 throughout, amplitude 4; PULS2 = move(1,0) then (1,-1)(1,2)(1,-2)(1,2)(1,-2)(1,1) — amplitude 2; PULS1 = move(1,0) then (2,-1)(2,2)(2,-1) — only THREE drawn vectors; PULS0 = move(1,0) then (6,0) — ONE flat 6-unit vector. Ours keeps one delta table (PULSAR_XD [2,1,1,1,1,2], PULSAR_YD y = -3,6,-6,6,-6,3) — which reproduces PULS4 exactly — and derives the other four by multiplying y by 1/0.6/0.35/0.15/0 (glyphs.ts 164-185): every variant keeps 6 segments and the 2/1/1/1/1/2 x-stride, so PULS1's 3-segment and PULS0's 1-segment forms are never drawn. Selection also inverts at the top: PULTAB clamps index >= 5 to CPULS0 (FLAT) (ALDISP.MAC 875-878, 893), while pulsarVariant() maps index 5 to PULSAR_DP_T1[5]=0x09 → variant 0 (SHARPEST) (glyphs.ts 189-194).",
@@ -98,7 +99,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 103,
+      "line": 114,
       "verbatim": "    points: [{ x: 0, y: -9 }, { x: 6, y: 0 }, { x: 0, y: 9 }, { x: -6, y: 0 }],"
     },
     "claim": "GENTNK (ALVROM.MAC 651-669, CM=2 CD=1) is a chain of SCVEC ABSOLUTE vertices (the CVEC macro, ALVROM.MAC 68-78, emits the delta to each new absolute point). Entering from TANKR's blank move to (20,0) it draws, in hex object units: (20,0) → (0,20) → (0,0C) → (20,0) → (0C,0) → (0,0C) → (-0C,0) → (0,20) → (-20,0) → (-0C,0) → (0,-0C) → (-20,0) → (0,-20) → (0,-0C) → (0C,0) → (0,-20) → (20,0) → (0C,0). Decimal, x2 for CM: an OUTER diamond at (+/-64,0),(0,+/-64), an INNER diamond at (+/-24,0),(0,+/-24), and the eight chords that lace them into an X. Ours is a single 4-point diamond (0,-9)(6,0)(0,9)(-6,0), i.e. only the outer ring, and elongated (9 tall x 6 wide) where the ROM's is square (equal x/y extent). Colour is right: ALCOMN.MAC 368 `TANCOL=PURPLE`, ours color:'purple' (glyphs.ts 97).",
@@ -118,7 +119,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 112,
+      "line": 123,
       "verbatim": "      ? { points: [{ x: -3, y: 0 }, { x: -1, y: -2 }, { x: 1, y: 2 }, { x: 3, y: 0 }], closed: false, color: 'cyan' }"
     },
     "claim": "TANKP (pulsar tanker, ALVROM.MAC 624-633) prefixes GENTNK with ONE turquoise open chain: blank move to (-5,-2), then draw (-3,6) (0,-6) (3,6) (5,-2) — a W/chevron spanning the body. TANKF (fuse tanker, ALVROM.MAC 634-647) prefixes a FOUR-colour mark: CSTAT BLUE draw to (-0C,0); blank to (0,0C); CSTAT RED dot at (0,0C); CSTAT GREEN draw to (0,-0C); CSTAT YELLOW draw to (0C,0). TANKR (flipper tanker, ALVROM.MAC 648-650) has no mark, and TANTAB confirms the three-way pick (ALDISP.MAC 696 `TANTAB:\t.BYTE PTTANK,PTTANK,PTTANP,PTTANF`). Ours: pulsar cargo = a 4-point cyan zigzag (-3,0)(-1,-2)(1,2)(3,0); fuseball cargo = a single yellow 4-point cross (glyphs.ts 104-105); flipper cargo = no emblem (correct).",
@@ -159,7 +160,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 223,
+      "line": 248,
       "verbatim": "    strokes.push({ points: [corner, hook], closed: false, color: 'white' })"
     },
     "claim": "ESHOT1 (MESHO1, ALVROM.MAC 700-721, CM=1) is FOUR short WHITE segments on the diagonals — (-11,11)->(-17,17), (-17,-11)->(-11,-17), (17,-17)->(11,-11), (11,17)->(17,11) (decimal) — plus FOUR RED dots at (+/-6,+/-6) (hex 6). Each of ESHOT2/3/4 rotates the same idea with its own coordinates. Ours builds the four white hooks on the CARDINAL axes at radius BOLT_SIZE=10 with a perpendicular 6-unit hook, and the four red dots on the cardinals at radius 4.5 (glyphs.ts 203-227): a pinwheel, not four outward diagonal ticks. Frame selection also differs: the ROM picks the ESHOT frame off the global frame counter (`LDA QFRAME / ASL / AND I,6 / ADC I,PTESHO`, ALDISP.MAC 910-914), we pick it off the bullet's DEPTH (`enemyBoltGlyph(Math.floor(b.depth * 8))`, render.ts 297). Colours match: ICHCOL=WHITE (ALCOMN.MAC 361) and the inner CSTAT RED (ALVROM.MAC 712).",
@@ -179,7 +180,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 290,
+      "line": 315,
       "verbatim": "    { points: octagon(3), closed: true, color: 'white' },"
     },
     "claim": "DIARA2 (ALVROM.MAC 379-403, CM=1) is built entirely from SCDOT (blank move + `VCTR 0,0,CB` — a single lit point; macro at ALVROM.MAC 89-92). Inner ring, CSTAT PSHCTR: dots at (0,0) (7,0) (5,5) (0,7) (-5,5) (-7,0) (-5,-5) (0,-7) (5,-5). Outer ring, CSTAT YELLOW: dots at (0F,0) (0B,0B) (0,0F) (-0B,0B) (-0B,0) (-0B,-0B) (0,-0B) (0B,-0B) — note this outer ring is deliberately IRREGULAR: the -x and -y cardinal dots sit at 0B (11), not 0F (15). Seventeen dots, no lines, two different colours. playerBulletGlyph() returns two CLOSED STROKED octagon outlines of radius 3 and 6, both 'white' (glyphs.ts 273-285), which render.ts then recolours wholesale.",
@@ -199,7 +200,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 312,
+      "line": 327,
       "verbatim": "    strokeGlyph(ctx, playerBulletGlyph(), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14, tint)"
     },
     "claim": "DSPCHG (ALDISP.MAC 919-930) picks ZYELLO ('PLENTY'), ZBLUE ('LOW', when CHACOU >= NPCHARG-2 = 6) or ZRED ('OUT', when CHACOU >= NPCHARG = 8; NPCHARG=8 at ALCOMN.MAC 812) and stores it into `COLPOR+PSHCTR` — the colour-RAM slot used ONLY by DIARA2's inner ring (`CSTAT PSHCTR`, ALVROM.MAC 384). The outer ring stays `CSTAT YELLOW` (ALVROM.MAC 394) at all times. Our thresholds are right (>=8 red, >=6 cyan, else yellow — glyphs.ts 292-296) but strokeGlyph's `override` recolours EVERY sub-stroke of the glyph (render.ts 83), so both rings change; and the 6-7 tint is 'cyan' (turquoise), where the ROM uses ZBLUE.",
@@ -240,7 +241,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 535,
+      "line": 551,
       "verbatim": "  jaggedStarPath(ctx, ex.x, ex.y, ex.spokes, ex.radius, ex.radius * 0.45)"
     },
     "claim": "SPLAT (ALVROM.MAC 806-850, CM=2 CD=1 CB=7) is a SINGLE closed jagged outline of 26 absolute vertices — (18,-8) (38,8) (20,0C) (24,14) (1C,15) (22,20) (10,16) (12,30) (4,28) (-0A,2D) (-0C,12) (-2E,18) (-1C,0) (-26,-8) (-20,-0A) (-26,-17) (-0D,-0E) (-10,-22) (-0C,-20) (-8,-2C) (4,-20) (10,-2C) (12,-18) (22,-1E) (18,-8) (0,0) — with the colour re-stated every TWO vertices, cycling PDIWHI -> PDIRED -> PDIYEL -> PDIWHI ... (indices 9/11/10, ALVROM.MAC 812/816/819 and ALCOMN.MAC 384-386), so all three colours are on screen SIMULTANEOUSLY around the ring. SPLAT1-6 (ALVROM.MAC 793-804) then re-draw that one picture at six SCAL sizes. Ours draws two concentric procedural jagged rings (outer/inner radius alternating) in ONE colour per frame, cycling white->red->yellow across frames (render.ts 495-507).",
@@ -260,7 +261,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 149,
+      "line": 160,
       "verbatim": "const FUSE_COLORS: readonly GlyphColor[] = ['red', 'yellow', 'cyan']"
     },
     "claim": "FUSE0..FUSE3 (ALVROM.MAC 950-1095, CM=2 CD=1 CB=7) are four authored frames, each composed of FIVE colour groups in a fixed order — CSTAT RED, CSTAT YELLOW, CSTAT GREEN, CSTAT PURPLE, CSTAT TURQOI (ALVROM.MAC 955/961/968/975/983) — every group an open polyline of 5-7 absolute vertices. FUSE0's red arm alone is (-4,6) (1,0C) (-5,0E) (1,12) (-1,18); its purple arm is (-4,-1A)m (-4,-14) (-0A,-14) (-7,-0D) (-9,-6) (-3,-8) (0,0); and so on — roughly 29 vertices per frame in 5 colours. Ours generates 9 radial legs from the origin with sinusoidally-writhing angles/lengths, cycling only red/yellow/cyan (glyphs.ts 141-157). GREEN and PURPLE never appear on our fuseball.",
@@ -280,7 +281,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 158,
+      "line": 169,
       "verbatim": "  [[-0.8, -0.5], [0.3, -0.9], [0.9, 0.2], [-0.2, 0.7], [0.6, 0.6]],"
     },
     "claim": "MSTAR1-MSTAR4 (ALVROM.MAC 405-515, CM=4 CD=1) are four macros of 20-22 SCDOTs each at authored absolute coordinates. MSTAR1's 22 dots (hex): (-8,0) (8,0C) (10,0) (8,30) (-30,20) (-34,-20) (-8,-48) (48,-20) (44,28) (18,50) (-38,44) (-48,-8) (-40,-50) (10,-70) (58,-50) (68,-8) (58,50) (8,70) (-40,68) (-78,28) (-70,-28) (-70,-68). Ours reuses four 5-dot 'pictures' of hand-picked unit vectors scattered radially from screen centre (render.ts 133-138). Count (5 vs 22) and every coordinate differ. The colour IS right for early waves: `LDA I,BLUE ;BLUE STARS IN WAVES 1-4` (ALDISP.MAC 2952) vs STAR_COLOR '#7fc3ff' (render.ts 129) — though from wave 5 the ROM varies the star colour per plane (ALDISP.MAC 2949-2960), which we never do.",
@@ -321,7 +322,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 691,
+      "line": 707,
       "verbatim": "    drawGlowText(ctx, 'TEMPEST', W / 2, titleY, size, pass.color, 8 + Math.round(20 * pass.depth))"
     },
     "claim": "TEMLIT (ALVROM.MAC 1297-1351, CM=1 CD=1 CB=6) has SEVEN dedicated logo-letter routines with their own geometry — e.g. `E: VCTR -50,0,CB / VCTR -14,-40,CB / VCTR 70,0,CB / VCTR -70,0,0 / VCTR -14,-40,CB / VCTR 84,0,CB` (a BACK-SLANTED E, its arms stepping left as they descend), and `M`, `P`, `S`, `T` likewise (ALVROM.MAC 1318-1351) — none of which is the ANVGAN message glyph for that letter. The layout is NOT a straight baseline: after CNTR it moves (-1B0,100), draws T, +60 E, +24 M, +34 P, then JUMPS (0F8,48) — up and right — draws E, +16,+28 S, then +60,-60 T. So 'TEMP' sits low-left and 'EST' climbs up and right in a stair-step. We render the string 'TEMPEST' through the ordinary message font (render.ts 679 -> vecText -> layoutText) on one horizontal baseline.",
@@ -341,7 +342,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 802,
+      "line": 818,
       "verbatim": "  vecText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, 22, color, 12, 'right', 'top')"
     },
     "claim": "The SCORES template (ALVROM.MAC 1955-2017) fixes the colour of every HUD field: `CSTAT GREEN` before the 6-digit player score (1958), `CSTAT YELLOW` before the row of LIFE0 life icons (1971-1977), `CSTAT GREEN` before the 6-digit high score (1979), `CSTAT BLUE` before the 2-digit LEVEL (1987-1989), `CSTAT GREEN` before the 3 hi-score initials (1990-1994). Ours draws score, level AND hi-score in the level-cycling `color` (render.ts 787/790/794) and adds three captions the ROM has no glyphs for — 'SCORE', 'LEVEL', 'HI-SCORE' (render.ts 788/791/795) — in a steel-blue that is not a palette colour. The ROM also places the high score directly under player 1's score with the level below it, not centred at the top.",
@@ -368,7 +369,8 @@
     "reasoning": "This is why the arcade's later waves look like different games. It is also the deepest change on this list: the renderer would need a palette-slot indirection (enemy -> slot -> per-wave bank) instead of enemy -> fixed hex. The title was corrected during coverage review from \"per wave\" to \"every 16 waves\": COLTAB advances by wave-GROUP (CURWAV AND 0x70, masking bits 4-6), not on every individual wave. A refuter reading the old \"per wave\" title could have dismissed or killed this otherwise-valid finding on a false premise, since the substantive claim (the ROM recolours the entire cast wave-group by wave-group, we recolour only the well) is correct and stands unchanged. [REFUTATION] Re-opened ALDISP.MAC 2353-2456 (INICOL + COLTAB); confirmed both are ordinary code in a linked module (ALDISP appears in ALEXEC.MAP, not in the decoy list) with no .IF NE,SPACG gate anywhere near this block (the SPACG-conditional blocks are all in ALVROM.MAC, a different file). Decoded the macro: LDA CURWAV/AND I,70 masks bits 4-6 (a hex file — 5F/70/07 aren't valid octal), grouping CURWAV into buckets of 16 (matches the corrected 'every 16 waves' title, not 'per wave'); CMP I,5F/IFCS clamps; LSR halves; ORA I,07 forces the low 3 bits, landing X on the last byte of an 8-byte bank; the BEGIN/MIEND loop decrements X and Y together, so COLRAM[k] = low-nibble(COLTAB[bank_base+k]) and COLRAM[8+k] = high-nibble(COLTAB[bank_base+k]) for k=0..7 exactly as claimed — six 8-byte banks (base 0/8/16/24/32/40), confirmed by counting non-comment .BYTE lines. Checked our side: LEVEL_COLORS (render.ts 19-22) feeds only `wellColor`/`color` into drawTube (944) — the well — while flipperGlyph/tankerGlyph/etc. (glyphs.ts) hard-code a fixed GlyphColor ('red', 'purple', ...) with no level/wave parameter at all, so the claim that enemies never recolour is verified in the glyph library itself, not just render.ts's call site. The core claim (ROM recolours the whole cast wave-group by wave-group via a bank swap; we recolour only the well) survives every attack. CORRECTION: the finding's worked example for slot 6 (WELL) misidentifies two of its three cross-bank values. Recomputing bank_base+6 for each bank: bank1=ZBLUE (2412, correct), bank2=ZRED (line 2420, NOT ZGREEN as claimed — ZGREEN is bank2 offset 1, line 2415), bank3=ZYELLO (line 2428, NOT ZTURQOI as claimed — ZTURQOI is actually bank4's WELL colour, line 2436). The slot-3 (FLIPPERS) example in the same claim (ZRED bank1, ZPURPL bank2, ZGREEN bank4) IS correct on recount. The directional claim and the six-bank/nibble-split mechanism are right; only the specific WELL colour-per-bank illustration is wrong for 2 of 3 cited banks. [CORRECTION] WELL (colour slot 6) is ZBLUE in bank 1 (correct as cited) but ZRED in bank 2 (not ZGREEN) and ZYELLO in bank 3 (not ZTURQOI); ZTURQOI is actually bank 4's WELL colour. The FLIPPERS/slot-3 example elsewhere in the same claim is accurate and does not need correction.",
     "recommendation": "fix",
     "size": "l",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-30"
   },
   {
     "id": "V-020",
@@ -470,7 +472,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 817,
+      "line": 833,
       "verbatim": "    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, 64, '#39ff14', 26)"
     },
     "claim": "The message table declares GAMOV as GREEN, scale 1, y=56h; the English literal is `EGAMOV: ASCVH <GAME OVER>` (ALLANG.MAC 97). We draw the same string in '#39ff14' (GLYPH_HEX green).",
@@ -487,7 +489,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 698,
+      "line": 714,
       "verbatim": "  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, 26, '#ff2f4f', 18)"
     },
     "claim": "PRESS is RED, scale 1, y=56h; English literal `EPRESS: ASCVH <PRESS START>` (ALLANG.MAC 111). We draw 'PRESS START' in '#ff2f4f' (GLYPH_HEX red), blinking, on the attract screen.",
@@ -504,7 +506,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 635,
+      "line": 651,
       "verbatim": "  drawGlowText(ctx, 'HIGH SCORES', cx, top, 20, '#ff2f4f', 14)"
     },
     "claim": "HIGHS is RED, and note SCALE 0 (the big cell) — the only message besides PLAYER and AVOID SPIKES to use it. English literal `EHIGHS: ASCVH 0BC,<HIGH SCORES>` (ALLANG.MAC 136), plural. We draw the plural 'HIGH SCORES' in '#ff2f4f'.",
@@ -521,7 +523,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 712,
+      "line": 728,
       "verbatim": "  drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, 40, '#39ff14', 22)"
     },
     "claim": "RATE = GREEN (ALLANG.MAC 74, literal `ERATE: ASCVH <RATE YOURSELF>` at 146); NOVIC = RED and EXPER = RED (ALLANG.MAC 75-76). We draw 'RATE YOURSELF' green (#39ff14) and 'NOVICE'/'EXPERT' red (#ff2f4f, render.ts 708-709).",
@@ -538,7 +540,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1008,
+      "line": 1022,
       "verbatim": "    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, 28, '#ffffff', 18)"
     },
     "claim": "SPIKE is WHITE at scale 0 (double-size cell), y=0; English literal `ESPIKE: ASCVH -72.,<AVOID SPIKES>` (ALLANG.MAC 238). We draw 'AVOID SPIKES' in '#ffffff' during the warp hold.",
@@ -555,7 +557,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1016,
+      "line": 1030,
       "verbatim": "    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, 40, '#39ff14', 20)"
     },
     "claim": "BONUS = GREEN scale 1 y=-70. (ALLANG.MAC 77) and TIME = GREEN scale 1 y=98h (ALLANG.MAC 78); literals `SBONUS: ASCVH 8B,<BONUS>` (164) and `ETIME: ASCVH 0E8,<TIME>` (166). We draw both banners in '#39ff14' on the level-clear warp (render.ts 993-994).",
@@ -572,7 +574,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1033,
+      "line": 1047,
       "verbatim": "    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, 26, '#1f8fff', 16)"
     },
     "claim": "SUPZA uses BLULET (=7, the second letters slot, ALCOMN.MAC 352) — not the usual LETCOL green. English falls through to `FSUPZA: ASCVH <SUPERZAPPER RECHARGE>` (ALLANG.MAC 248-249), i.e. the English string IS 'SUPERZAPPER RECHARGE'. We draw exactly that string in '#1f8fff' blue.",
@@ -589,7 +591,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 722,
+      "line": 738,
       "verbatim": "  drawGlowText(ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72, 16, 'rgba(150,190,255,0.7)', 6)"
     },
     "claim": "PRMOV is TURQOI, scale 1, y=0; the English literal is `EPRMOV: ASCVH <SPIN KNOB TO CHANGE>` (ALLANG.MAC 126). Ours reads 'SPIN OR ARROW KEYS TO CHANGE' in 'rgba(150,190,255,0.7)' — a translucent steel-blue that is not one of the eight palette slots.",
@@ -609,7 +611,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 725,
+      "line": 741,
       "verbatim": "  drawGlowText(ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32, 18, color, 12)"
     },
     "claim": "PRFIR is YELLOW, scale 1, y=-10.; English literal `EPRFIR: ASCVH <PRESS FIRE TO SELECT>` (ALLANG.MAC 131). Ours reads 'PRESS START / ENTER TO BEGIN' in the per-level cycling `color` — so on level 1 it is blue, level 2 red, and so on.",
@@ -629,7 +631,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 732,
+      "line": 748,
       "verbatim": "  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, 44, color, 24)"
     },
     "claim": "ENTER is RED, scale 1, y=0B0h (ALLANG.MAC 69 `MESS\\tENTER,RED,1,0B0\\t\\t;ENTER`), with the English literal 'ENTER YOUR INITIALS'. Our high-score entry screen's heading is 'NEW HIGH SCORE' in the level-cycling colour (render.ts 720); 'ENTER YOUR INITIALS' appears only in the defensive no-entry branch, and there it is drawn in CLAW_COLOR yellow (render.ts 724), not red.",
@@ -649,7 +651,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 713,
+      "line": 729,
       "verbatim": "  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)"
     },
     "claim": "The MRANK message (RED, scale 1, y=-50., ALLANG.MAC 73) has the English literal 'RANKING FROM 1 TO ' — a sentence with a trailing space onto which the game appends the top selectable level. Ours prints the four-letter label 'RANK'. The colour (RED / '#ff2f4f') is right.",
@@ -683,7 +685,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 378,
+      "line": 393,
       "verbatim": "      strokeGlyph(ctx, spikerGlyph(Math.floor(renderTime * 8)), p.x, p.y, r / 6, 0, 12)"
     },
     "claim": "Everywhere the ROM cycles a picture it indexes QFRAME, the integer GAME-frame counter — advanced once per FRTIMR-gated MAINLN pass, i.e. 256/9 = 28.44 Hz, not once per IRQ (~256 Hz) and not 60 Hz (FR-001). Enemy shots `LDA QFRAME / ASL / AND I,6` (ALDISP.MAC 910-912), trailer/spiker `LDA QFRAME / AND I,3` (ALDISP.MAC 701-702), flippers hold one frame (`FLITAB: .BYTE CINVA1,CINVA1,CINVA1,CINVA1`, ALDISP.MAC 685). We derive frames from a float seconds clock instead: spiker `Math.floor(renderTime * 8)` (render.ts 349), fuseball `Math.floor(renderTime * 12)` (render.ts 354), pulsar strobe `Math.sin(renderTime * 12/18)` (render.ts 359-361), bullet spin `renderTime * 5` (render.ts 285). This covers only animation whose frame index is derived from TIME (a float seconds clock standing in for the ROM's integer game-frame count) — it explicitly EXCLUDES any animation whose frame index is derived from something other than elapsed time. In particular, DA-018 (pair-3-aldisp-a-objects.json) shows the enemy-bolt spin frame is computed from `Math.floor(b.depth * 8)` — the bolt's own travel DEPTH, a spatial quantity, not the render clock — so a bolt that stalls in place would freeze mid-animation; that is not a float restatement of QFRAME and is not covered by this finding.",

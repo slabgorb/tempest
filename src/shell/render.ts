@@ -11,7 +11,7 @@ import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
-  playerBulletColor, playerClawGlyph, lifeIconGlyph, wellColor,
+  playerBulletColor, playerClawGlyph, lifeIconGlyph, wellColor, starColor,
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
@@ -56,6 +56,18 @@ const GLYPH_HEX: Record<GlyphColor, string> = {
 const WELL_BLACK_HEX = '#000000'
 function paletteHex(color: PaletteColor): string {
   return color === 'black' ? WELL_BLACK_HEX : GLYPH_HEX[color]
+}
+
+/**
+ * The well's colour hex for a frame. While a superzapper flash is active it OVERRIDES
+ * the well with the strobe ramp (Story 10-15, `QFRAME AND 7`); otherwise the well is
+ * its per-bank COLTAB slot-6 colour — `#000000` (background) on the invisible-well
+ * waves 65-80. Pure and level-keyed, so the wiring is testable without a canvas —
+ * this replaces the mutation-gameable well-wiring source-scan of tp1-12.
+ */
+export function resolveWellColor(level: number, zapFlash: number | null): string {
+  if (zapFlash != null) return LEVEL_COLORS[zapFlash % LEVEL_COLORS.length]
+  return paletteHex(wellColor(level))
 }
 
 // Swing `from` to `to` along the circular arc about `pivot`, interpolating BOTH
@@ -150,7 +162,6 @@ const starfield = createStarfield()
 export function advanceStarfield(dt: number): void {
   starfield.step(dt)
 }
-const STAR_COLOR = '#7fc3ff' // blue star dots
 // The 4 reused star "pictures": fixed unit directions from screen centre. Each
 // plane scatters its picture's dots outward as it dives, so 8 planes share 4
 // constellations (the book's "4 reused star pictures").
@@ -164,7 +175,7 @@ const STAR_PICTURE_DOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>>
 // Step the starfield one frame and stroke every live plane. A plane's Z maps to
 // a radial reach: far (Z≈STAR_SPAWN_Z) sits near centre, near (Z≈STAR_RETIRE_Z)
 // flings its dots to the edges — the "flying down the tube" rush. Warp-only.
-function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number, level: number): void {
   // NOTE: this no longer STEPS the starfield — it only strokes it. Advancing state
   // inside a draw call was the whole defect (FR-017): draw runs once per rendered
   // frame, so the dive's speed tracked the monitor and kept running while paused.
@@ -173,12 +184,16 @@ function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): voi
   const cy = H / 2
   const reach = Math.hypot(W, H) * 0.6
   const span = STAR_SPAWN_Z - STAR_RETIRE_Z
-  ctx.fillStyle = STAR_COLOR
-  ctx.shadowColor = STAR_COLOR
-  for (const plane of starfield.planes) {
+  // DB-017: each plane takes its own colour through the palette (blue until wave 5,
+  // then per-plane index). starColor may resolve to black in the invisible-well
+  // waves, which paletteHex renders as background — a faithful vanish.
+  starfield.planes.forEach((plane, i) => {
     const t = (STAR_SPAWN_Z - plane.z) / span // 0 (far, centre) → 1 (near, edge)
     const r = t * reach
     const size = 0.6 + t * 1.8
+    const hex = paletteHex(starColor(level, i))
+    ctx.fillStyle = hex
+    ctx.shadowColor = hex
     ctx.globalAlpha = 0.25 + t * 0.7
     ctx.shadowBlur = 4 + t * 8
     for (const [ux, uy] of STAR_PICTURE_DOTS[plane.picture]) {
@@ -186,7 +201,7 @@ function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): voi
       ctx.arc(cx + ux * r, cy + uy * r, size, 0, Math.PI * 2)
       ctx.fill()
     }
-  }
+  })
   ctx.globalAlpha = 1
 }
 
@@ -365,12 +380,12 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
         fp = arc.pos
         spin = baseAngle + arc.swing * t
       }
-      strokeGlyph(ctx, flipperGlyph(), fp.x, fp.y, r / 4, spin, 14)
+      strokeGlyph(ctx, flipperGlyph(s.level), fp.x, fp.y, r / 4, spin, 14)
       break
     }
     case 'tanker': {
-      // X-diamond body + the emblem of whatever it splits into.
-      strokeGlyph(ctx, tankerGlyph(e.contains), p.x, p.y, r / 9, 0, 14)
+      // X-diamond body (recolours per bank) + the cargo emblem (keeps its hue).
+      strokeGlyph(ctx, tankerGlyph(s.level, e.contains), p.x, p.y, r / 9, 0, 14)
       break
     }
     case 'spiker': {
@@ -384,15 +399,16 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
       break
     }
     case 'pulsar': {
-      // Zig-zag bar whose jaggedness animates while pulsing (PULTAB). The COLOUR does
-      // not: PULPIC (ALDISP.MAC:861-867) is a plain two-state toggle on the sign of
-      // PULSON — white for the whole pulse window, turquoise otherwise. `beat` drives
-      // only the glow, which has no ROM counterpart; it must not reach the colour.
+      // Zig-zag bar whose jaggedness animates while pulsing (PULTAB). The COLOUR is a
+      // two-state SLOT toggle, not fixed hues: PULPIC (ALDISP.MAC:861-867) picks COLRAM
+      // slot 0 (white) while pulsing and slot 4 (per-bank PULSARS) when idle, both
+      // resolved through the wave-group bank. `beat` drives only the glow (no ROM
+      // counterpart); it must not reach the colour.
       const beat = e.pulsing ? 0.5 + 0.5 * Math.sin(renderTime * 18) : 0
       const variant = e.pulsing
         ? pulsarVariant(Math.floor((0.5 + 0.5 * Math.sin(renderTime * 12)) * 0xff))
         : 4 // flat bar when dormant
-      const color = pulsarColor(e.pulsing)
+      const color = pulsarColor(s.level, e.pulsing)
       strokeGlyph(ctx, pulsarBar(variant), p.x, p.y, r / 4, 0, e.pulsing ? 22 + beat * 18 : 12, color)
       if (e.pulsing) {
         // Electrify the whole lane as a warning (boundary-safe quad).
@@ -961,15 +977,13 @@ export function render(
   // through the spectrum, then revert to the wave-group well colour the frame the
   // flashes stop. The renderer owns the index→hue mapping (events.ts: "the renderer
   // maps it to the palette"); LEVEL_COLORS' eight hues remain the strobe ramp.
-  const wellHex = fx.zapFlash != null
-    ? LEVEL_COLORS[fx.zapFlash % LEVEL_COLORS.length]
-    : paletteHex(wellName)
+  const wellHex = resolveWellColor(s.level, fx.zapFlash)
   drawTube(pctx, s, wellHex, currentLane(s.tube, s.player.lane))
   drawSpikes(pctx, s)
   if (s.mode === 'warp') {
     // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
     // The 8-plane starfield streams out behind the Claw for the dive spectacle.
-    drawStarfield(pctx, W, H)
+    drawStarfield(pctx, W, H, s.level)
     drawWarp(pctx, s, color)
   } else {
     // Not warping — clear the starfield so the next dive starts from centre.

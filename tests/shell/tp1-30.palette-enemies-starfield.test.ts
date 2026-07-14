@@ -158,8 +158,8 @@ describe('AC2 / V-019 — flipper colour resolves through COLTAB slot 3 (FLICOL)
 // AC2 — the TANKER body recolours (slot 2); the cargo EMBLEM survives
 // ===========================================================================
 describe('AC2 — tanker: BODY resolves through slot 2, cargo EMBLEM keeps its meaning', () => {
-  it('the body colour is slot 2 (TANKERS) at every bank — purple/blue/cyan/green/purple/purple', () => {
-    const wantByBank: PaletteColor[] = ['purple', 'blue', 'cyan', 'green', 'purple', 'purple']
+  it('the body colour is slot 2 (TANKERS) at every bank — purple/blue/cyan/purple/purple/purple', () => {
+    const wantByBank: PaletteColor[] = ['purple', 'blue', 'cyan', 'purple', 'purple', 'purple']
     BANK_LEVEL.forEach((level, bank) => {
       const body = bodyOf(tankerGlyph(level, 'pulsar'))
       expect(body, `tanker body must exist @ level ${level}`).toBeDefined()

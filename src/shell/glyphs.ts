@@ -24,6 +24,13 @@ export type GlyphColor = 'red' | 'green' | 'yellow' | 'cyan' | 'white' | 'orange
 // is not a glyph), so `black` is a palette colour, not a GlyphColor.
 export type PaletteColor = GlyphColor | 'black'
 
+/** Narrow a resolved palette colour to a glyph colour. The enemy slots (0-5, 7)
+ *  are never the bank-4 invisible-well black — only slot 6 is (ALDISP.MAC:2447) —
+ *  so this keeps "no glyph is ever black" true; the fallback never fires for them. */
+function asGlyphColor(c: PaletteColor): GlyphColor {
+  return c === 'black' ? 'white' : c
+}
+
 export interface GlyphStroke {
   readonly points: readonly { readonly x: number; readonly y: number }[]
   readonly closed: boolean
@@ -86,23 +93,27 @@ const FLIPPER_DELTAS: readonly [number, number][] = [
   [4, 1], [4, -1], [-2, 1], [1, 1], [-3, -1], [-3, 1], [1, -1], [-2, -1],
 ]
 
-export function flipperGlyph(): Glyph {
+export function flipperGlyph(level: number): Glyph {
   // The deltas sum to (0,0) → a closed loop. Accumulating them lands the final
   // vertex back on the origin, so drop it: 8 distinct vertices, one of which
   // coincides with an earlier vertex (the bowtie's central crossing).
   const verts = fromDeltas(FLIPPER_DELTAS).slice(0, FLIPPER_DELTAS.length)
-  return [{ points: center(verts), closed: true, color: 'red' }]
+  // FLICOL is COLRAM slot 3 (ALDISP.MAC:670 `LDA I,FLICOL`; RED=3, ALCOMN.MAC:354):
+  // the per-bank FLIPPERS slot — red only in bank 0, purple/green/yellow beyond (V-019).
+  return [{ points: center(verts), closed: true, color: asGlyphColor(paletteColor(level, 3)) }]
 }
 
 // ==========================================================================
 // B. Tanker — elongated PURPLE X-diamond body + cargo emblem (draw_tanker).
 // ==========================================================================
-export function tankerGlyph(cargo: TankerCargo): Glyph {
-  // Body: GENTNK purple (ROM authentic), elongated (taller than wide) X-diamond.
+export function tankerGlyph(level: number, cargo: TankerCargo): Glyph {
+  // Body: GENTNK is COLRAM slot 2 (TANKERS; TANCOL=PURPLE, purple only in bank 0),
+  // an elongated (taller than wide) X-diamond. Only the BODY recolours per bank —
+  // the cargo emblem below keeps its cargo-signalling hue (V-019: not a blanket override).
   const body: GlyphStroke = {
     points: [{ x: 0, y: -9 }, { x: 6, y: 0 }, { x: 0, y: 9 }, { x: -6, y: 0 }],
     closed: true,
-    color: 'purple',
+    color: asGlyphColor(paletteColor(level, 2)),
   }
   // Flipper-cargo tanker carries no emblem (ROM l.4798); pulsar (l.4628) and
   // fuzzball (l.4711) cargo each prepend a distinct emblem showing the split.
@@ -201,8 +212,22 @@ export function pulsarVariant(pulsing: number): number {
   return PULSAR_DP_T1[idx] - 0x09
 }
 
-export function pulsarColor(bright: boolean): GlyphColor {
-  return bright ? 'white' : 'cyan'
+// PULPIC (ALDISP.MAC:861-867) does not hard-code hues — it SELECTS a COLRAM slot:
+// `LDA I,WHITE`(=slot 0) while pulsing, `LDA I,TURQOI`(=slot 4, PULSARS) when idle
+// (WHITE/TURQOI are slot indices, ALCOMN.MAC:351-358). Both resolve through the bank,
+// so a dormant pulsar recolours per wave-group (cyan/yellow/purple/… ) while a pulsing
+// one is white in every bank. "white/cyan" is merely bank 0's instance of slots 0/4.
+export function pulsarColor(level: number, bright: boolean): GlyphColor {
+  return asGlyphColor(paletteColor(level, bright ? 0 : 4))
+}
+
+/** A warp-starfield plane's colour (DSTARF, ALDISP.MAC:2949-2961): every plane is
+ *  BLUE (slot 6) for waves 1-4; from wave 5 each plane takes its own index `& 7`
+ *  (index 7 remapped to slot 4), resolved through the wave-group bank. */
+export function starColor(level: number, planeIndex: number): PaletteColor {
+  if (level < 5) return paletteColor(level, 6) // BLUE — paletteColor guards a non-finite level
+  const idx = planeIndex & 7
+  return paletteColor(level, idx === 7 ? 4 : idx)
 }
 
 // ==========================================================================
@@ -365,12 +390,18 @@ export const WELL_SLOT = 6
 /** The per-wave-group bank for a 1-based level. INICOL: advances every 16 waves,
  *  saturates at the sixth bank (the ROM's `CMP I,5F` clamp — our level has no cap). */
 export function paletteBank(level: number): number {
+  // Guard a non-finite level (Math.floor(NaN) would poison the clamp) — the enemy
+  // and starfield callers landed in tp1-30 can now reach this with a bad level.
+  if (!Number.isFinite(level)) return 0
   return Math.max(0, Math.min(COLTAB_BANKS.length - 1, Math.floor((level - 1) / 16)))
 }
 
 /** Resolve a colour slot (0-7) through the level's COLTAB bank. */
 export function paletteColor(level: number, slot: number): PaletteColor {
-  return COLTAB_BANKS[paletteBank(level)][slot]
+  // Clamp the slot into [0,7] so an out-of-range or non-finite slot returns a real
+  // palette colour instead of `undefined` (which would break the render loop).
+  const s = Number.isFinite(slot) ? Math.max(0, Math.min(7, Math.floor(slot))) : 0
+  return COLTAB_BANKS[paletteBank(level)][s]
 }
 
 /** The well's colour for a level — `black` (invisible) on waves 65-80 (bank 4). */
