@@ -250,7 +250,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 446,
+      "line": 459,
       "verbatim": "    spikerSpeed: 0.22 * ramp,"
     },
     "claim": "TSPIIN's first record ('TSPIIN:\t.BYTE TB,1,20.,0', ALWELG.MAC:602) is type TB (byte + WINVIL) with byte 0, so for waves 1-20 the spiker's climb speed IS the flipper's: 1.375 along-units/frame at wave 1 = 0.1746 depth/s at the real base. We ship spikerSpeed = 0.22 * ramp = 0.22 depth/s at level 1 - 26% FASTER than the arcade's spiker, not the '40% slower' W-014 reports (a figure obtained by comparing 0.22 against the 60-based 0.368).",

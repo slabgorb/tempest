@@ -5,7 +5,7 @@ import { Tube, wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
-  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, SPLIT_CHILD_DEPTH, LevelParams,
+  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
   SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH,
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
@@ -215,11 +215,34 @@ function stepPulseClock(s: GameState): void {
   }
 }
 
-// Two cargo enemies straddling the tanker on the FLANKING lanes seg-1 and seg+1
-// (authentic rev-3, story 6-9) — the tanker's own lane is left empty. Depth is
-// capped just below the rim so a rim-split is not an instant grab.
+// A tanker's death is THREE rules, and they are one mechanism. Ship any two and the
+// rim-burst is not the cabinet's (W-030, W-032).
+//
+//   1. WHERE THE CHILDREN LAND. Two cargo enemies straddle the tanker on the FLANKING
+//      lanes seg-1 and seg+1 (authentic rev-3, story 6-9) — its own lane is left EMPTY.
+//      That vacancy is the whole of the burst's fairness: the player who tracked the
+//      tanker and stood on its lane to shoot it is the one player it cannot grab.
+//
+//   2. HOW DEEP THEY LAND (W-030, this line). KILINV (ALWELG.MAC:2300-2302) opens by
+//      saving the dying parent's own along value — `LDA Y,INVAY / STA TEMP0` — and
+//      ACTINV (1219-1226), called once per child off KILINV's tail, seats each one
+//      straight back out of it:
+//
+//          LDA TEMP0
+//          STA Y,INVAY
+//
+//      Both children are born at the parent's EXACT depth. There is no clamp in the
+//      cabinet. This used to read `Math.min(t.depth, SPLIT_CHILD_DEPTH)` — a deliberate
+//      softening (0.85, "so a rim-split is not an instant grab") that predates the
+//      fidelity epic. A carrier that arrives under its own steam bursts at 0.9286, which
+//      is ABOVE PLAYER_RIM_DEPTH (0.92), and drops both children there: a player caught
+//      on a flanking lane is grabbed on the burst frame, with no counterplay. That is the
+//      arcade, and tp1-24 ratified it.
+//
+//   3. WHAT PROGRAM THEY RUN (W-032, below) — and it is rule 3 that makes rule 2
+//      survivable.
 export function splitTanker(t: Tanker, tube: Tube, params: LevelParams): Enemy[] {
-  const depth = Math.min(t.depth, SPLIT_CHILD_DEPTH)
+  const depth = t.depth
   const kids = [
     makeEnemy(t.contains, wrapLane(tube, t.lane - 1), depth, params),
     makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),
@@ -231,8 +254,10 @@ export function splitTanker(t: Tanker, tube: Tube, params: LevelParams): Enemy[]
   // two flippers that climb the lanes they landed on and cannot flip onto him. Split it
   // deeper down and its children get the wave's program like anything else.
   //
-  // The test is the depth the PARENT died at, not the children's — they are seated at
-  // SPLIT_CHILD_DEPTH, below the threshold they are being judged against.
+  // It reads TEMP0 — the depth the PARENT died at — which is now also the depth the
+  // children are born at (rule 2). One byte, and every branch that touches this burst
+  // reads it: JSMOVE fires the split at $20, SPLCHA judges it at $20, and the children
+  // land on it. They are the same number and rules.ts keeps them that way.
   if (t.depth >= SPLIT_TOO_CLOSE_DEPTH) {
     for (const k of kids) k.camPc = genericCamFor(k.kind)
   }
