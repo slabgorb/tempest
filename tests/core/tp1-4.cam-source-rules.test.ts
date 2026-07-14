@@ -139,4 +139,52 @@ describe('tp1-4 — lang-review rules on the new code', () => {
       expect(Number.isInteger(b) && b >= 0 && b <= 0xff, `CAM[${i}] = ${b} is not a byte`).toBe(true)
     }
   })
+
+  it('the CAM ITSELF fits in a byte-addressed space — the trap the rule above cannot see', () => {
+    // The assembler stores an address operand as `(target - 1) & 0xff` (cam.ts), and
+    // the interpreter's PC wraps to a byte to match. That is the ROM's own encoding —
+    // but it means that the day the CAM grows past 256 bytes, a jump target SILENTLY
+    // TRUNCATES and the program lands somewhere else entirely.
+    //
+    // The byte-range rule above looks like it guards this. It cannot: the `& 0xff`
+    // GUARANTEES every value it inspects is already in range, so it can never fail
+    // for this reason. It is a vacuous guard against precisely this failure, and only
+    // this assertion closes it.
+    //
+    // This matters NOW: story tp1-5 adds the chaser and grows this table. The CAM is
+    // ~110 bytes today, so there is plenty of room — but the failure is silent, and a
+    // silent failure with room to spare is a trap, not a safety margin.
+    expect(CAM.length, 'a CAM longer than 256 bytes cannot be addressed by a one-byte PC')
+      .toBeLessThanOrEqual(0x100)
+  })
+
+  it('every switch over the enemy kind is exhaustive (checklist §3)', () => {
+    // `speedFor` in interpreter.ts switches on e.kind with no default arm. Today it
+    // covers all five kinds, so it compiles and runs. Add a SIXTH EnemyKind — a
+    // chaser, say, which is exactly what tp1-5 is about — and TypeScript will not
+    // complain (noImplicitReturns is off): speedFor returns undefined, every speed
+    // becomes NaN, and every invader's depth silently becomes NaN with it.
+    //
+    // The interpreter's other switches already do this right (runCam and camParam
+    // both `default: throw`, and makeEnemy throws after its switch). This is the one
+    // that does not.
+    const code = stripComments(read('src/core/enemies/interpreter.ts'))
+    const offenders: string[] = []
+    const re = /switch\s*\(\s*e\.kind\s*\)\s*\{/g
+    for (let m = re.exec(code); m !== null; m = re.exec(code)) {
+      // Walk to the matching brace, then look for a default arm inside it.
+      let depth = 0
+      let end = m.index + m[0].length - 1
+      for (let i = end; i < code.length; i++) {
+        if (code[i] === '{') depth += 1
+        else if (code[i] === '}') { depth -= 1; if (depth === 0) { end = i; break } }
+      }
+      const body = code.slice(m.index, end)
+      if (!/\bdefault\s*:/.test(body)) offenders.push(`switch at index ${m.index}`)
+    }
+    expect(
+      offenders,
+      `a switch on e.kind with no default arm will return undefined for a new EnemyKind:\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
 })

@@ -24,15 +24,30 @@
 // differ by ONE opcode's position, and no per-kind stepper with a tunable
 // constant can be both at once.
 //
-// ── Wave choice is not arbitrary ─────────────────────────────────────────────
-// AVOIDR also runs on wave 10, but wave 10 is an OPEN sheet (lev_open[9]=0xff,
-// geometry.ts ROM_OPEN) where lanes clamp instead of wrapping and "away from the
-// player" stops being well-defined at the edge. Wave 15 is AVOIDR on a CLOSED
-// tube. Likewise COWJMP is tested on wave 5 (closed), not 9 or 13.
+// ── The wave brings its own WELL, and the well changes the rules ─────────────
+// This header used to say "Wave 15 is AVOIDR on a CLOSED tube". That was false,
+// and the fixture below hid it: `flipperOnWave` set `s.level` but never rebuilt
+// `s.tube`, and GameState.tube is only replaced on a real level transition — so
+// every test in this file ran on LEVEL 1's closed 16-lane circle no matter which
+// wave it named. For waves 2/3/4/5/17 that was a harmless coincidence (they are
+// closed). For AVOIDR it was fatal.
+//
+// BOTH of AVOIDR's waves are OPEN sheets:
+//   wave 10 → ROM_REMAP[9]  = 0x09 → ROM_OPEN[9]  = 0xff   OPEN, 15 lanes
+//   wave 15 → ROM_REMAP[14] = 0x0a → ROM_OPEN[10] = 0xff   OPEN, 15 lanes
+// so the one program whose whole purpose is a DIRECTION was never once exercised
+// on the board it actually runs on. The fixture now builds the wave's real tube.
+//
+// An open sheet has no seam, and the ROM knows it: `LDA I,0FF / STA WELTYP` is
+// commented ";PREVENT WRAP" (ALWELG.MAC:186-187), and POLDEL (1876-1889) SKIPS
+// its `AND I,0F` shortest-way reduction whenever WELTYP is set. On a planar well
+// "toward the player" is the plain linear difference — you cannot go the long way
+// round, because there is no way round.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import { levelParams, SIM_STEP } from '../../src/core/rules'
+import { tubeForLevel, Tube } from '../../src/core/geometry'
 import { Input } from '../../src/core/input'
 import { GameState, Enemy } from '../../src/core/state'
 
@@ -47,6 +62,10 @@ function flipperOnWave(level: number, opts: {
 }): GameState {
   const s = playingState(opts.seed ?? 1)
   s.level = level
+  // The wave's OWN well — closed circle or open sheet, 16 lanes or 15. Without
+  // this the whole file silently tests wave 1's tube.
+  s.tube = tubeForLevel(level)
+  s.spikes = new Array(s.tube.laneCount).fill(0)
   s.spawn.remaining = 0          // no reinforcements — one enemy, one program
   s.player.lane = opts.playerLane
   s.enemies = [makeEnemy('flipper', opts.lane, opts.depth, levelParams(level))]
@@ -74,20 +93,33 @@ function climbSamples(s0: GameState, frames: number): Sample[] {
   return out
 }
 
-/** Signed lane delta on a closed tube, taking the short way round. */
-function signedDelta(from: number, to: number, laneCount: number): number {
-  let d = (to - from) % laneCount
-  if (d > laneCount / 2) d -= laneCount
-  if (d < -laneCount / 2) d += laneCount
-  return d
+/**
+ * The signed lane difference, as POLDEL (ALWELG.MAC:1876-1889) computes it.
+ *
+ *   CLOSED tube — take the short way round: `AND I,0F`, then sign-extend when the
+ *     delta is >= 8 (`BIT A,EIGHT / ORA I,0F8`, ";TAKE SHORTEST ROUTE").
+ *   OPEN sheet  — the RAW linear difference. WELTYP is 0xFF here (";PREVENT WRAP",
+ *     ALWELG.MAC:186-187) and POLDEL's `BIT WELTYP / IFPL` guard skips the modular
+ *     reduction entirely. There is no way round a sheet, so there is no short way.
+ *
+ * Using the closed-tube rule on an open sheet is exactly the bug this suite missed.
+ */
+function laneDelta(tube: Tube, from: number, to: number): number {
+  const d = to - from
+  if (!tube.closed) return d
+  const n = tube.laneCount
+  let m = d % n
+  if (m > n / 2) m -= n
+  if (m < -n / 2) m += n
+  return m
 }
 
 /** The direction of each COMPLETED flip: a settled lane change. */
-function flipDirections(samples: Sample[], laneCount: number): number[] {
+function flipDirections(samples: Sample[], tube: Tube): number[] {
   const dirs: number[] = []
   for (let i = 1; i < samples.length; i++) {
     if (samples[i].lane !== samples[i - 1].lane) {
-      dirs.push(Math.sign(signedDelta(samples[i - 1].lane, samples[i].lane, laneCount)))
+      dirs.push(Math.sign(laneDelta(tube, samples[i - 1].lane, samples[i].lane)))
     }
   }
   return dirs
@@ -114,7 +146,6 @@ describe('tp1-4 — THE ORACLE: a wave-1 flipper never flips while climbing', ()
   // the whole cluster.
   it('holds its lane for the entire climb', () => {
     const s = flipperOnWave(1, { lane: 4, depth: 0, playerLane: 12 })
-    const laneCount = s.tube.laneCount
     const samples = climbSamples(s, 200)
 
     // Guard against a vacuous pass: the flipper must actually have climbed a
@@ -129,7 +160,7 @@ describe('tp1-4 — THE ORACLE: a wave-1 flipper never flips while climbing', ()
       [...lanes],
       `a wave-1 flipper must never change lane while climbing; it visited ${[...lanes]}`,
     ).toEqual([4])
-    expect(flipDirections(samples, laneCount)).toEqual([])
+    expect(flipDirections(samples, s.tube)).toEqual([])
   })
 
   it('still holds on wave 17 — CAMWAV wraps, it does not run off the end', () => {
@@ -152,7 +183,7 @@ describe('tp1-4 — the wave-2 / wave-3 pair: one opcode apart, two behaviours',
     const s = flipperOnWave(2, { lane: 4, depth: 0, playerLane: 12 })
     const samples = climbSamples(s, 120)
 
-    expect(flipDirections(samples, s.tube.laneCount).length, 'MOVJMP must flip at all')
+    expect(flipDirections(samples, s.tube).length, 'MOVJMP must flip at all')
       .toBeGreaterThan(0)
     // A MOVJMP jump runs many frames with no VSMOVE in the loop. We do not pin
     // the exact count (that is emergent from JJUMPM's angle-step budget, W-008);
@@ -167,7 +198,7 @@ describe('tp1-4 — the wave-2 / wave-3 pair: one opcode apart, two behaviours',
     const s = flipperOnWave(3, { lane: 4, depth: 0, playerLane: 12 })
     const samples = climbSamples(s, 120)
 
-    expect(flipDirections(samples, s.tube.laneCount).length, 'SPIRAL must flip')
+    expect(flipDirections(samples, s.tube).length, 'SPIRAL must flip')
       .toBeGreaterThan(0)
     // The climb pauses for EXACTLY ONE frame per jump — the frame that runs VJUMPS.
     //
@@ -198,7 +229,7 @@ describe('tp1-4 — wave 4 (SPIRCH): reverse after 2 flips, then after 3', () =>
   // it cannot produce this pattern except by accident.
   it('flips in the ROM\'s 2-then-3 pattern, indefinitely', () => {
     const s = flipperOnWave(4, { lane: 8, depth: 0, playerLane: 0 })
-    const dirs = flipDirections(climbSamples(s, 200), s.tube.laneCount)
+    const dirs = flipDirections(climbSamples(s, 200), s.tube)
 
     expect(dirs.length, 'need at least one full period plus its repeat')
       .toBeGreaterThanOrEqual(6)
@@ -227,7 +258,7 @@ describe('tp1-4 — wave 5 (COWJMP): it will not flip off a spike', () => {
     expect(samples.length, 'it must stay on the lane long enough to matter')
       .toBeGreaterThan(30)
     expect(
-      flipDirections(samples, s.tube.laneCount),
+      flipDirections(samples, s.tube),
       'a COWJMP flipper standing on a spike must not flip',
     ).toEqual([])
     // It must still CLIMB — "does not flip" must not be won by standing still.
@@ -240,36 +271,112 @@ describe('tp1-4 — wave 5 (COWJMP): it will not flip off a spike', () => {
 
     const samples = climbSamples(s, 40)
     expect(
-      flipDirections(samples, s.tube.laneCount).length,
+      flipDirections(samples, s.tube).length,
       'with no spike underfoot, COWJMP must reach its VJUMPS',
     ).toBeGreaterThan(0)
   })
 })
 
-describe('tp1-4 — wave 15 (AVOIDR): the avoidance flipper flees the player', () => {
-  // VCHPLA (toward the player) immediately followed by VCHROT (reverse it).
-  // Ours picks a direction at random, so across three seeds it cannot keep
-  // choosing "away" — that is what makes this a real test and not a coin toss.
-  // Wave 15, not wave 10: wave 10's sheet is OPEN and its edge lanes clamp.
-  it.each([1, 7, 99])('flees on every flip (seed %i)', (seed) => {
-    const s = flipperOnWave(15, { lane: 8, depth: 0, playerLane: 10, seed })
-    const laneCount = s.tube.laneCount
-    const samples = climbSamples(s, 120)
+describe('tp1-4 — AVOIDR: the avoidance flipper flees the player', () => {
+  // VCHPLA (toward the player) immediately followed by VCHROT (reverse it): the
+  // ROM spends two opcodes to say "flee". AVOIDR runs on waves 10 and 15, and
+  // BOTH are open sheets — so an open sheet is not an exotic case for this
+  // program, it is the ONLY case.
 
-    // Only judge flips taken while the player is unambiguously to one side:
-    // at half a tube away, "toward" and "away" are the same thing.
+  /**
+   * Judge every flip as +1 (toward the player) or -1 (away), skipping the ones
+   * the ROM does not decide by rule:
+   *
+   *   - a flip STARTING on an edge lane of an open sheet. OKTOJM (ALWELG.MAC:
+   *     2051-2060) deliberately reverses the rotation of an invader about to jump
+   *     off the edge — "AT RIGHT EDGE? YES CHANGE TO CW JUMP". A flipper that has
+   *     fled into the wall turning round is authentic, not a failure to flee.
+   *   - a player exactly half a closed tube away, where toward and away coincide.
+   */
+  function judgeFlips(s0: GameState, frames: number): number[] {
+    const tube = s0.tube
+    const samples = climbSamples(s0, frames)
     const judged: number[] = []
     for (let i = 1; i < samples.length; i++) {
-      if (samples[i].lane === samples[i - 1].lane) continue
-      const toPlayer = signedDelta(samples[i - 1].lane, s.player.lane, laneCount)
-      if (Math.abs(toPlayer) === laneCount / 2 || toPlayer === 0) continue
-      const flip = Math.sign(signedDelta(samples[i - 1].lane, samples[i].lane, laneCount))
+      const from = samples[i - 1].lane
+      if (samples[i].lane === from) continue
+      if (!tube.closed && (from === 0 || from === tube.laneCount - 1)) continue // OKTOJM
+      const toPlayer = laneDelta(tube, from, s0.player.lane)
+      if (toPlayer === 0) continue
+      if (tube.closed && Math.abs(toPlayer) === tube.laneCount / 2) continue
+      const flip = Math.sign(laneDelta(tube, from, samples[i].lane))
       judged.push(flip * Math.sign(toPlayer))   // +1 = toward the player, -1 = away
     }
+    return judged
+  }
 
+  // THE CASE THE OLD SUITE COULD NOT SEE.
+  //
+  // On a 15-lane open sheet the player at lane 12 is +9 from an invader at lane 3.
+  // Nine is more than half the board, so this is exactly where "shortest way round"
+  // and "the plain difference" DISAGREE — and on a sheet with no seam, only the
+  // plain difference exists. Wrap-around arithmetic says the player lies at -6
+  // ("just go backwards through the join"), there being no join, and hands AVOIDR a
+  // flee direction that walks it straight INTO him.
+  //
+  // The old fixture never built this well, so this never ran. It is the whole bug.
+  it.each([
+    { wave: 15, lane: 3, playerLane: 12 },   // player far to the RIGHT  → must flee LEFT
+    { wave: 15, lane: 11, playerLane: 2 },   // player far to the LEFT   → must flee RIGHT
+    { wave: 10, lane: 3, playerLane: 12 },   // the other AVOIDR wave, also open
+  ])('wave $wave: flees a player $playerLane lanes away, across the half-board line', (c) => {
+    const s = flipperOnWave(c.wave, { lane: c.lane, depth: 0, playerLane: c.playerLane })
+    expect(s.tube.closed, `wave ${c.wave} must be an OPEN sheet — that is the point`).toBe(false)
+    expect(
+      Math.abs(c.playerLane - c.lane),
+      'the player must be MORE than half a board away, or wrap and no-wrap agree',
+    ).toBeGreaterThan(s.tube.laneCount / 2)
+
+    const judged = judgeFlips(s, 160)
+    expect(judged.length, 'AVOIDR must actually flip').toBeGreaterThanOrEqual(2)
+    expect(judged, 'every AVOIDR flip must be AWAY from the player (-1), never toward (+1)')
+      .toEqual(judged.map(() => -1))
+  })
+
+  // Starting NEAR the player, where wrap and no-wrap initially agree. This one is
+  // the most damning of the three, and I nearly wrote it off as a control that would
+  // pass either way.
+  //
+  // It does not pass. The flipper starts at lane 8 with the player at 10, correctly
+  // flees DOWN — and keeps fleeing, until around lane 2 it has put more than half the
+  // board between them. At that instant the wrap-around arithmetic decides the player
+  // is now nearer "the other way", VCHPLA points the wrong way, VCHROT dutifully
+  // reverses it, and the flipper TURNS AROUND AND CHARGES BACK. So the bug is not a
+  // quiet mis-aim in a corner case: it makes AVOIDR oscillate, fleeing and charging,
+  // and it does so from an ordinary starting position on the wave it actually runs on.
+  //
+  // The seeds are kept for their original purpose: a random direction cannot flee
+  // three times out of three by luck.
+  it.each([1, 7, 99])('flees a nearby player, and does not turn and charge back (seed %i)', (seed) => {
+    const s = flipperOnWave(15, { lane: 8, depth: 0, playerLane: 10, seed })
+    const judged = judgeFlips(s, 120)
     expect(judged.length, 'AVOIDR must actually flip').toBeGreaterThanOrEqual(3)
     expect(judged, 'every AVOIDR flip must be AWAY from the player (-1)')
       .toEqual(judged.map(() => -1))
+  })
+
+  // And the closed-tube rule must SURVIVE the fix: a closed well really does have a
+  // short way round, and VCHPLA must still take it. PULSCH's VCHPLA and the
+  // fuseball's steering both lean on this, on wells that DO wrap.
+  it('still takes the short way ROUND on a closed tube (the rule that must not break)', () => {
+    // Wave 4 (SPIRCH) is closed and 16-lane. Its flips are decided by VCHROT, not
+    // VCHPLA, so instead of a flipper this pins the shared helper directly against
+    // the ROM's two branches: closed wraps, open does not.
+    const closed = tubeForLevel(4)
+    const open = tubeForLevel(15)
+    expect(closed.closed).toBe(true)
+    expect(open.closed).toBe(false)
+
+    // Lane 2 → lane 13 on a CLOSED 16-lane tube: the short way is BACKWARDS (-5),
+    // not forwards (+11). `AND I,0F` + sign-extend.
+    expect(laneDelta(closed, 2, 13)).toBe(-5)
+    // The same pair on an OPEN 15-lane sheet: +11 is simply +11. ";PREVENT WRAP".
+    expect(laneDelta(open, 2, 13)).toBe(11)
   })
 })
 
@@ -305,8 +412,8 @@ describe('tp1-4 — the interpreter is pure (AC-6)', () => {
       const [a, b] = cur.enemies
       if (!a || !b) break
       deltas.push([
-        signedDelta(2, a.lane, cur.tube.laneCount),
-        signedDelta(10, b.lane, cur.tube.laneCount),
+        laneDelta(cur.tube, 2, a.lane),
+        laneDelta(cur.tube, 10, b.lane),
       ])
     }
 
