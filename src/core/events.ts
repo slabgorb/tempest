@@ -123,9 +123,19 @@ export interface PulsarHumStopEvent {
   type: 'pulsar-hum-stop'
 }
 
-// The warp/zoom dive concluded (Story 10-11) — either it completed (reached the
-// next level) or the Claw crashed onto a spike. The shell stops the sustained
-// warp sound here so it spans exactly the dive (no early silence, no bleed).
+// The warp descent BEGAN (tp1-10, WD-017): the first frame the Claw actually leaves
+// the rim and dives, AFTER the AVOID-SPIKES hold. MOVCUD starts the thrust rumble
+// exactly here — "LDA CURSY / CMP I,ILINLI / IFEQ ;STILL AT TOP? / JSR SOUTS2 ;YES.
+// START RUMBLE" (ALWELG.MAC:1019-1023) — so the shell starts the sustained warp loop
+// on this edge, NOT at level-clear (warp entry), keeping it silent through the hold.
+// Fires once per dive, on the first descending frame.
+export interface WarpDescentStartEvent {
+  type: 'warp-descent-start'
+}
+
+// The warp/zoom dive concluded (Story 10-11) — either the descent bottomed out (the
+// eye fly-in begins) or the Claw crashed onto a spike. The shell stops the sustained
+// warp rumble here so it spans exactly the descent (no early silence, no bleed).
 export interface WarpEndEvent {
   type: 'warp-end'
 }
@@ -146,4 +156,5 @@ export type GameEvent =
   | ExtraLifeEvent
   | PulsarHumStartEvent
   | PulsarHumStopEvent
+  | WarpDescentStartEvent
   | WarpEndEvent

@@ -184,7 +184,11 @@ describe('the warp dive — the squared error, felt as time (AC5, AC6)', () => {
     expect(warping.mode, 'the cleared level must enter the warp').toBe('warp')
     expect(warping.warp.progress).toBe(0)
 
-    const { seconds } = runUntil(warping, (x) => x.mode !== 'warp', 10)
+    // tp1-10 (WD-018): the warp now has a post-descent EYE FLY-IN (mode stays 'warp'
+    // for WARP_FLYIN_FRAMES after the descent bottoms out). This times the DESCENT —
+    // the squared-error subject — so it stops when the fly-in begins (warp.flyIn > 0),
+    // not when the whole warp mode ends.
+    const { seconds } = runUntil(warping, (x) => x.mode !== 'warp' || (x.warp.flyIn ?? 0) > 0, 10)
 
     expect(seconds).toBeGreaterThan(1.30)
     expect(seconds).toBeLessThan(1.90)

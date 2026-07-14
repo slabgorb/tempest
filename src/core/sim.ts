@@ -10,6 +10,7 @@ import {
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
+  WARP_FLYIN_FRAMES,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
@@ -592,13 +593,15 @@ function respawn(s: GameState): void {
   s.player.alive = true
   s.player.respawnTimer = 0
   // A warp crash is the only way to enter 'dying' with warp.progress > 0 (normal
-  // play keeps it at 0). Resolve it by completing the level transition instead of
-  // returning to 'playing' — the level is already cleared, so re-entering the warp
-  // would let the still-persisted spike on the player's lane re-crash every
-  // respawn, draining all lives on neutral input (Story 3-6). advanceLevel resets
-  // the spikes and warp, so the next geometry loads cleanly with one life spent.
+  // play keeps it at 0). tp1-10 (WD-015) overturns Story 3-6's resolution against
+  // Theurer's source: the ROM does NOT advance on a crash. CURWAV is bumped in
+  // exactly one place — ENDWAV's `INC CURWAV` (ALEXEC.MAC:367), reachable only on a
+  // SUCCESSFUL arrival, never via the crash path (which enters CENDLI → ENDLIF,
+  // spending a life, ALWELG.MAC:3075). So a crash costs a life AND the wave: you
+  // REPLAY the same level. The re-run's INIENE clears the spikes, so the killing
+  // spike is gone and the drain loop cannot form (Story 3-6's intent, new mechanism).
   if (s.warp.progress > 0) {
-    advanceLevel(s)
+    replayWave(s)
     return
   }
   // Normal mid-level death: FULLY RESET the board (arcade rev-3 model). Every
@@ -740,13 +743,18 @@ function checkLevelClear(s: GameState): void {
     const spikeThreat = s.spikes.some((h) => h > 0)
     s.warp.warning =
       spikeThreat && s.level <= WARP_AVOID_SPIKES_MAX_LEVEL ? WARP_AVOID_SPIKES_SECONDS : 0
-    s.bullets = []
+    // tp1-10 (WD-014): do NOT wipe in-flight charges on warp entry. PLDROP keeps
+    // firing/moving charges every descending frame (FIREPC/MOVCHA, ALWELG.MAC:891-892),
+    // so a shot already down the lane keeps flying into the dive — the ROM does not
+    // clear it here. (INIENE clears charges on the eventual new wave, via startLevel.)
   }
 }
 
 // Swap in the next level's geometry, resize the per-lane spike array to the new
-// laneCount, wrap the player into the (possibly smaller) tube, then resume play.
-function advanceLevel(s: GameState): void {
+// laneCount, wrap the player into the (possibly smaller) tube, and re-arm the wave.
+// Shared by the descent→fly-in handoff (beginFlyIn) — this is the ROM's ENDWAV
+// (`INC CURWAV`) + INIENE, run BEFORE the eye fly-in. Leaves warp/mode to the caller.
+function loadNextWave(s: GameState): void {
   s.level += 1
   s.tube = tubeForLevel(s.level)
   // New wave: EASE the screen-Z translate toward the new well — the ROM's
@@ -756,10 +764,38 @@ function advanceLevel(s: GameState): void {
   s.spikes = new Array(s.tube.laneCount).fill(0)
   s.player.lane = wrapLane(s.tube, s.player.lane)
   startLevel(s)
+}
+
+// The descent bottomed out (tp1-10, WD-018): ENDWAV increments the wave and loads
+// the new well, then NEWAV2 flies the eye INTO it over WARP_FLYIN_FRAMES before play
+// resumes. The wave is already incremented here (matching CURWAV bumping BEFORE the
+// fly-in), so throughout the fly-in the NEW geometry is loaded but mode stays 'warp'
+// (play deferred). The fly-in countdown lives in stepWarp.
+function beginFlyIn(s: GameState): void {
+  loadNextWave(s)
   s.warp.progress = 0
   s.warp.velocity = 0
   s.warp.warning = 0
+  s.warp.flyIn = WARP_FLYIN_FRAMES
+  // mode stays 'warp' — the eye is still flying in; stepWarp resumes play at flyIn 0.
+}
+
+// A warp spike crash REPLAYS the same wave (tp1-10, WD-015): the level is NOT
+// advanced (CURWAV is untouched on the crash path), but the board is re-initialised
+// (INIENE) — spikes cleared, spawn budget re-armed — so the killing spike is gone and
+// the Claw returns to normal play on the SAME level with one life already spent.
+function replayWave(s: GameState): void {
+  s.tube = tubeForLevel(s.level) // same wave; re-seat the geometry defensively
+  s.spikes = new Array(s.tube.laneCount).fill(0) // INIENE clears the well of spikes
+  s.enemies = []
+  s.player.lane = RESPAWN_LANE
+  startLevel(s) // re-arm the spawn budget + Superzapper for the replayed wave
+  s.warp.progress = 0
+  s.warp.velocity = 0
+  s.warp.warning = 0
+  s.warp.flyIn = 0
   s.mode = 'playing'
+  s.events.push({ type: 'player-spawn', lane: currentLane(s.tube, s.player.lane) })
 }
 
 // tp1-31 (DB-008): advance the level-start slide one frame — the port of
@@ -811,22 +847,42 @@ function resolveWarpSpikeHit(s: GameState): boolean {
 // the Claw mid-dive (death + life loss); otherwise on arrival (progress ≥ 1) the
 // level advances.
 function stepWarp(s: GameState, dt: number): void {
+  // tp1-10 (WD-018): the post-descent EYE FLY-IN. The wave is already incremented and
+  // the new well loaded (beginFlyIn); the eye walks into it over WARP_FLYIN_FRAMES
+  // (NEWAV2, ALWELG.MAC:56-121) before play resumes. Checked FIRST so the descent
+  // logic (accel, descent-start edge, spike crash) never re-runs during the fly-in.
+  if ((s.warp.flyIn ?? 0) > 0) {
+    s.warp.flyIn = (s.warp.flyIn ?? 0) - 1
+    if ((s.warp.flyIn ?? 0) <= 0) {
+      s.warp.flyIn = 0
+      s.warp.progress = 0
+      s.warp.velocity = 0
+      s.mode = 'playing' // NEWAV2 reached EYLDES → CPLAY (ALWELG.MAC:109)
+    }
+    return
+  }
   if (s.warp.warning > 0) {
     s.warp.warning = Math.max(0, s.warp.warning - dt)
     return // still at the rim — the dive (and any spike crash) waits for the countdown
   }
+  // tp1-10 (WD-017): the first DESCENDING frame — the Claw is still at the rim
+  // (progress 0) and about to move, past the AVOID-SPIKES hold. MOVCUD starts the
+  // rumble exactly here (`CMP I,ILINLI / IFEQ / JSR SOUTS2`, ALWELG.MAC:1019-1023),
+  // and only here, so the shell begins the sustained warp loop on this edge.
+  if (s.warp.progress === 0) s.events.push({ type: 'warp-descent-start' })
   // WD-010 (tp1-23): warpAccel's ramp is indexed by the ROM's CURWAV, which is 0-based,
   // while s.level is the displayed 1-based number (state.ts seeds it at 1). Feeding it
   // s.level ran the whole ramp one wave early — the level-1 dive got 0x24 where the ROM
   // gives 0x20 (12.5% hot) and the cap landed on level 12 instead of 13.
   s.warp.velocity += warpAccel(s.level - 1) * dt
   s.warp.progress += s.warp.velocity * dt
-  if (resolveWarpSpikeHit(s)) return // crashed onto a spike — do not advance the level
+  if (resolveWarpSpikeHit(s)) return // crashed onto a spike — replay the wave, no advance
   if (s.warp.progress >= 1) {
-    // Story 10-11: the dive completed — stop the sustained warp sound on the same
-    // frame the level advances, so it spans the dive exactly (no bleed into next).
+    // The descent bottomed out. Stop the sustained rumble here (it spans the descent
+    // only — the fly-in's own space sound is a future story, TEA finding) and hand
+    // off to the eye fly-in, which loads the next wave and defers play.
     s.events.push({ type: 'warp-end' })
-    advanceLevel(s)
+    beginFlyIn(s)
   }
 }
 
@@ -971,7 +1027,17 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       stepPlaying(state, s, input, dt)
       break
     case 'warp':
-      stepPlayer(s, input) // the Claw may still rotate during the warp; firing is disabled
+      stepPlayer(s, input) // the Claw may still rotate during the warp
+      // tp1-10 (WD-014): PLDROP fires and moves player charges every DESCENDING frame,
+      // identically to the PLAY mainline (FIREPC/MOVCHA, ALWELG.MAC:891-892) — you can
+      // shoot all the way down to shorten a spike you are about to land on. This runs
+      // ONLY during the descent: NOT during the AVOID-SPIKES hold (that is CPAUSE →
+      // PAUSE, rotate-only) and NOT during the eye fly-in (play is deferred).
+      if (s.warp.warning === 0 && (s.warp.flyIn ?? 0) === 0) {
+        stepFiring(s, input)
+        stepBullets(s, dt)
+        resolveSpikeHits(s) // charges shorten the spikes they reach on the way down
+      }
       stepWarp(s, dt)
       break
     case 'dying':

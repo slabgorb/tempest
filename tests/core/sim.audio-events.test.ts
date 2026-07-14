@@ -178,22 +178,32 @@ describe('warp-end events (AC3: the warp sound spans the dive, no bleed/silence)
     expect(eventsOfType(out, 'level-clear')).toHaveLength(1)
   })
 
-  it('emits exactly one warp-end, on the frame the dive completes (warp → playing)', () => {
+  // tp1-10 (WD-017/WD-018) RE-SEATED: the sustained rumble spans the DESCENT only, so
+  // warp-end now fires when the descent BOTTOMS OUT — which begins the eye fly-in and
+  // stays in mode 'warp' for a few more frames (the fly-in) before play resumes. The
+  // intent is unchanged: exactly ONE warp-end across the dive, emitted as the descent
+  // ends (no bleed/silence). Only the capture is re-keyed off the leaving-'warp' frame
+  // (an old-implementation coupling) onto the frame warp-end is actually emitted.
+  it('emits exactly one warp-end, on the frame the descent bottoms out', () => {
     let s = stepGame(clearedAtLevel(1, 0), NEUTRAL, DT) // enter warp
     expect(s.mode).toBe('warp')
 
     let totalEnds = 0
-    let endsOnTransition = -1
-    for (let i = 0; i < 1000 && s.mode === 'warp'; i++) {
-      const wasWarp = s.mode === 'warp'
+    let endsOnDescentEnd = -1
+    let modeWhenEmitted = ''
+    for (let i = 0; i < 1000 && s.mode !== 'playing'; i++) {
       s = stepGame(s, NEUTRAL, DT)
       const ends = eventsOfType(s, 'warp-end').length
       totalEnds += ends
-      if (wasWarp && s.mode !== 'warp') endsOnTransition = ends
+      if (ends > 0) {
+        endsOnDescentEnd = ends
+        modeWhenEmitted = s.mode // still warping — the fly-in continues after the descent
+      }
     }
-    expect(s.mode).toBe('playing') // the dive really finished
+    expect(s.mode).toBe('playing') // the dive really finished (descent + fly-in)
     expect(totalEnds).toBe(1) // one stop signal across the whole dive — no bleed
-    expect(endsOnTransition).toBe(1) // emitted exactly as the dive ends
+    expect(endsOnDescentEnd).toBe(1) // emitted exactly as the descent ends
+    expect(modeWhenEmitted).toBe('warp') // the eye fly-in still runs after warp-end
   })
 
   it('emits a warp-end on a mid-dive spike crash (the loop stops, no runaway hum)', () => {

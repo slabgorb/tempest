@@ -189,7 +189,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 255,
+      "line": 256,
       "verbatim": "    { stroke: 'rgba(150,190,255,0.28)', width: 1.5, blur: 6, color }, tube.closed,"
     },
     "claim": "RATS = 0xC0 (ALDISP.MAC:33). WELPIC drives every spoke at that constant intensity (ALDISP.MAC:2625) and OUTLIN drives the rim polylines at the same constant (ALDISP.MAC:2661 `LDA I,RATS` -> VGBRIT), and OUTLIN is called TWICE with the same COLOR and the same VGBRIT — once for the far rim (Y=0x4F) and once for the near rim (Y=0x0F) (ALDISP.MAC:2634-2638). There is no depth cue on the well: the routine that would have added one, SETINT ('SET INTENSITY AS FUNC OF PYL'), is commented out (ALDISP.MAC:1566). The only beam-off in the whole well is the near-to-adjacent-near hop inside SPOKE (ALDISP.MAC:2731-2732), a pen-up move, not a dim line. We instead draw the far ring at alpha 0.28 / width 1.5 versus the near ring's full-alpha width 3.5 (render.ts:206 vs 212), and gradient each spoke from rgba(255,255,255,0.04) at the far end to full colour at the near end (render.ts:192-193).",
@@ -208,7 +208,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 313,
+      "line": 314,
       "verbatim": "    const a = project(s.tube, lane, 0)"
     },
     "claim": "An 'enemy line' (spike) runs from the FAR end of its lane to its tip. FIXSTU (ALDISP.MAC:3100-3128) builds the far endpoint by averaging the screen coords of far rim points i and i+1 (LIFSXL[X] + LIFSXL[Y], Y = (X+1) & 0x0F, then >>1) — i.e. the lane centre at the far ring. TIPACT (ALDISP.MAC:3160-3186) then takes PYL = LINEY[i] (the spike's height, 0 = inactive, ALDISP.MAC:3162-3163), sets PXL/PZL = LINEXM[i]/LINEZM[i] (the pre-computed mid-point between grid lines i and i+1, built at ALDISP.MAC:2534-2552), projects it with WORSCR, and FCONNECs a vector from the far point to it. We do exactly this: a = project(tube, lane, 0) (the far lane-centre) to b = project(tube, lane, h) (render.ts:256-260). Same two endpoints, same lane-centre convention, same 'grows from the far end toward the rim' direction — and, per DB-005, through the same projection curve.",
@@ -225,7 +225,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 308,
+      "line": 309,
       "verbatim": "  ctx.strokeStyle = '#39ff14'"
     },
     "claim": "DSPENL emits ENLFIX in REVERSE byte order (ALDISP.MAC:3024-3031 counts X down from 3), so VGLIST receives 05, 68, 40, 80. VGSTAT stores the colour index as the LSB and 0x60|flags as the MSB (ALVGUT.MAC:226-230), so 05/68 is 'STAT colour = 5'. Colour 5 = GREEN (ALCOMN.MAC: GREEN=5); the source's own comment at ALDISP.MAC:3095 names it CSTATGREEN. 40/80 is the CNTR opcode (VGCNTR, ALVGUT.MAC:239-240). The tip: when the line is not shattered, WHITIP writes 'STAT colour = WHITE' then a JSRL to the DOT picture (ALDISP.MAC:3208-3219, `LDA I,WHITE ;COLOR (SET STAT WHITE)`). Ours: green line #39ff14 (render.ts:251) with a single white dot at b (render.ts:263-266). Match.",

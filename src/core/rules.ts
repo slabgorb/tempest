@@ -175,6 +175,19 @@ export function warpAccel(wave: number): number {
 // enough to still warn the player (no hand-holding past level 7).
 export const WARP_AVOID_SPIKES_SECONDS = 0.5
 export const WARP_AVOID_SPIKES_MAX_LEVEL = 7
+// The starfield does not open until the dive is ~29% down the well (tp1-10, WD-013).
+// MOVCUD kicks INSTAR off only once CURSY has descended past 0x50 ("LDA CURSY / CMP
+// I,50 / IFCS / ... / JSR INSTAR", ALWELG.MAC:1041-1048). CURSY starts at 0x10 and
+// bottoms at 0xF0, so the gate is (0x50 - 0x10) / WARP_ALONG_SPAN = 64/224 ≈ 0.2857.
+export const WARP_STARFIELD_GATE = (0x50 - 0x10) / WARP_ALONG_SPAN  // 64/224 ≈ 0.2857
+// The eye fly-in AFTER the descent bottoms out (tp1-10, WD-018). ENDWAV increments
+// the wave, then NEWAV2 walks the eye back into the new well at +0x18 (24) units/frame
+// ("LDA EYL / CLC / ADC I,18", ALWELG.MAC:85-88). During the descent the eye tracked
+// the cursor 1:1 over the whole WARP_ALONG_SPAN (EYL += CURSVL alongside CURSY,
+// ALWELG.MAC:1049-1057), so it must fly that same 224-unit span back at 24/frame:
+// ceil(224/24) = 10 frames. Per the qframe convention (one warp step == one ROM
+// frame, like the tp1-31 camera slide), this is a frame count, not a dt-scaled span.
+export const WARP_FLYIN_FRAMES = Math.ceil(WARP_ALONG_SPAN / 0x18)  // ceil(224/24) = 10
 // --- Enemy energy bolts (Story 6-5), authentic rev-3 -------------------------
 // Max concurrent enemy bolts on screen (ROM n_enemy_bullets = 4). A hard cap;
 // it is also what makes the per-live-bolt fire odds self-limiting.

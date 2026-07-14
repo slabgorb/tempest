@@ -43,13 +43,19 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
         audio.play('warpSpikeCrash')
         break
       case 'level-clear':
-        // Story 10-11: the warp/zoom cue is now SUSTAINED. It starts here (warp
-        // entry) and is stopped by 'warp-end' when the dive concludes, so it spans
-        // the actual dive instead of a one-shot clipped on entry.
+        // tp1-10 (WD-017): warp ENTRY (before the AVOID-SPIKES hold) makes NO sound —
+        // the sustained rumble no longer starts here, so it can't hum under the hold.
+        // The white entry flash is an fx-layer concern (fx.ts), not audio.
+        break
+      case 'warp-descent-start':
+        // tp1-10 (WD-017): the sustained warp/zoom rumble starts on the first
+        // DESCENDING frame (SOUTS2, ALWELG.MAC:1019-1023), silent through the hold,
+        // and is stopped by 'warp-end' when the descent bottoms out — so it spans the
+        // actual dive, not a one-shot clipped on entry.
         audio.startLoop('levelClear')
         break
       case 'warp-end':
-        audio.stopLoop('levelClear') // dive done (completed or crashed) — stop the loop
+        audio.stopLoop('levelClear') // descent done (bottomed out or crashed) — stop the loop
         break
       case 'superzapper-activate':
         audio.play('superzapper')

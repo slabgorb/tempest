@@ -124,7 +124,11 @@ describe('WD-010: the warp ramp is indexed by CURWAV (0-based), not the displaye
     // one. The tight pin lives here.
     let s = enterWarpAt(1)
     let frames = 0
-    while (s.mode === 'warp' && frames < 200) {
+    // tp1-10 (WD-018): count only the DESCENT frames. After the descent bottoms out
+    // the warp enters a post-descent EYE FLY-IN (mode stays 'warp' for
+    // WARP_FLYIN_FRAMES, warp.flyIn > 0) which is NOT part of the 46-frame dive the
+    // audit derives — stop the moment the fly-in begins.
+    while (s.mode === 'warp' && (s.warp.flyIn ?? 0) === 0 && frames < 200) {
       s = stepGame(s, NEUTRAL, SIM_STEP)
       frames++
     }

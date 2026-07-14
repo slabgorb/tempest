@@ -146,9 +146,16 @@ export interface PulseState {
 }
 
 export interface WarpState {
-  progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level
+  progress: number      // 0 = warp just entered (Claw at rim), 1 = descent bottomed out
   velocity: number      // dive speed in progress/sec; accelerates each frame (Story 6-1)
   warning: number       // seconds left on the AVOID SPIKES countdown before the dive (0 = none)
+  // tp1-10 (WD-018): frames left on the post-descent EYE FLY-IN. Once the descent
+  // bottoms out (progress ≥ 1) ENDWAV increments the wave and NEWAV2 flies the eye
+  // INTO the new well over several frames before play resumes (ALWELG.MAC:56-121).
+  // >0 = flying in (new geometry loaded, mode stays 'warp', play deferred); 0/absent
+  // = descending or not warping. Optional so the pre-tp1-10 3-field warp literals in
+  // the suite still type-check (undefined ≡ 0).
+  flyIn?: number
 }
 
 export interface SelectState {
