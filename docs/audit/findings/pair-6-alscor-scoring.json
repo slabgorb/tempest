@@ -98,7 +98,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 728,
+      "line": 744,
       "verbatim": "  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)"
     },
     "claim": "RQRDSP (ALSCOR.MAC:1074-1096) walks MSGTAB = {MRATE,MPRMOV,MPRFIR / MNOVIC,MEXPER,MLEVEL / MHOLE,MBONUS} (lines 1227-1229) to build the \"RATE YOURSELF\" / RANK screen with NOVICE and EXPERT flanking the level chooser. Our drawSelect() (render.ts:697-711) renders the same shape: 'RATE YOURSELF' + 'RANK' header (700-701), 'SELECT START LEVEL' chooser, 'NOVICE' at W*0.17 and 'EXPERT' at W*0.83 (708-709) flanking it — the concept and message set survive even though the presentation differs (see SC-011)."
@@ -114,7 +114,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 726,
+      "line": 742,
       "verbatim": "  // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED."
     },
     "claim": "MSGS (ALSCOR.MAC:423-467) derives each message's actual display color from a per-message byte in MSGLBS (`LDA X,MSGLBS ... LSR*4 ... JSR NWCOLO`), but MSGLBS itself is only declared `.GLOBL` here — its data table is defined in a different module, not in ALSCOR.MAC, ALEARO.MAC, or ALCOMN.MAC. Our render.ts comment asserts a specific split (\"RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED\") that this pair's primary source cannot confirm or refute.",
@@ -187,7 +187,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 731,
+      "line": 747,
       "verbatim": "    ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,"
     },
     "claim": "XPOTAB holds 5 screen X-offsets (ALSCOR.MAC:1226); RQRDSP's inner loop (`LDX I,4 / STX INDEX1 ... MIEND`, ALSCOR.MAC:1133-1179) draws LEVEL#, BONUS points and HOLE for 5 candidate levels side-by-side, scrolling the window left/right as the spinner (CURSL1) approaches LEFSID/RITSID. Our drawSelect() renders exactly one level at a time — `s.select.selectedLevel` — with no adjacent-candidates preview.",
