@@ -12,7 +12,7 @@ describe('scoreFor', () => {
     expect(scoreFor(makeEnemy('flipper', 0, 0.5, levelParams(1)))).toBe(SCORE_FLIPPER)
     expect(scoreFor(makeEnemy('tanker', 0, 0.5, levelParams(1), 'flipper'))).toBe(SCORE_TANKER)
     expect(scoreFor(makeEnemy('spiker', 0, 0.5, levelParams(1)))).toBe(SCORE_SPIKER)
-    expect(scoreFor({ ...makeEnemy('pulsar', 0, 0.5, levelParams(1)), pulseTimer: 1, pulsing: false })).toBe(SCORE_PULSAR)
+    expect(scoreFor({ ...makeEnemy('pulsar', 0, 0.5, levelParams(1)), pulsing: false })).toBe(SCORE_PULSAR)
   })
 
   it('escalates the fuseball value with depth (250 → 500 → 750)', () => {

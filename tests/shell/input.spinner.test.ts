@@ -123,11 +123,12 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  // Hold ArrowRight and play `seconds` at `displayHz`. Returns { lanes, stepped }:
-  // total lanes turned, and the sim seconds the loop actually ran to turn them.
+  // Hold the +spin key (ArrowLeft — see the mapping describe below) and play `seconds`
+  // at `displayHz`. Returns { lanes, stepped }: total lanes turned, and the sim seconds
+  // the loop actually ran to turn them.
   function held(seconds: number, displayHz: number): { lanes: number; stepped: number } {
     const ctrl = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowRight' })
+    windowBus.emit('keydown', { key: 'ArrowLeft' })
     const rig = makeRig(ctrl)
     const lanes = rig.run(seconds, displayHz) + rig.drain()
     return { lanes, stepped: rig.stepped() }
@@ -168,7 +169,7 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
 
   it('survives a stuttering frame budget — same second, same rotation', () => {
     const ctrl = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowRight' })
+    windowBus.emit('keydown', { key: 'ArrowLeft' }) // the +spin key
     const rig = makeRig(ctrl)
 
     // A rough second of frames: a 4 ms sprint next to a 240 ms hitch, all within the
@@ -189,11 +190,11 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
     const idleRig = makeRig(idle)
     expect(idleRig.run(1, 60) + idleRig.drain()).toBe(0)
 
-    const left = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowLeft' })
-    const leftRig = makeRig(left)
-    const lanes = leftRig.run(4, 60) + leftRig.drain()
-    expect(lanes / leftRig.stepped()).toBeCloseTo(-keyboardTurnRate(), 9)
+    const right = createInputController(target as unknown as HTMLElement)
+    windowBus.emit('keydown', { key: 'ArrowRight' })
+    const rightRig = makeRig(right)
+    const lanes = rightRig.run(4, 60) + rightRig.drain()
+    expect(lanes / rightRig.stepped()).toBeCloseTo(-keyboardTurnRate(), 9)
   })
 
   it('REJECTS the old per-sample tick: the rate must not track the sample count', () => {
@@ -205,6 +206,45 @@ describe('the keyboard is a spinner on the SIM clock (tp1-1 rework)', () => {
     expect(at144.lanes).not.toBeCloseTo(144 * SPIN_SENSITIVITY, 1)
     expect(at28.lanes).not.toBeCloseTo(28 * SPIN_SENSITIVITY, 1)
     expect(Math.abs(at144.lanes - at28.lanes)).toBeLessThan(keyboardTurnRate() * SIM_STEP)
+  })
+})
+
+describe('which key turns which way — the arrow keys are INVERTED (playtest)', () => {
+  // A player preference, not a ROM fact: the cabinet has no arrow keys to be faithful to.
+  // Steering the Claw around the FAR side of the tube reads backwards under the naive
+  // mapping, so LEFT now drives +spin and RIGHT drives -spin. Pinned because it is a
+  // deliberate inversion: a "tidy-up" that swaps it back must go red here, not in playtest.
+  let target: ReturnType<typeof makeBus>
+  let windowBus: ReturnType<typeof makeBus>
+
+  beforeEach(() => {
+    target = makeBus()
+    windowBus = makeBus()
+    vi.stubGlobal('window', windowBus)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  function spinFor(keys: string[]): number {
+    const ctrl = createInputController(target as unknown as HTMLElement)
+    for (const key of keys) windowBus.emit('keydown', { key })
+    ctrl.tick(1) // one whole second of SIM time
+    return ctrl.sample().spin
+  }
+
+  it('ArrowLeft spins POSITIVE and ArrowRight spins NEGATIVE', () => {
+    expect(spinFor(['ArrowLeft'])).toBeGreaterThan(0)
+    expect(spinFor(['ArrowRight'])).toBeLessThan(0)
+    expect(spinFor(['ArrowLeft'])).toBeCloseTo(-spinFor(['ArrowRight']), 9)
+  })
+
+  it('still cancels when both are held, and still releases on keyup', () => {
+    expect(spinFor(['ArrowLeft', 'ArrowRight'])).toBe(0)
+
+    const ctrl = createInputController(target as unknown as HTMLElement)
+    windowBus.emit('keydown', { key: 'ArrowLeft' })
+    windowBus.emit('keyup', { key: 'ArrowLeft' })
+    ctrl.tick(1)
+    expect(ctrl.sample().spin).toBe(0)
   })
 })
 
@@ -221,7 +261,7 @@ describe('the keyboard can never buy rotation the sim did not step (Reviewer, ro
 
   function heldCtrl(): InputController {
     const ctrl = createInputController(target as unknown as HTMLElement)
-    windowBus.emit('keydown', { key: 'ArrowRight' })
+    windowBus.emit('keydown', { key: 'ArrowLeft' }) // the +spin key
     return ctrl
   }
 
@@ -279,24 +319,45 @@ describe('the keyboard can never buy rotation the sim did not step (Reviewer, ro
 })
 
 describe('the escape constraint — the Claw must out-rotate the ROM (AC6)', () => {
-  it('a deep flipper walks the rim at 7.11 lanes/sec', () => {
-    // One lane per (moveFrames + flipFrames) ROM frames. L33+: 1 + 3 = 4 frames.
-    // 28.44 / 4 = 7.11 lanes/sec — the fastest thing the ROM can send at the player.
-    expect(fastestFlipperRimSpeed()).toBeCloseTo(ROM_FPS / 4, 9)
-    expect(fastestFlipperRimSpeed()).toBeCloseTo(7.111, 3)
+  it('the fastest chaser walks the rim at 4.06 lanes/sec, not the guessed 7.11', () => {
+    // RE-DERIVED BY tp1-5. This said 7.11 lanes/sec, from "1 move frame + a 3-frame flip
+    // at L33+ = 4 frames a lane" — and every number in that sentence came from
+    // `flipPatternForLevel`, an invented per-level envelope that tp1-4 DELETED when it
+    // read the CAM. A flip is 8 angle-steps at every wave (W-008), and the enemy that
+    // actually walks the rim is the CHASER, which did not exist in this codebase until
+    // tp1-5 built it. The shell was defending against a thing the game could not produce.
+    //
+    // TOPPER (ALWELG.MAC:2447-2460) is the real cadence: a `VSLOOP 4` crouch, then a jump
+    // burning WTTFRA angle-steps a frame. WTTFRA tops out at 3 from wave 33 (TWTTFRA,
+    // 704-706), so the fastest lane the ROM can walk costs 4 + ceil(8/3) = 7 frames.
+    //
+    // The guess erred in the SAFE direction — it overstated the enemy, so the margin it
+    // sized was too wide rather than too narrow, which is why nothing ever failed on it.
+    expect(fastestFlipperRimSpeed()).toBeCloseTo(ROM_FPS / 7, 9)
+    expect(fastestFlipperRimSpeed()).toBeCloseTo(4.063, 3)
+
+    // Not the stale number, and named so it cannot quietly come back.
+    expect(fastestFlipperRimSpeed()).not.toBeCloseTo(ROM_FPS / 4, 3)
   })
 
-  it('the player OUT-ROTATES the fastest flipper, with margin', () => {
+  it('the player OUT-ROTATES the fastest chaser, with margin', () => {
     // The assertion that makes deep waves winnable — and the one the broken build
-    // failed. A margin below 1.0 means the flipper closes on you no matter what you do.
+    // failed. A margin below 1.0 means the chaser closes on you no matter what you do.
     const margin = keyboardTurnRate() / fastestFlipperRimSpeed()
     expect(margin).toBeGreaterThan(1.2)
-    expect(margin).toBeCloseTo(1.27, 2)
+    expect(margin).toBeCloseTo(2.215, 3)  // 9.0 / 4.06 — it WIDENED when the enemy got slower
 
-    // The broken value, named so that it can never quietly come back.
+    // The broken per-step keyboard, named so that it can never quietly come back.
+    //
+    // It used to be pinned here as "slower than the fastest flipper, so it could not
+    // escape at all". That claim died with the 7.11: against the chaser's real 4.06 the
+    // broken rate (4.27) would in fact have crawled clear, barely. The rate was still
+    // broken — it was a tick counter, not a control, and it silently changed speed with
+    // the sim's step rate (see the header) — but the honest statement of the defect is
+    // the one below, which is what this test now guards.
     const BROKEN_PER_STEP_RATE = SPIN_SENSITIVITY * ROM_FPS // 4.27 lanes/sec
-    expect(BROKEN_PER_STEP_RATE).toBeLessThan(fastestFlipperRimSpeed())
     expect(keyboardTurnRate()).toBeGreaterThan(BROKEN_PER_STEP_RATE)
+    expect(BROKEN_PER_STEP_RATE / fastestFlipperRimSpeed()).toBeLessThan(1.1) // no real margin
   })
 })
 

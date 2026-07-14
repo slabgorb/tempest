@@ -165,7 +165,7 @@ function fuseballCell(): ModelCell {
 // zig-zag jaggedness + cyan/white colour strobe and the electrified lane quad.
 function pulsarCell(): ModelCell {
   const s = baseState()
-  const pu: Pulsar = { kind: 'pulsar', lane: 1, depth: 0.5, ...regs(), pulseTimer: 0, pulsing: true }
+  const pu: Pulsar = { kind: 'pulsar', lane: 1, depth: 0.5, ...regs(), pulsing: true }
   s.enemies = [pu]
   let clock = 0
   const step = (dt: number) => {

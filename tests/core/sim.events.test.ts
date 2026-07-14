@@ -205,7 +205,7 @@ describe('player-grab and player-death events', () => {
 
   it('a pulsing pulsar on the player lane kills with cause pulse', () => {
     const s = playing([
-      { ...makeEnemy('pulsar', 4, 0.5, levelParams(1)), pulseTimer: 999, pulsing: true },
+      { ...makeEnemy('pulsar', 4, 0.5, levelParams(1)), pulsing: true },
     ])
     s.player.lane = 4
     const out = stepGame(s, NEUTRAL, DT)

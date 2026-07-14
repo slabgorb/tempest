@@ -3,6 +3,7 @@
 import { type Rng, nextFloat } from '@arcade/shared/rng'
 import type { Enemy, EnemyKind, TankerCargo } from './state'
 import { flipperCamForWave } from './enemies/cam'
+import { assertNever } from './assert'
 
 // ─── THE CLOCK (story tp1-1) ─────────────────────────────────────────────────
 //
@@ -156,7 +157,10 @@ export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
 // ...and stops firing once it reaches the arrival zone: an enemy at the rim is
 // grabbing/splitting, not shooting. This also keeps every bolt dodgeable — a
 // point-blank shot from the rim would leave the player no lane to rotate to.
-export const ENEMY_FIRE_MAX_DEPTH = 0.9   // == TANKER_SPLIT_DEPTH; at/after this they grab or split
+// (0.9 is its OWN number, not TANKER_SPLIT_DEPTH's — the comment here used to claim they
+// were equal, and they were, by coincidence, until the tanker's split moved to the ROM's
+// $20. They are separate rules: when a carrier bursts, and when an invader stops firing.)
+export const ENEMY_FIRE_MAX_DEPTH = 0.9   // at/after this an invader is grabbing/splitting, not shooting
 // A bolt's depth/sec beyond its level's flipper speed ("flipper-relative +0xc0"),
 // so a bolt always OUTRUNS a flipper. L1 ≈ 0.18 + 0.72 = 0.9 (ROM ~-202/s).
 export const ENEMY_BOLT_SPEED_OFFSET = 0.72
@@ -171,6 +175,7 @@ export function enemyCanShoot(kind: EnemyKind, level: number): boolean {
     case 'spiker':  return true
     case 'pulsar':  return level >= 60
     case 'fuseball': return false
+    default: return assertNever(kind, 'enemy kind')
   }
 }
 
@@ -205,12 +210,126 @@ export function enemyFireHoldoffSeconds(level: number): number {
   return enemyFireHoldoffFrames(level) / ROM_FPS
 }
 
-export const PULSE_DURATION = 0.6       // seconds a pulse stays lethal
+// ─── THE PULSE: ONE GLOBAL CLOCK (W-026, story tp1-5) ────────────────────────
+//
+// MOVINV ticks the pulse ONCE per frame, AFTER the invader loop and outside it
+// (ALWELG.MAC:1536-1570): `LDA PULSON / CLC / ADC PULTIM`. There is one counter, so
+// there is one phase — every pulsar on the board strobes in unison, whenever it
+// hatched. The SIGN of that counter IS the pulse: ALCOMN.MAC:775 names it "PULSE
+// STATUS (MINUS=OFF)", and JPULMO's kill test asks nothing more than `LDA PULSON /
+// IFPL`. Ours gave every pulsar a private 0.6 s/3.0 s timer seeded at spawn, so two
+// pulsars that hatched seven frames apart strobed seven frames apart — a thing the
+// cabinet cannot do.
+//
+// The counter walks a triangle between two rails, negating its increment at each
+// (1557-1568): at PULSON >= 15, and again at PULSON <= -64 (the ROM spells the lower
+// rail `CMP I,-63. / IFCC`, an UNSIGNED compare against 0xC1, so it fires on -64 and
+// below). PULTIM is 4 below wave 49 (WPULTIM, 610-613).
+export const PULSE_STEP = 4        // PULTIM — WPULTIM's value for waves 1-48
+export const PULSE_SON_MAX = 15    // `CMP I,15. / BCS NEGPUL`
+export const PULSE_SON_MIN = -64   // `CMP I,-63. / IFCC` — an unsigned compare: -64 and below
+//
+// THE SEED IS THE DUTY CYCLE, and it is easy to miss. INEWLI opens every wave and every
+// life with `LDA I,-1 / STA PULSON` (ALWELG.MAC:46-48) — NEGATIVE, so the wave starts
+// with the pulse off. It also pins the counter's residue for the rest of the wave: from
+// -1 in steps of 4, PULSON can only ever land on 3 (mod 4). The reachable values are
+// therefore -65 .. 15 — twenty-one of them, two of which are turning points, so the
+// period is 2*21 - 2 = 40 frames — and the lit half (PULSON >= 0) is exactly {3, 7, 11,
+// 15}: the peak once, the other three twice. SEVEN frames on, thirty-three off.
+//
+// Seed the same machine at 0 instead and it lands on {0,4,8,12,16} and gives NINE. The
+// audit says nine (and its refuter says the period is 42); neither read INEWLI. The
+// period is 40 and the pulse is lit for 7 — see the tp1-5 deviations.
+export const PULSE_SON_INIT = -1
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 // fuzz_move probability gate (rev-3 §D l.240-250): a fuseball only slides a lane
 // on a passing roll, so its approach is biased-but-not-relentless. The exact
 // fuzz_move_prb byte is not in the extracted notes; 0.6 keeps it lively.
 export const FUSEBALL_MOVE_PROB = 0.6
+
+// ── WFUSCH: does the fuseball chase, and where? (tp1-25, the other half of W-023) ──
+//
+// JFUSEUP asks the SAME byte two different questions, and they are two different bits:
+//
+//     LDA WFUSCH / IFMI    bit 7 — "CHASE PLAYER AT TOP?"  (ALWELG.MAC:2122-2124)
+//     BIT WFUSCH / IFVS    bit 6 — "CHASE PLAYER ON TUBE?" (ALWELG.MAC:2135-2137)
+//
+// (`BIT` puts operand bit 7 in N and bit 6 in V — which is exactly what IFMI/IFVS read.)
+//
+// ⚠ FUSE_CHASE_AT_TOP IS NOT WIRED, AND THAT IS DELIBERATE — see tp1-25 deviation D3.
+// The ROM asks its question on JFUSEUP's "TOO HIGH?" arm (2121-2130), the branch a fuse
+// takes while riding UP near the rim. Our fuseball has no such arm: it climbs on moveAlong
+// with its own clamp at the top and never enters the up/down oscillation the ROM's fuse
+// does, so there is no live decision point for bit 7 to gate. The constant is here because
+// it is half of the byte TWFUSC actually stores (and ALCOMN.MAC:786 names both — "FUSE
+// CHASE PLAYER FLAG (D7 FOR TOP;D6 FOR TUBE)"), not because the port consults it.
+// Do not read this pair and assume both are live. Only ON_TUBE is.
+export const FUSE_CHASE_AT_TOP = 0x80
+export const FUSE_CHASE_ON_TUBE = 0x40
+
+// TWFUSC (ALWELG.MAC:686-690) — the wave contour for WFUSCH, transcribed as records:
+//
+//     TWFUSC: .BYTE TR,17.,32.,0,40
+//             .BYTE TR,33.,48.,40,0C0
+//             .BYTE T1,49.,99.,0C0
+//             .BYTE TE
+//
+// TR IS NOT A RAMP. CONTOUR's own type table says so — `TR=0C;ALTERNATE BETWEEN BYTES 3
+// & 4` (414) — and DOTR (858-865) is `JSR RANGER / AND I,1 / IFNE / INY`: byte 4 on an ODD
+// offset into the range, byte 3 on an EVEN one. RANGER (848-856) is `TEMP2 - startWave`,
+// and TEMP2 is the 1-based wave (CONTOUR loads CURWAV and INCs it, 415-423).
+//
+// So the FIRST wave of a TR range draws byte 3, and wave 17 — offset 0 — draws ZERO:
+// the fuseball does NOT chase at wave 17. The chase starts at 18. Read this table as a
+// ramp and you will be off by one at every range boundary.
+const TWFUSC: ReadonlyArray<
+  | { readonly type: 'TR', readonly start: number, readonly end: number, readonly even: number, readonly odd: number }
+  | { readonly type: 'T1', readonly start: number, readonly end: number, readonly value: number }
+> = [
+  { type: 'TR', start: 17, end: 32, even: 0x00, odd: 0x40 },
+  { type: 'TR', start: 33, end: 48, even: 0x40, odd: 0xc0 },
+  { type: 'T1', start: 49, end: 99, value: 0xc0 },
+]
+
+/**
+ * WFUSCH for a wave — CONTOUR (ALWELG.MAC:398-470) walked over TWFUSC.
+ *
+ * Below wave 17 no record matches, CONTOUR runs off the end of the table onto TE and
+ * "EXIT ON EOT TYPE CODE WITH 0" (442). That zero is a REAL answer, not a missing one:
+ * it is precisely what makes every fuseball decision fall to the LEFRIT coin, which is
+ * the whole of tp1-5's half of W-023. Never `|| fallback` this.
+ *
+ * ── The deep waves fold back IN. The ROM cannot fall off its own table. ──────────────
+ * CONTOUR rewrites the wave BEFORE it walks (415-423):
+ *
+ *     LDA CURWAV / CMP I,98. / IFCS      ;CURWAV >= 98 — displayed wave >= 99
+ *       LDA RANDO2 / AND I,1F / ORA I,40 ;-> 0x40..0x5F = 64..95
+ *     ENDIF
+ *     STA TEMP2 / INC TEMP2              ;-> TEMP2 = 65..96
+ *
+ * From wave 99 up it plays a RANDOM wave in 65..96 — and that band lies wholly inside the
+ * T1 record below, so the draw is UNOBSERVABLE in WFUSCH: every substituted wave yields
+ * the same 0xC0. We fold to 99 and land on the identical byte without touching the RNG,
+ * which is what keeps this a pure function of `level`.
+ *
+ * We need the fold because the PORT reaches a state the ROM cannot: `s.level` increments
+ * without a cap (sim.ts), and `MAX_SELECT_LEVEL` bounds only the level-SELECT screen. Walk
+ * off the end of the table and the TE zero comes back — the same value that means "no
+ * chase" below wave 17 — and the wave-100 fuseball silently returns to the coin, which is
+ * the very bug this story exists to remove. (Found in review, round 1.)
+ */
+export function wfuschForLevel(level: number): number {
+  const wave = level >= 99 ? 99 : level   // CONTOUR's fold — see above
+  for (const r of TWFUSC) {
+    if (wave < r.start || wave > r.end) continue
+    switch (r.type) {
+      case 'T1': return r.value
+      case 'TR': return (wave - r.start) % 2 === 1 ? r.odd : r.even  // DOTR: odd takes byte 4
+      default: return assertNever(r, 'TWFUSC record type')           // TA/TZ/TB are not ported
+    }
+  }
+  return 0   // TE — end of table
+}
 // Spiker near-turnaround (story 6-15). ROM clamps `along` to $20 and reverses
 // (move away) once it climbs below it (rev-3 §C l.202-208). $20 → depth
 // (0xf0-$20)/224 ≈ 0.929 — far closer to the rim than the spike-height cap. Kept
@@ -232,9 +351,50 @@ export const PULSAR_CLIMB_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / WARP_ALON
 // pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
 // is intentionally not modelled.
 export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.357
-export const TANKER_SPLIT_DEPTH = 0.9  // tankers split at/after this depth
-// Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab.
-export const SPLIT_CHILD_DEPTH = 0.85
+// There is no SPLIT_CHILD_DEPTH here any more, and that is the point of tp1-24 (W-030).
+//
+// It was 0.85, and its comment said "Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is
+// not an instant grab" — a deliberate softening, written before the fidelity epic, that
+// clamped a tanker's children safely below the grab line. The cabinet does the opposite on
+// purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own INVAY into TEMP0 and
+// ACTINV (1219-1226) seats each child straight back out of it, so both are born at the
+// parent's EXACT depth. A carrier that arrives on its own bursts at $20 — 0.9286, ABOVE the
+// 0.92 grab line — and a player on a flanking lane is grabbed on the burst frame.
+//
+// The constant is deleted rather than renumbered because there is no number that belongs
+// here: the children's depth is not a constant at all, it is the parent's. Do not
+// reintroduce it to soften the burst — the burst's fairness lives in the other two thirds
+// of the mechanism (the parent's own lane is VACATED, and the children cannot flip onto
+// the player), both in splitTanker.
+
+// ─── $20: ONE ROM CONSTANT, READ TWICE (W-032, and the bug tp1-5 first shipped) ──────
+//
+// SPLCHA's "SPLITTING TOO CLOSE TO PLAYER?" (ALWELG.MAC:1494-1502): `LDA TEMP0 / CMP I,20
+// / IFCC` against the depth the parent DIED at. Inside $20 of the rim the children take
+// NEWGEN — the generic program for their appearance code, which for a flipper is NOJUMP —
+// instead of the wave's flipping one. "YES. NO FLIPPING".
+export const SPLIT_TOO_CLOSE_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
+//
+// ...and the auto-split that a CLIMBING carrier triggers reads the SAME BYTE. JSMOVE
+// (1748-1758) tests the top of the well twice, in this order:
+//
+//     CMP CURSY / BEQ ATOP / IFCC   ;AT TOP?                      -> JSR CHASER
+//     ELSE
+//     CMP I,20  / IFCC              ;TOO CLOSE TO TOP FOR CARRIER?
+//                                   -> JSR KILINV  ;SPLIT CARRIER
+//
+// and the KILINV it jumps to is the one that calls SPLCHA (2344). So the carrier bursts
+// INSIDE the too-close band, always, and SPLCHA's compare is a foregone conclusion: a
+// tanker that arrives under its own steam ALWAYS gives its children the non-flipping cam.
+// Flipping children are what you get for shooting it lower down, and nothing else.
+//
+// These are therefore not two numbers that happen to be near each other — they are one
+// number, and writing them apart is what made W-032's fix dead code. TANKER_SPLIT_DEPTH
+// was 0.9 (INVAY 38.4) while the branch judging it read $20 (INVAY 32 = depth 0.9286), so
+// the tanker was destroyed 0.029 depth-units before it could ever enter the band its own
+// rule is written for. The branch was correct, reachable by no board the game can produce,
+// and stamped `remediated_by` regardless. Do not split them apart again.
+export const TANKER_SPLIT_DEPTH = SPLIT_TOO_CLOSE_DEPTH
 
 export interface LevelParams {
   enemyCount: number
@@ -242,7 +402,6 @@ export interface LevelParams {
   flipperCam: number     // WFLICAM — the CAM program THIS wave's flippers run (tp1-4)
   spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
-  pulseInterval: number  // seconds between pulsar pulses
   fuseballSpeed: number  // depth units/s climb for fuseballs
   tankerSpeed: number    // depth units/s climb for tankers
 }
@@ -298,7 +457,9 @@ export function levelParams(level: number): LevelParams {
     flipperCam: flipperCamForWave(level),
     spawnInterval: Math.max(0.3, 1.2 / ramp),
     spikerSpeed: 0.22 * ramp,
-    pulseInterval: Math.max(1.2, 3.0 / ramp),
+    // No pulseInterval: the pulse is not a per-pulsar timer any more, and it does not
+    // ramp with the level. It is ONE global counter with a fixed 40-frame period
+    // (PULSE_STEP / PULSE_SON_*), ticked in sim.ts's stepPulseClock (W-026).
     fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)
     tankerSpeed: flipperSpeed,         // tankers climb straight up at flipper speed
   }
@@ -321,6 +482,9 @@ export function scoreFor(enemy: Enemy): number {
     case 'spiker':   return SCORE_SPIKER
     case 'pulsar':   return SCORE_PULSAR
     case 'fuseball': return fuseballScore(enemy.depth)
+    // Without this a sixth kind scores `undefined`, and `score += undefined` is NaN —
+    // a scoreboard that never recovers, from a switch that compiled clean.
+    default: return assertNever(enemy, 'enemy kind')
   }
 }
 

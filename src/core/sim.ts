@@ -5,8 +5,10 @@ import { Tube, wrapLane, currentLane, tubeForLevel } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
-  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, SPLIT_CHILD_DEPTH, LevelParams,
-  PULSE_DURATION, rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
+  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
+  SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH,
+  PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
+  rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
@@ -15,7 +17,8 @@ import {
 import { nextInt, nextFloat } from '@arcade/shared/rng'
 import { qualifiesForHighScore, insertHighScore } from '@arcade/shared/highscore'
 import { stepNameEntry } from '@arcade/shared/name-entry'
-import { runCam, camForNewEnemy, isJumping, type CamContext } from './enemies/interpreter'
+import { runCam, camForNewEnemy, genericCamFor, isJumping, type CamContext } from './enemies/interpreter'
+import { assertNever } from './assert'
 
 function cloneState(s: GameState): GameState {
   return {
@@ -26,6 +29,7 @@ function cloneState(s: GameState): GameState {
     enemies: s.enemies.map((e) => ({ ...e })),
     spikes: s.spikes.slice(),
     spawn: { ...s.spawn },
+    pulse: { ...s.pulse },
     warp: { ...s.warp },
     select: { ...s.select },
     entry: s.entry ? { ...s.entry } : null,
@@ -122,9 +126,15 @@ export function makeEnemy<K extends EnemyKind>(
       case 'tanker':   return { kind: 'tanker', lane, depth, ...cam, contains: cargo }
       case 'spiker':   return { kind: 'spiker', lane, depth, ...cam }
       case 'fuseball': return { kind: 'fuseball', lane, depth, ...cam, jitterTimer: 0, vulnerable: false }
-      case 'pulsar':   return { kind: 'pulsar', lane, depth, ...cam, pulseTimer: params.pulseInterval, pulsing: false }
+      // `pulsing` is seeded dark and re-stamped from the board's one global phase on the
+      // very next tick (stepPulseClock) — a pulsar has no clock of its own to seed (W-026).
+      case 'pulsar':   return { kind: 'pulsar', lane, depth, ...cam, pulsing: false }
+      // TypeScript narrows a generic `K extends EnemyKind` to `never` here just as it does
+      // a bare union, so the sixth kind is a compile error and not the runtime `throw` that
+      // used to stand in this spot — which only ever fired once a player was already in the
+      // game (lang-review #3).
+      default: return assertNever(kind, 'enemy kind')
     }
-    throw new Error(`unknown enemy kind ${String(kind)}`)
   })()
   // The switch above returns exactly the kind it was asked for; TypeScript cannot
   // check that against the type parameter, so say it once, here, rather than making
@@ -166,6 +176,11 @@ function stepEnemies(s: GameState, dt: number): void {
     playerLane: currentLane(s.tube, s.player.lane),
     spikes: s.spikes,
     spawnRemaining: s.spawn.remaining,
+    // The board itself: CHASER's pincer rule counts the chasers already circling and
+    // reads the way the other one went (INCCOU). The interpreter mutates in place, so
+    // this array is the LIVE view an invader converting later in the loop needs.
+    enemies: s.enemies,
+    pulse: s.pulse,
     rng: s.rng,
   }
   // cloneState already handed us fresh enemy objects, so the interpreter mutates
@@ -173,36 +188,80 @@ function stepEnemies(s: GameState, dt: number): void {
   // traler that runs out of well and becomes a tanker — JSTRAI).
   s.enemies = s.enemies.map((e) => runCam(e, ctx))
 
-  stepPulseClock(s, dt)
+  stepPulseClock(s)
 }
 
 /**
- * The pulse. In the ROM this is a GLOBAL clock (PULSON/PULTIM) ticked by MOVINV
- * AFTER the invader loop (ALWELG.MAC:1536-1570), not by the CAM — the CAM only ever
- * ASKS about it, through VCHKPU. Ours is still per-pulsar (a separate finding), but
- * it ticks in the same place, for the same reason: a clock is not a program.
+ * The pulse (W-026). In the ROM this is a GLOBAL clock — PULSON stepped by PULTIM —
+ * ticked by MOVINV AFTER the invader loop (ALWELG.MAC:1536-1570) and never by the CAM,
+ * which only ever ASKS about it through VCHKPU. It ticks here for the same reason: a
+ * clock is not a program. One counter, so one phase — every pulsar on the board lights
+ * and dies with the same beat, whenever it hatched.
+ *
+ * The counter is a triangle wave between two rails, and the sign of it IS the pulse
+ * ("PULSE STATUS (MINUS=OFF)"). Seeded at -1 by INEWLI, its period is 40 frames and it
+ * is lit for 7 of them — see rules.ts, where the seed and the rails are set out.
+ *
+ * Ours used to give every pulsar a private 0.6 s pulse on a 3.0 s level-scaled interval,
+ * seeded at spawn: pulsars strobed out of step with each other, on a cycle more than
+ * twice too long, and never in the arcade's rhythm at all.
  */
-function stepPulseClock(s: GameState, dt: number): void {
-  const params = levelParams(s.level)
+function stepPulseClock(s: GameState): void {
+  s.pulse.son += s.pulse.tim
+  if (s.pulse.son >= PULSE_SON_MAX || s.pulse.son <= PULSE_SON_MIN) s.pulse.tim = -s.pulse.tim
+  const lit = s.pulse.son >= 0
   for (const e of s.enemies) {
-    if (e.kind !== 'pulsar') continue
-    e.pulseTimer -= dt
-    if (e.pulseTimer <= 0) {
-      e.pulsing = !e.pulsing
-      e.pulseTimer = e.pulsing ? PULSE_DURATION : params.pulseInterval
-    }
+    if (e.kind === 'pulsar') e.pulsing = lit
   }
 }
 
-// Two cargo enemies straddling the tanker on the FLANKING lanes seg-1 and seg+1
-// (authentic rev-3, story 6-9) — the tanker's own lane is left empty. Depth is
-// capped just below the rim so a rim-split is not an instant grab.
+// A tanker's death is THREE rules, and they are one mechanism. Ship any two and the
+// rim-burst is not the cabinet's (W-030, W-032).
+//
+//   1. WHERE THE CHILDREN LAND. Two cargo enemies straddle the tanker on the FLANKING
+//      lanes seg-1 and seg+1 (authentic rev-3, story 6-9) — its own lane is left EMPTY.
+//      That vacancy is the whole of the burst's fairness: the player who tracked the
+//      tanker and stood on its lane to shoot it is the one player it cannot grab.
+//
+//   2. HOW DEEP THEY LAND (W-030, this line). KILINV (ALWELG.MAC:2300-2302) opens by
+//      saving the dying parent's own along value — `LDA Y,INVAY / STA TEMP0` — and
+//      ACTINV (1219-1226), called once per child off KILINV's tail, seats each one
+//      straight back out of it:
+//
+//          LDA TEMP0
+//          STA Y,INVAY
+//
+//      Both children are born at the parent's EXACT depth. There is no clamp in the
+//      cabinet. This used to read `Math.min(t.depth, SPLIT_CHILD_DEPTH)` — a deliberate
+//      softening (0.85, "so a rim-split is not an instant grab") that predates the
+//      fidelity epic. A carrier that arrives under its own steam bursts at 0.9286, which
+//      is ABOVE PLAYER_RIM_DEPTH (0.92), and drops both children there: a player caught
+//      on a flanking lane is grabbed on the burst frame, with no counterplay. That is the
+//      arcade, and tp1-24 ratified it.
+//
+//   3. WHAT PROGRAM THEY RUN (W-032, below) — and it is rule 3 that makes rule 2
+//      survivable.
 export function splitTanker(t: Tanker, tube: Tube, params: LevelParams): Enemy[] {
-  const depth = Math.min(t.depth, SPLIT_CHILD_DEPTH)
-  return [
+  const depth = t.depth
+  const kids = [
     makeEnemy(t.contains, wrapLane(tube, t.lane - 1), depth, params),
     makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),
   ]
+  // SPLCHA (ALWELG.MAC:1494-1502), W-032. `LDA TEMP0 / CMP I,20 / IFCC ;SPLITTING TOO
+  // CLOSE TO PLAYER?` — and on the carry-clear branch, "YES. NO FLIPPING": the children
+  // get NEWGEN, the generic program for their appearance code, instead of NEWTY2's wave
+  // program. For a flipper that is NOJUMP, so a tanker shot in the player's face sprays
+  // two flippers that climb the lanes they landed on and cannot flip onto him. Split it
+  // deeper down and its children get the wave's program like anything else.
+  //
+  // It reads TEMP0 — the depth the PARENT died at — which is now also the depth the
+  // children are born at (rule 2). One byte, and every branch that touches this burst
+  // reads it: JSMOVE fires the split at $20, SPLCHA judges it at $20, and the children
+  // land on it. They are the same number and rules.ts keeps them that way.
+  if (t.depth >= SPLIT_TOO_CLOSE_DEPTH) {
+    for (const k of kids) k.camPc = genericCamFor(k.kind)
+  }
+  return kids
 }
 
 // --- Enemy energy bolts (Story 6-5) ------------------------------------------
@@ -375,6 +434,10 @@ function startLevel(s: GameState): void {
   s.enemyBullets = [] // no lingering enemy bolts across a respawn/level (no chain-death)
   s.player.superzapper = 'full' // rearm the once-per-level Superzapper
   s.player.zapTimer = 0         // no zap window carries across a level/respawn (10-2)
+  // INEWLI (ALWELG.MAC:37-48) re-seeds the pulse for every new wave AND every new life,
+  // so a wave always opens dark. The seed is not decoration: it fixes the counter's
+  // residue, and with it the duty cycle (rules.ts, PULSE_SON_INIT).
+  s.pulse = { son: PULSE_SON_INIT, tim: PULSE_STEP }
 }
 
 function killPlayer(s: GameState): void {
@@ -407,7 +470,24 @@ function resolvePlayerHits(s: GameState): void {
   )
   // A grab takes precedence over a pulse; a pulse is still reported on the
   // player-grab channel (Story 5-1), attributed to the pulsing pulsar.
-  const killer = grabber ?? s.enemies.find((e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl)
+  //
+  // JPULMO's kill (ALWELG.MAC:1801-1815) is THREE conditions, and we were asking one.
+  //
+  //   * `LDA PULSON / IFPL`   — the pulse is lit. (Ours: `pulsing`.)
+  //   * `CMP PULPOT / IFCC`   — and the pulsar has climbed INTO the potency zone. PULPOT
+  //     is $A0 for waves 1-64 (WPULPOT, 606-609), which is PULSAR_NEAR_FAR_DEPTH — the
+  //     same line it already crosses to change climb speed. A pulsar strobing out in the
+  //     far third of the well is harmless, and ours electrocuted the player from there
+  //     (W-027).
+  //   * both its legs on both of the cursor's legs (1808-1814) — which an invader caught
+  //     MID-FLIP, straddling two lines, does not have. That is the grab's own gate, one
+  //     line above; the pulse branch beside it never got it, so a pulsar mid-flip could
+  //     electrocute a player the identical flipper mid-flip could not touch (prerequisite
+  //     4 of tp1-5, left open when the grab gate was widened in tp1-4).
+  const killer = grabber ?? s.enemies.find(
+    (e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl
+      && e.depth >= PULSAR_NEAR_FAR_DEPTH && !isJumping(e),
+  )
   if (!killer) return
   s.events.push({ type: 'player-grab', lane: pl, killedBy: killer.kind })
   s.events.push({ type: 'player-death', cause: grabber ? 'grab' : 'pulse' })
@@ -731,7 +811,11 @@ function hasRealInput(input: Input): boolean {
 
 export function stepGame(state: GameState, input: Input, dt: number): GameState {
   const s = cloneState(state)
-  switch (s.mode) {
+  // Switch on the mode we ARRIVED in, not on the live field — half these arms reassign
+  // `s.mode` mid-body, which would otherwise re-widen the discriminant and rob the
+  // `default` below of the `never` it needs to be a compile-time guard (lang-review #3).
+  const mode = s.mode
+  switch (mode) {
     case 'attract':
       // The attract screen plays itself when idle (Story 10-3). `start` begins a
       // real game (→ select); any other real input returns to the title; otherwise
@@ -789,6 +873,8 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
         }
       }
       break
+    default:
+      assertNever(mode, 'game mode')
   }
   // Record this frame's fire so the next frame can detect a fresh press (6-2).
   s.prevFire = input.fire
