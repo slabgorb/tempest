@@ -10,7 +10,7 @@ import {
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
-  WARP_FLYIN_FRAMES,
+  WARP_FLYIN_FRAMES, startWaveBonus,
   MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
@@ -390,6 +390,10 @@ function resolveEnemyBulletHits(s: GameState): void {
       if (bolt.lane === bullet.lane && Math.abs(bolt.depth - bullet.depth) <= HIT_DEPTH) {
         deadBullets.add(bi)
         deadBolts.add(ci)
+        // tp1-13 (S-013): INCCSQ's charge-charge kill (ALWELG.MAC:2797-2809) makes
+        // the EX noise + explosion at the SHOT's (the bolt's) coordinates and scores
+        // nothing. The event carries the BOLT's position, not the bullet's.
+        s.events.push({ type: 'bolt-destroyed', lane: bolt.lane, depth: bolt.depth })
         break
       }
     }
@@ -636,6 +640,10 @@ function startGameAtLevel(s: GameState, level: number): void {
   s.warp.progress = 0
   s.warp.velocity = 0
   s.warp.warning = 0
+  // tp1-13 (S-015): the ROM commits the select index into BONUS here (ALWELG.MAC:236);
+  // we store its ladder value directly. Paid once at the next well (beginFlyIn, ENDWAV).
+  // A wave-1 start yields 0 — no bonus, no chime.
+  s.startBonus = startWaveBonus(level)
   startLevel(s)
 }
 
@@ -727,8 +735,10 @@ function stepZap(s: GameState, input: Input): void {
   runZapFrame(s) // frame 1: flash + tick (no further kill — second window)
 }
 
-// Clearing a level no longer advances immediately — it enters the warp. The
-// Claw flies down the tube (progress 0 → 1); advanceLevel runs on completion.
+// Clearing a level no longer advances immediately — it enters the warp. The Claw
+// flies down the tube (progress 0 → 1); at the bottom the eye fly-in (beginFlyIn)
+// runs ENDWAV and completes the level. The dive opens in the well, not in space —
+// flyIn is 0 here (the prior fly-in/replay reset it), so no reset is needed.
 function checkLevelClear(s: GameState): void {
   if (s.mode !== 'playing') return
   // A wave with nymphs still queued is not over: they are the enemies it owes.
@@ -777,13 +787,28 @@ function beginFlyIn(s: GameState): void {
   s.warp.velocity = 0
   s.warp.warning = 0
   s.warp.flyIn = WARP_FLYIN_FRAMES
+  // tp1-13 (S-015): ENDWAV pays the advanced-start skill-step bonus HERE — together with
+  // INC CURWAV (loadNextWave) at end-of-wave, BEFORE the NEWAV2 fly-in. This unifies with
+  // tp1-13's advanceLevel: the wave increment and the bonus payment are one ENDWAV beat,
+  // so folding the payment into beginFlyIn keeps the ROM's ordering (pay + INC CURWAV,
+  // then fly the eye in). Paid through awardScore — the shared UPSCOR path — so a bonus
+  // crossing EXTRA_LIFE_INTERVAL also grants the bonus life (ALEXEC.MAC:374, 561-586).
+  // Gated nonzero (ENDWAV's IFNE), so a wave-1 start makes no award and no chime.
+  // "CLEAR BONUS" on arrival (ALWELG.MAC:114-117) — cleared so it is paid exactly once.
+  if (s.startBonus > 0) {
+    s.events.push({ type: 'wave-bonus', points: s.startBonus })
+    awardScore(s, s.startBonus)
+  }
+  s.startBonus = 0
   // mode stays 'warp' — the eye is still flying in; stepWarp resumes play at flyIn 0.
 }
 
 // A warp spike crash REPLAYS the same wave (tp1-10, WD-015): the level is NOT
 // advanced (CURWAV is untouched on the crash path), but the board is re-initialised
 // (INIENE) — spikes cleared, spawn budget re-armed — so the killing spike is gone and
-// the Claw returns to normal play on the SAME level with one life already spent.
+// the Claw returns to normal play on the SAME level with one life already spent. The
+// pending advanced-start bonus is NOT paid here — there is no arrival, so it waits for
+// the eventual successful dive off this wave (beginFlyIn), still owed.
 function replayWave(s: GameState): void {
   s.tube = tubeForLevel(s.level) // same wave; re-seat the geometry defensively
   s.spikes = new Array(s.tube.laneCount).fill(0) // INIENE clears the well of spikes
@@ -857,7 +882,13 @@ function stepWarp(s: GameState, dt: number): void {
       s.warp.flyIn = 0
       s.warp.progress = 0
       s.warp.velocity = 0
-      s.mode = 'playing' // NEWAV2 reached EYLDES → CPLAY (ALWELG.MAC:109)
+      // NEWAV2 reached EYLDES → CPLAY (ALWELG.MAC:109): the fly-in — and the whole dive —
+      // is over, so stop the sustained thrust drone here. warp-end spans exactly descent-
+      // start → arrival: the T3 space loop (started by warp-space at the bottom) stops as
+      // play resumes. audio-dispatch stops BOTH loops on warp-end, so this is the single
+      // handover point out of the dive for the successful (non-crash) path (tp1-13 S-014).
+      s.events.push({ type: 'warp-end' })
+      s.mode = 'playing'
     }
     return
   }
@@ -868,20 +899,31 @@ function stepWarp(s: GameState, dt: number): void {
   // tp1-10 (WD-017): the first DESCENDING frame — the Claw is still at the rim
   // (progress 0) and about to move, past the AVOID-SPIKES hold. MOVCUD starts the
   // rumble exactly here (`CMP I,ILINLI / IFEQ / JSR SOUTS2`, ALWELG.MAC:1019-1023),
-  // and only here, so the shell begins the sustained warp loop on this edge.
+  // and only here, so the shell begins the sustained warp loop (T2 in-well) on this edge.
   if (s.warp.progress === 0) s.events.push({ type: 'warp-descent-start' })
-  // WD-010 (tp1-23): warpAccel's ramp is indexed by the ROM's CURWAV, which is 0-based,
-  // while s.level is the displayed 1-based number (state.ts seeds it at 1). Feeding it
-  // s.level ran the whole ramp one wave early — the level-1 dive got 0x24 where the ROM
-  // gives 0x20 (12.5% hot) and the cap landed on level 12 instead of 13.
+  // The dive keeps accelerating the whole way down. WD-010 (tp1-23): warpAccel's ramp
+  // is indexed by the ROM's CURWAV, which is 0-based, while s.level is the displayed
+  // 1-based number (state.ts seeds it at 1). Feeding it s.level ran the whole ramp one
+  // wave early — the level-1 dive got 0x24 where the ROM gives 0x20 (12.5% hot) and the
+  // cap landed on level 12 instead of 13.
   s.warp.velocity += warpAccel(s.level - 1) * dt
   s.warp.progress += s.warp.velocity * dt
+  // Still in the well: a spike on the player's lane crashes the dive (WD-014/WD-015 →
+  // replayWave on respawn). Checked BEFORE the bottom-crossing: for any spike of height
+  // h > 0 the crash fires at progress ≥ 1−h < 1, so a spiked lane always crashes before
+  // reaching the bottom — exactly the ROM's "still on lines" gate (CMP I,ILINDDY / IFCC,
+  // ALWELG.MAC:1083-1085). Past the bottom the cursor is off the lines and crash-proof,
+  // which the fly-in branch (returned at the top) enforces for the whole second phase.
   if (resolveWarpSpikeHit(s)) return // crashed onto a spike — replay the wave, no advance
   if (s.warp.progress >= 1) {
-    // The descent bottomed out. Stop the sustained rumble here (it spans the descent
-    // only — the fly-in's own space sound is a future story, TEA finding) and hand
-    // off to the eye fly-in, which loads the next wave and defers play.
-    s.events.push({ type: 'warp-end' })
+    // The descent bottomed out (cursor passed ILINDDY = $F0). tp1-13 (S-014): MOVCUD
+    // hands the sustained thrust drone over from T2 (in-well) to T3 (space) via SOUTS3
+    // (ALWELG.MAC:1032-1037) — so emit warp-space, NOT warp-end: the dive is not over,
+    // it is entering its crash-proof SPACE / eye-fly-in phase. beginFlyIn runs ENDWAV
+    // (INC CURWAV + the advanced-start bonus) and loads the new well, then the eye flies
+    // in over WARP_FLYIN_FRAMES with mode still 'warp'. warp-end fires at the fly-in's
+    // end (the flyIn branch above), so the loop spans descent-start → arrival exactly.
+    s.events.push({ type: 'warp-space' })
     beginFlyIn(s)
   }
 }

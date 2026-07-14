@@ -1,12 +1,13 @@
 // tests/shell/tp1-10.rumble-dispatch.test.ts
 //
-// RED — tp1-10 AC-6 (finding WD-017), shell half: the sustained warp/zoom loop
-// must start on the new `warp-descent-start` event (the first descending frame),
-// NOT on 'level-clear' (warp entry, before the AVOID-SPIKES hold). See the core
-// half in tests/core/tp1-10.warp-rumble.test.ts.
+// tp1-10 AC-6 (finding WD-017), shell half: the sustained warp/zoom loop starts on
+// the `warp-descent-start` event (the first descending frame), NOT on 'level-clear'
+// (warp entry, before the AVOID-SPIKES hold). See the core half in
+// tests/core/tp1-10.warp-rumble.test.ts.
 //
-// Today audio-dispatch starts the loop on 'level-clear' (audio-dispatch.ts:45-49),
-// so it hums through the whole warning hold. Both assertions below are RED.
+// UNIFIED with tp1-13 (S-014): the drone is two-phase (T2 in-well → T3 in space via
+// 'warp-space'), and 'warp-end' now stops BOTH loops (idempotent). These tests pin the
+// tp1-10 half — descent-start starts it, level-clear does not, warp-end stops it.
 import { describe, it, expect } from 'vitest'
 import { playEventSounds } from '../../src/shell/audio-dispatch'
 
@@ -40,15 +41,20 @@ describe('tp1-10 AC-6 — the warp rumble is dispatched on descent-start, not en
     expect(calls.some((c) => c.kind === 'startLoop')).toBe(false)
   })
 
-  it('still stops the loop on warp-end so it never bleeds past the dive', () => {
+  it('stops the thrust loops on warp-end so nothing bleeds past the dive', () => {
     const { calls, audio } = recorder()
     playEventSounds(audio, [
       { type: 'warp-descent-start' },
       { type: 'warp-end' },
     ])
+    // UNIFIED (tp1-13 S-014): warp-end stops BOTH the in-well (levelClear/T2) and space
+    // (thrustSpace/T3) drones. Here only T2 was started (no bottom-crossing), so the T3
+    // stop is a harmless idempotent no-op — the tp1-10 intent (the rumble never bleeds
+    // past the dive) is preserved: levelClear is stopped exactly once.
     expect(calls).toEqual([
       { kind: 'startLoop', sound: 'levelClear' },
       { kind: 'stopLoop', sound: 'levelClear' },
+      { kind: 'stopLoop', sound: 'thrustSpace' },
     ])
   })
 })

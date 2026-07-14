@@ -14,8 +14,9 @@
 // tube.screenZ):
 //   • game start snaps to the level-1 target (no slide from nowhere)
 //   • wave advance EASES: monotone, no overshoot, arrives in ~8 ROM frames
-//   • arrival literals come from the ROM bytes, never from tube.screenZ (which
-//     is itself under audit in tp1-31.screen-z.test.ts — tp1-27 lesson)
+//   • tp1-32 update: the arrival TARGETS derive from the audited tube.screenZ, not
+//     raw ROM bytes — the magnitude is now a viewport-safe tune (tp1-32), and this
+//     suite owns the EASE, not the magnitude (guarded by tp1-32 + tp1-31.screen-z).
 //
 // Deliberately NOT pinned (logged as deviations): the ROM's 16-bit fractional
 // accumulator (a float port lands within these tolerances), and the mid-slide
@@ -33,15 +34,19 @@ import { ROM_FPS } from '../../src/core/rules'
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const FRAME = 1 / ROM_FPS
 
-// screenZ literals in canvas-y ring units: -ZADJ·(16+H)·S/256 — ZADJ is a ROM
-// SCREEN-unit quantity added post-divide, where the rim spans 256·112/(16+H)
-// against our 300 (see the unit derivation in tp1-31.screen-z.test.ts; the
-// naive ×S-alone conversion was caught by the superseded tp1-9 review).
+// tp1-32 RESCOPED the source of these targets. The per-well screenZ MAGNITUDE was
+// over-scaled and clipped the well off-screen (tp1-32.framing-viewport.test.ts),
+// so it is now a viewport-safe TUNE. This suite pins the SLIDE DYNAMICS (the
+// ZADEST 1/8-per-frame ease), which are independent of the magnitude — so the
+// start/target derive from the audited `tube.screenZ` rather than the old raw-byte
+// literals. The magnitude itself is guarded by tp1-32 + the sign checks in
+// tp1-31.screen-z.test.ts, not here. Directions are unchanged: level 1→2 slides
+// UP-magnitude (both +), level 7→8 crosses zero (+ → −).
 const SCREEN_Z = {
-  level1: (192 * 40 * 300) / (112 * 256), // shape 0, H=24, ZADJ = -192 → +80.357…
-  level2: (224 * 44 * 300) / (112 * 256), // shape 1, H=28, ZADJ = -224 → +103.125
-  level7: (144 * 40 * 300) / (112 * 256), // shape 6, H=24, ZADJ = -144 → +60.268…
-  level8: (-96 * 40 * 300) / (112 * 256), // shape 7, H=24, ZADJ = +96  → -40.179…
+  level1: tubeForLevel(1).screenZ,
+  level2: tubeForLevel(2).screenZ,
+  level7: tubeForLevel(7).screenZ,
+  level8: tubeForLevel(8).screenZ,
 }
 
 // A freshly-cleared state at `level` — same staging as sim.advance-level.test.ts.

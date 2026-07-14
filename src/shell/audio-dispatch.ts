@@ -48,17 +48,43 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
         // The white entry flash is an fx-layer concern (fx.ts), not audio.
         break
       case 'warp-descent-start':
-        // tp1-10 (WD-017): the sustained warp/zoom rumble starts on the first
-        // DESCENDING frame (SOUTS2, ALWELG.MAC:1019-1023), silent through the hold,
-        // and is stopped by 'warp-end' when the descent bottoms out — so it spans the
-        // actual dive, not a one-shot clipped on entry.
+        // tp1-10 (WD-017): the sustained warp/zoom rumble starts on the first DESCENDING
+        // frame (SOUTS2, ALWELG.MAC:1019-1023) — the T2 in-well drone — silent through
+        // the AVOID-SPIKES hold. It hands over to T3 at the bottom-crossing ('warp-space')
+        // and 'warp-end' stops whichever loop is up, so it spans the actual dive, not a
+        // one-shot clipped on entry.
         audio.startLoop('levelClear')
         break
+      case 'warp-space':
+        // tp1-13 (S-014): the cursor passed the well bottom (ILINDDY). MOVCUD hands the
+        // drone over from T2 to T3 via SOUTS3 (ALWELG.MAC:1032-1037) — stop the in-well
+        // loop, start the space drone.
+        audio.stopLoop('levelClear')
+        audio.startLoop('thrustSpace')
+        break
       case 'warp-end':
-        audio.stopLoop('levelClear') // descent done (bottomed out or crashed) — stop the loop
+        // The dive ended: silence whichever thrust loop is still up — T2 (levelClear) on
+        // a crash (died in the well, before the bottom-crossing), T3 (thrustSpace) on a
+        // completion (handed over at 'warp-space', stopped at the fly-in's end). Stops are
+        // idempotent at the engine, so the off-path stop is a harmless no-op — warp-end
+        // always leaves the dive silent (tp1-10 rumble + tp1-13 S-014 space drone unified).
+        audio.stopLoop('levelClear')
+        audio.stopLoop('thrustSpace')
+        break
+      case 'wave-bonus':
+        // tp1-13 (S-015): the end-of-wave skill-step bonus chimes the WP special-score
+        // cue — SAUSON's second trigger, the same extra_life bake (ALEXEC.MAC:371-376).
+        audio.play('extraLife')
+        break
+      case 'bolt-destroyed':
+        // tp1-13 (S-013): a shot-down enemy bolt plays the EX explosion, like any kill
+        // (INCCSQ → CCEXPL, ALWELG.MAC:2797).
+        audio.play('enemyDeath')
         break
       case 'superzapper-activate':
-        audio.play('superzapper')
+        // tp1-13 (S-011): SILENT. kzap.wav was an invention — ALSOUN's 13-sound table
+        // has no superzapper slot. The zap's authentic audio is the rapid EX burst of
+        // each vaporised enemy's own 'enemy-death' event (PROSUZ → KILENE → CIEXPL).
         break
       case 'superzapper-flash':
         // Visual-only (10-2): the per-frame well-color flash is painted by the

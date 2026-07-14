@@ -108,13 +108,21 @@ describe('audio engine sample loading (story 6-6: authentic bakes on R2)', () =>
     expect(fetched).toContain(R2 + 'player_fire.wav') // ★ ROM $cbe9 (LA)
     expect(fetched).toContain(R2 + 'enemy_explosion.wav') // ★ ROM $cc5d (EX)
     expect(fetched).toContain(R2 + 'warp.wav') // ★ ROM $cc75 (T2)
+    expect(fetched).toContain(R2 + 'thrust_space.wav') // ★ ROM $cc81 (T3) — tp1-13
   })
 
   it('loads the community-rip samples from the R2 base', () => {
     createAudioEngine().resume()
     expect(fetched).toContain(R2 + 'clawcatch.wav')
-    expect(fetched).toContain(R2 + 'kzap.wav')
     expect(fetched).toContain(R2 + 'warpin.wav')
+  })
+
+  // tp1-13 (S-011): kzap.wav was an invention — ALSOUN's 13-sound table has no
+  // superzapper slot. The manifest must no longer name it, so the engine must
+  // no longer fetch it.
+  it('does not fetch the invented kzap.wav (tp1-13, S-011)', () => {
+    createAudioEngine().resume()
+    expect(fetched.some((u) => u.includes('kzap')), 'kzap.wav is deleted').toBe(false)
   })
 
   it('resolves every sample against a custom base URL', () => {

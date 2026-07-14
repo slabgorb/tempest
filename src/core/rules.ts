@@ -132,6 +132,37 @@ export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
 
+// ─── THE ADVANCED-START SKILL-STEP BONUS (tp1-13, S-015) ─────────────────────
+//
+// BONSCO awards BONPTM[BONUS] at the end of the STARTING wave — a reward for
+// beginning at an advanced skill step. BONPTM (ALWELG.MAC:266-277):
+//
+//     BONSCO: … LDA I,0 ;LSB ALWAYS 0 …
+//     BONPTM: .WORD 0,60,160,320,540,740,940,1140
+//
+// ALWELG is .RADIX 16, and BONSCO streams each word out as BCD digit-pairs with an
+// always-zero ones-pair, so `.WORD 160` → the digit pair 01,60 → 16,000 points
+// (NOT decimal 160: its low byte 0xA0 is not a BCD pair — the decode only works if
+// the literals are hex). Decoding the whole table gives the ladder below, pinned as
+// LITERALS so a re-derivation from the audited constant can't silently drift
+// (the tp1-27 lesson). Indexed by SKILL STEP i; the ROM's LEVEL table
+// (ALWELG.MAC:278-280) pairs step i with START WAVE 2i+1 (1,3,5,…,15).
+const START_WAVE_BONUS_LADDER: readonly number[] = [
+  0, 6_000, 16_000, 32_000, 54_000, 74_000, 94_000, 114_000,
+]
+
+// The bonus for STARTING at `wave`. The ROM only offers odd start waves (its select
+// steps by whole skill steps), so `i = floor((wave-1)/2)` recovers the step and its
+// ladder value exactly for odd waves (wave 2k+1 → step k → BONPTM[k]). Our select is
+// contiguous 1..16, so an even start wave (never reachable in the cabinet) falls to
+// the nearest LOWER step — you keep credit for the highest milestone you passed
+// (wave 4 → step 1 → 6,000). Total and non-negative for every wave; a wave-1 start
+// is step 0 = 0, which ENDWAV's IFNE gate then silences.
+export function startWaveBonus(wave: number): number {
+  const step = Math.min(Math.max(0, Math.floor((wave - 1) / 2)), START_WAVE_BONUS_LADDER.length - 1)
+  return START_WAVE_BONUS_LADDER[step]
+}
+
 // Superzapper active-window durations, in FRAMES (Story 10-2). The ROM's TIMAX
 // holds the first activation "active" ~13 frames and the second ~5, flashing the
 // well each frame and killing on a per-frame cadence (KILENE) across the window.
@@ -187,6 +218,10 @@ export const WARP_STARFIELD_GATE = (0x50 - 0x10) / WARP_ALONG_SPAN  // 64/224 �
 // ALWELG.MAC:1049-1057), so it must fly that same 224-unit span back at 24/frame:
 // ceil(224/24) = 10 frames. Per the qframe convention (one warp step == one ROM
 // frame, like the tp1-31 camera slide), this is a frame count, not a dt-scaled span.
+//
+// This is the authentic camera span tp1-13's provisional WARP_SPACE_FRAMES (=9)
+// deferred to "the story that owns the camera timing": the space/drone beat and the
+// eye fly-in are the SAME post-descent phase, so the two constants unify to this one.
 export const WARP_FLYIN_FRAMES = Math.ceil(WARP_ALONG_SPAN / 0x18)  // ceil(224/24) = 10
 // --- Enemy energy bolts (Story 6-5), authentic rev-3 -------------------------
 // Max concurrent enemy bolts on screen (ROM n_enemy_bullets = 4). A hard cap;

@@ -17,7 +17,8 @@ export interface Tube {
   // canvas-y ring units. ZADJ is added POST-divide in ROM screen units (WORSCR:
   // SCREEN Z = [FACTOR/(PY-EY)]*(PZ-EZ)+SZCENT, ALDISP.MAC:2049-2051, FACTOR =
   // 256 via the math-box high-byte load; ADC ZADJL at :2274), where the rim
-  // spans 256·112/(16+H) — so the rim-relative port is -ZADJ·(16+H)·S/256.
+  // spans 256·112/(16+H) — so the rim-relative port is -ZADJ·(16+H)·S/256,
+  // damped by VIEWPORT_SAFE_SCALE (tp1-32) so the shifted rim never clips.
   // The level-start slide toward this target lives in GameState.camera.
   readonly screenZ: number
 }
@@ -223,6 +224,20 @@ const ROM_ZADJ: readonly number[] = [
 // THOSE units, where the rim spans 256·112/(16+H).
 const ROM_SCREEN_FACTOR = 256
 
+// tp1-32: the raw ROM SCREEN-Z target (−ZADJ·(16+H)·S/256, applied below) is
+// faithful to the ROM's screen geometry, but our near ring already spans ±300
+// against the phosphor scene's ±360 half-box — proportionally far more of the
+// frame than the ROM's rim filled its taller screen. Applied undiluted the shift
+// drove the near rim (and the Claw on it) OFF-SCREEN for ~half the 16 wells
+// (worst: well shape 12, rim at +300 plus the largest +target → |y| ≈ 447 vs the
+// ±360 box). Damp every well's shift by this UNIFORM viewport-safe fraction so
+// even the deepest well's near rim lands inside the box: the binding well
+// (shape 12) needs the factor ≤ ~0.27, and 0.25 leaves a few units under the
+// ±340 safe band (tests/core/tp1-32.framing-viewport.test.ts). Uniform, so every
+// well keeps its ROM high/low ORDERING and direction — the exact magnitude of the
+// framing is a play-test tune, not a pinned ROM byte.
+const VIEWPORT_SAFE_SCALE = 0.25
+
 const ROM_CENTER = 0x80
 // Map the ROM rim radius (±112) onto the original circle's near radius (300) so
 // level 1 keeps its size. The far end is the same ring scaled toward the per-well
@@ -261,7 +276,9 @@ function makeRingTube(tube: number): Tube {
   // tp1-31 (DB-008): ZADJ is a ROM SCREEN-unit quantity (post-divide — see
   // Tube.screenZ); the rim there spans ROM_SCREEN_FACTOR·112/(16+H) against our
   // 300, so the rim-relative translate is -ZADJ·(16+H)·RING_SCALE/256, canvas-y.
-  const screenZ = (-ROM_ZADJ[tube] * (16 + H) * RING_SCALE) / ROM_SCREEN_FACTOR
+  // tp1-32: damped by VIEWPORT_SAFE_SCALE so the shifted near rim stays on-screen.
+  const screenZ =
+    (-ROM_ZADJ[tube] * (16 + H) * RING_SCALE * VIEWPORT_SAFE_SCALE) / ROM_SCREEN_FACTOR
   return { laneCount: closed ? 16 : 15, closed, far, near, farRatio, screenZ }
 }
 

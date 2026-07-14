@@ -140,6 +140,35 @@ export interface WarpEndEvent {
   type: 'warp-end'
 }
 
+// The dive crossed the well bottom (ILINDDY = $F0) into space (tp1-13, S-014).
+// MOVCUD initializes space mode and starts the T3 space drone via SOUTS3 on this
+// exact frame (ALWELG.MAC:1032-1037); the shell hands the sustained thrust loop
+// over from T2 (in-well) to T3 (in-space). The level has NOT advanced yet — the
+// space segment is still the warp.
+export interface WarpSpaceEvent {
+  type: 'warp-space'
+}
+
+// The end-of-wave skill-step bonus for starting at an advanced wave was awarded
+// (tp1-13, S-015). ENDWAV pays BONPTM[BONUS] once — gated on the bonus being
+// nonzero (`LDA X,BONUS / IFNE`, ALEXEC.MAC:371-376) — and makes the WP
+// special-score chime through SAUSON. `points` is the ladder value; the shell
+// plays the same extra_life cue.
+export interface WaveBonusEvent {
+  type: 'wave-bonus'
+  points: number
+}
+
+// A player shot destroyed an enemy bolt in flight (tp1-13, S-013). INCCSQ's
+// charge-charge kill places the EX explosion at the SHOT's coordinates and makes
+// the EX noise, awarding no points (ALWELG.MAC:2797-2809). `lane`/`depth` mark the
+// destroyed bolt's position for the burst + cue.
+export interface BoltDestroyedEvent {
+  type: 'bolt-destroyed'
+  lane: number
+  depth: number
+}
+
 export type GameEvent =
   | EnemyDeathEvent
   | PlayerGrabEvent
@@ -158,3 +187,6 @@ export type GameEvent =
   | PulsarHumStopEvent
   | WarpDescentStartEvent
   | WarpEndEvent
+  | WarpSpaceEvent
+  | WaveBonusEvent
+  | BoltDestroyedEvent
