@@ -11,12 +11,15 @@ import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
-  playerBulletColor, playerClawGlyph, lifeIconGlyph,
-  type Glyph, type GlyphColor,
+  playerBulletColor, playerClawGlyph, lifeIconGlyph, wellColor,
+  type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
 
-// Per-level color cycling — index by (level-1) mod palette length.
+// The Superzapper strobe ramp (Story 10-15): eight hues the well flashes through
+// while a zap is active, indexed by the core's flash counter. The per-level WELL
+// colour is no longer taken from here — it comes from the COLTAB palette (tp1-12,
+// glyphs.ts `wellColor`).
 const LEVEL_COLORS = [
   '#1f8fff', '#ff2f4f', '#ffd400', '#23e8a6',
   '#b14cff', '#00d6ff', '#ff7a18', '#46ff5a',
@@ -44,6 +47,15 @@ const GLYPH_HEX: Record<GlyphColor, string> = {
   white: '#ffffff',
   orange: '#ffa500',
   purple: '#9b30ff',
+  blue: '#2b6bff', // tp1-12: the ROM's ZBLUE — distinct from `cyan` (ZTURQOI)
+}
+
+// The invisible well (bank 4, ZBLACK): black on black. Resolve a palette colour
+// NAME to a pixel — the seven visible names go through GLYPH_HEX, `black` renders
+// as the background so the well/rim/spokes vanish (the famous waves 65-80).
+const WELL_BLACK_HEX = '#000000'
+function paletteHex(color: PaletteColor): string {
+  return color === 'black' ? WELL_BLACK_HEX : GLYPH_HEX[color]
 }
 
 // Swing `from` to `to` along the circular arc about `pivot`, interpolating BOTH
@@ -919,7 +931,13 @@ export function render(
   ctx.fillStyle = vg
   ctx.fillRect(0, 0, W, H)
 
-  const color = LEVEL_COLORS[(s.level - 1) % LEVEL_COLORS.length]
+  // tp1-12: the well and the per-level accent come from the COLTAB palette
+  // (glyphs.ts `wellColor`), not an arbitrary 8-hue list. `wellName` is the well
+  // slot's colour for this wave-group — `black` on waves 65-80 (the invisible well).
+  // The HUD/frame/warp accent must stay VISIBLE, so it falls back to white when the
+  // well itself is invisible.
+  const wellName = wellColor(s.level)
+  const color = wellName === 'black' ? GLYPH_HEX.white : paletteHex(wellName)
 
   // Framing screens own the whole frame: draw them and SUPPRESS the (now stale)
   // playing scene entirely. This is the 4-2 F1 fix — on boot/attract and after
@@ -939,14 +957,14 @@ export function render(
   const pctx = phosphor.beginScene(W, H, dpr)
   // Superzapper well-color flash (Story 10-15): while a zap is active the FX
   // layer surfaces the core's `superzapper-flash` index (QFRAME AND 7) as
-  // `fx.zapFlash`; tint the whole well/web with that palette hue so it strobes
-  // through the spectrum, then revert to the level colour the frame the flashes
-  // stop. The renderer owns the index→hue mapping (events.ts: "the renderer maps
-  // it to the palette"); LEVEL_COLORS' eight hues double as the well-color ramp.
-  const wellColor = fx.zapFlash != null
+  // `fx.zapFlash`; tint the whole well/web with that flash hue so it strobes
+  // through the spectrum, then revert to the wave-group well colour the frame the
+  // flashes stop. The renderer owns the index→hue mapping (events.ts: "the renderer
+  // maps it to the palette"); LEVEL_COLORS' eight hues remain the strobe ramp.
+  const wellHex = fx.zapFlash != null
     ? LEVEL_COLORS[fx.zapFlash % LEVEL_COLORS.length]
-    : color
-  drawTube(pctx, s, wellColor, currentLane(s.tube, s.player.lane))
+    : paletteHex(wellName)
+  drawTube(pctx, s, wellHex, currentLane(s.tube, s.player.lane))
   drawSpikes(pctx, s)
   if (s.mode === 'warp') {
     // Diving-Claw warp transition; spikes above stay drawn so a crash reads.

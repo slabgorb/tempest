@@ -1,7 +1,7 @@
 // src/core/rules.ts
 
-import { type Rng, nextFloat } from '@arcade/shared/rng'
-import type { Enemy, EnemyKind, TankerCargo } from './state'
+import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
+import type { Enemy, EnemyKind, Nymph, TankerCargo } from './state'
 import { flipperCamForWave } from './enemies/cam'
 import { assertNever } from './assert'
 
@@ -81,7 +81,35 @@ export const SPIN_SENSITIVITY = 0.15
 // It manufactured an AGREEMENT, and an agreement is the one thing nobody re-checks.
 export const BULLET_SPEED = (9 * ROM_FPS) / WARP_ALONG_SPAN  // 1.143 depth units/sec
 export const MAX_BULLETS = 8
-export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
+// The grab line. It is not a threshold the ROM tunes — it is the RIM itself, and the
+// reason no byte could ever be found for it is that the kill check does not test depth.
+//
+// JKITST (ALWELG.MAC:1980-1993) reads INVAY nowhere. It tests exactly two things: the
+// invader is not mid-jump (the $80 INVMOT bit — W-010), and both its legs sit on both of
+// the cursor's legs. The depth gate lives one level up, in WHO IS ALLOWED TO RUN IT: the
+// opcode VKITST appears in exactly ONE cam program in the cabinet — TOPPER, the CHASER cam
+// (2447-2452, "CHASE PLAYER AROUND TOP"). Only a chaser can grab. And an invader becomes a
+// chaser in exactly one place, where it is seated on the cursor's own line:
+//
+//     CHASER: LDA CURSY      ;PLACE EXACTLY AT TOP
+//             STA X,INVAY                                  (ALWELG.MAC:1824-1826)
+//
+// reached from the climb by `CMP CURSY / BEQ ATOP / IFCC` (1744-1747). With
+// CURSY = ILINLIY = $10 (ALWELG.MAC:57-58; ALCOMN.MAC:820), the grab line is the top of
+// the well: (0xf0 - 0x10) / 224 = 1.0 — which is precisely the depth the cam interpreter
+// already pins a chaser to (RIM_DEPTH, which now derives from this name so the two cannot
+// drift apart again).
+//
+// It used to read 0.92, which inverts to INVAY 33.92 — not a ROM byte, and eight units
+// short of the rim, so an invader still CLIMBING grabbed a player the cabinet would never
+// have touched. Two consequences fell out of that invention: the enemy bolt killed early
+// (it shares this line — the ROM's charge is tested `CMP CURSY / IFCC ;AT TOP?` at
+// 2562-2565, the same CURSY), and tp1-24 ratified a difficulty change — "a split child is
+// born above the grab line, so the player dies on the burst frame" — that the cabinet does
+// not have. With the line derived it sits ABOVE the carrier's burst line ($20 = 0.9286), so
+// no child is ever born lethal: ATOP is tested BEFORE the carrier check, so a carrier that
+// reaches the rim becomes a CHASER instead of bursting. (Story tp1-27; finding W-049.)
+export const PLAYER_RIM_DEPTH = (0xf0 - 0x10) / WARP_ALONG_SPAN  // = 1.0, the rim (CURSY)
 export const RESPAWN_DELAY = 1.5      // seconds
 // Fixed lane the Claw returns to after a death (arcade rev-3: segment 14, near
 // rim) — never the death spot. A constant landing lane plus a fully reset board
@@ -355,11 +383,18 @@ export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.3
 //
 // It was 0.85, and its comment said "Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is
 // not an instant grab" — a deliberate softening, written before the fidelity epic, that
-// clamped a tanker's children safely below the grab line. The cabinet does the opposite on
-// purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own INVAY into TEMP0 and
-// ACTINV (1219-1226) seats each child straight back out of it, so both are born at the
-// parent's EXACT depth. A carrier that arrives on its own bursts at $20 — 0.9286, ABOVE the
-// 0.92 grab line — and a player on a flanking lane is grabbed on the burst frame.
+// clamped a tanker's children safely below the grab line. (That 0.92 was itself invented;
+// the grab line is the RIM — see PLAYER_RIM_DEPTH above, and tp1-27 / W-049.) The cabinet
+// does the opposite on purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own
+// INVAY into TEMP0 and ACTINV (1219-1226) seats each child straight back out of it, so both
+// are born at the parent's EXACT depth. A carrier that arrives on its own bursts at $20 —
+// 0.9286 — so the children are born high in the well rather than at a soft 0.85.
+//
+// They are NOT born lethal, and tp1-24's claim that they were is retracted (tp1-27). The
+// burst line ($20) sits BELOW the grab line ($10 = the rim), and ATOP is tested BEFORE the
+// carrier check (1744-1750): a carrier that actually reaches the rim becomes a CHASER
+// instead of bursting. So a newborn child is always below the grab line and must climb the
+// last stretch — and become a chaser — before it can touch anyone.
 //
 // The constant is deleted rather than renumbered because there is no number that belongs
 // here: the children's depth is not a constant at all, it is the parent's. Do not
@@ -400,11 +435,40 @@ export interface LevelParams {
   enemyCount: number
   flipperSpeed: number   // depth units per second
   flipperCam: number     // WFLICAM — the CAM program THIS wave's flippers run (tp1-4)
-  spawnInterval: number  // seconds between spawns
   spikerSpeed: number    // depth units/s for spiker oscillation
   fuseballSpeed: number  // depth units/s climb for fuseballs
   tankerSpeed: number    // depth units/s climb for tankers
 }
+
+// ─── THE 7-INVADER CAP AND THE NYMPH QUEUE (tp1-6) ───────────────────────────
+//
+// NINVAD (ALCOMN.MAC:809, `NINVAD= 7`): the ROM's active-invader arrays hold
+// SEVEN slots — the hardware cannot express an 8th live invader. Every
+// activation, hatch and split child alike, goes through ACTINV's slot scan
+// (ALWELG.MAC:1219-1263) and is refused when no slot is free.
+export const NINVAD = 7
+// WINVMX (ALCOMN.MAC:732, "MAX # OF INVADERS-1"): the byte MOVNYM compares the
+// live count against. TINVMX (ALWELG.MAC:695, `.BYTE T1,1,99.,6`) is a single
+// constant record spanning every wave 1-99 — the cap NEVER varies by wave, and
+// CONTOUR folds waves >= 99 back inside the record, so there is no wave that
+// can walk off it. The gate itself is STRICTLY GREATER: `CMP WINVMX / IFCS /
+// IFNE` (1113-1115) — both flags of ONE compare — so nymphs still advance at 6
+// live (and hatch to 7); they freeze only once all NINVAD slots are booked.
+export const WINVMX = NINVAD - 1
+
+// ─── THE FUSEBALL TURN-BACK (W-024, tp1-6) ───────────────────────────────────
+//
+// JFUSEUP (ALWELG.MAC:2110-2118): climbing with nymphs left (`LDY NYMCOU /
+// IFNE`) on an early wave (`LDY CURWAV / CPY I,17.` — CURWAV is 0-based, so
+// displayed waves 1-17), the climb is capped at INVAY $20: "TURN BACK BEFORE
+// TOP". The same $20 byte as the spiker's turnaround, kept as its OWN constant
+// (the tp1-5 lesson: one number, two rules — they must be able to move apart).
+export const FUSE_TURNBACK_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
+// The descent leg reverses at INVAY $80 — "AT BOTTOM OF RANGE?" (2131-2133) —
+// so the early-wave fuse yo-yos between depth 0.5 and 0.929 while nymphs remain.
+export const FUSE_RANGE_FLOOR_DEPTH = (0xf0 - 0x80) / WARP_ALONG_SPAN  // = 0.5
+// `CPY I,17.` on the 0-based CURWAV: the last DISPLAYED wave that is "early".
+export const FUSE_EARLY_WAVE_MAX = 17
 
 // Authentic flipper climb speed (story 6-9, REBASED by tp1-1). The ROM steps the
 // flipper's climb byte from 1.375 along/frame at L1 to 3.375 at L33+ (then flat),
@@ -455,7 +519,8 @@ export function levelParams(level: number): LevelParams {
     // WFLICAM (NEWFLI, ALWELG.MAC:1428-1433): the wave's flipper program. This is
     // the whole of W-006 — wave 1 gets NOJUMP, so its flippers never flip.
     flipperCam: flipperCamForWave(level),
-    spawnInterval: Math.max(0.3, 1.2 / ramp),
+    // No spawnInterval: the metronome was W-003's divergence and tp1-6 deleted it.
+    // Release pacing is ININYM's 16-frame stagger plus slot back-pressure (below).
     spikerSpeed: 0.22 * ramp,
     // No pulseInterval: the pulse is not a per-pulsar timer any more, and it does not
     // ramp with the level. It is ONE global counter with a fixed 40-frame period
@@ -465,9 +530,33 @@ export function levelParams(level: number): LevelParams {
   }
 }
 
-export function spawnForLevel(level: number): { remaining: number; timer: number } {
-  const p = levelParams(level)
-  return { remaining: p.enemyCount, timer: p.spawnInterval }
+/**
+ * ININYM (ALWELG.MAC:315-340) — the wave's whole enemy budget enters as a
+ * staggered nymph queue (INIENE:303-304 loads NWNYMC into NYMCOU; ours is the
+ * queue's length). Nymph i is seeded at NYMPY = ((i & $F) << 4) | lane: the
+ * ROM's shift is `TXA / ASL ASL ASL ASL` on an EIGHT-BIT accumulator, so the
+ * band WRAPS at index 16 — a big wave's nymphs 16+ seed back into the same
+ * 256-frame window as 0-15 and the cabinet opens it with interleaved
+ * double-density hatching. The one all-zero ASSEMBLED byte is bumped to $0F
+ * (`IFEQ / LDA I,0F`) — post-wrap, so index 16 on lane 0 is rescued exactly
+ * like index 0 — and a nymph is never born already inactive.
+ *
+ * (The first GREEN shipped this shift unbounded and stretched every budget
+ * past 16 — level 7 and up — slower than the arcade; review round-trip 1.)
+ *
+ * The ROM rolls the lane as `RANDOM AND I,0F` over its fixed 16 lines; our open
+ * wells have laneCount 15, so we roll the tube's real lane range instead —
+ * validity over a mask the geometry cannot honor.
+ */
+export function spawnForLevel(level: number, rng: Rng, laneCount: number): { nymphs: Nymph[] } {
+  const nymphs: Nymph[] = []
+  const count = levelParams(level).enemyCount
+  for (let i = 0; i < count; i++) {
+    const lane = nextInt(rng, laneCount)
+    const py = ((i & 0x0f) << 4) | lane
+    nymphs.push({ lane, py: py === 0 ? 0x0f : py })
+  }
+  return { nymphs }
 }
 
 export function fuseballScore(depth: number): number {

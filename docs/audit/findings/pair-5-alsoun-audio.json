@@ -211,7 +211,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 583,
+      "line": 676,
       "verbatim": "//     non-tanker per active frame (KILENE) until none remain. Charge → used-once."
     },
     "claim": "KILENE (ALWELG.MAC:3542-3546) gates its kill on `CMP I,CSUSTA` (SUZTIM must first reach CSUSTA=3) then `AND I,CSUINT` (the result must be even) — so it eliminates one invader on a GATED cadence, roughly every OTHER active frame (every CSUINT+1=2 IRQ ticks), not on every frame. Our stepZap/runZapFrame/zapKillAt (src/core/sim.ts:473-531) instead vaporises one non-tanker on EVERY active frame of the zap window — sim.ts:487's own comment claims this 'mirrors KILENE', but it kills at up to double the ROM's authentic rate.",
@@ -231,7 +231,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 310,
+      "line": 380,
       "verbatim": "function resolveEnemyBulletHits(s: GameState): void {"
     },
     "claim": "INCCSQ plays the EX (\"ENEMY EXPLOSION\") cue via CCEXPL whenever a player charge destroys an enemy charge in flight, then deactivates the enemy shot and decrements ESHCOU. Our resolveEnemyBulletHits (src/core/sim.ts:245-261) implements the identical collision rule — its own comment says \"player shots can destroy enemy bolts\" (src/core/sim.ts:638) — but the function pushes no GameEvent at all, so no sound plays and no other system (particles, score) reacts either.",

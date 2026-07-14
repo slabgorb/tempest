@@ -10,9 +10,9 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 describe('enemy ↔ player collision and death', () => {
   it('kills the player when an enemy reaches the rim on the player lane', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.player.lane = 4
-    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.lives).toBe(2)
@@ -22,7 +22,7 @@ describe('enemy ↔ player collision and death', () => {
 
   it('does not kill the player on a different lane', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.player.lane = 4
     s.enemies = [makeEnemy('flipper', 9, 0.99, levelParams(1))]
 
@@ -33,14 +33,14 @@ describe('enemy ↔ player collision and death', () => {
 
   it('respawns after the delay while lives remain', () => {
     let s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.player.lane = 4
     // The lane-4 enemy kills the player (and is cleared on respawn). A second
     // enemy on a far lane sits below the rim and survives the respawn, so the
     // level is NOT incidentally clear afterward — this test exercises the
     // respawn mechanic, not the end-of-level warp (see sim.warp.test.ts).
     s.enemies = [
-      makeEnemy('flipper', 4, 0.95, levelParams(1)),
+      makeEnemy('flipper', 4, 1, levelParams(1)),
       makeEnemy('flipper', 9, 0.3, levelParams(1)),
     ]
     s = stepGame(s, NEUTRAL, 1 / 60)            // → dying
@@ -55,10 +55,10 @@ describe('enemy ↔ player collision and death', () => {
 
   it('goes to gameover when the last life is lost', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.lives = 1
     s.player.lane = 4
-    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('gameover')

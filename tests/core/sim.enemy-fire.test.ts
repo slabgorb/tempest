@@ -29,7 +29,7 @@ function fireBoard(
 ): GameState {
   const s = playingState(seed)
   s.player.lane = playerLane
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.bullets = []
   s.enemies = enemies
   return s

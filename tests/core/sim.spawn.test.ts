@@ -38,7 +38,10 @@ function rolledCargo(level: number, seed: number, n = 4000): Set<TankerCargo> {
 function spawnedKinds(level: number, seed: number): Set<string> {
   let s = playingState(seed)
   s.level = level
-  s.spawn = { remaining: 40, timer: 0 }
+  // 40 eager nymphs (small staggered pys): the old `timer: 0` "spawn as fast as
+  // allowed". Back-pressure paces delivery now, so the same 6000-frame window
+  // still sees the whole roster hatch — kinds roll at hatch time.
+  s.spawn = { nymphs: Array.from({ length: 40 }, (_, i) => ({ lane: (i * 5) % 16, py: 1 + 16 * i })) }
   const kinds = new Set<string>()
   for (let i = 0; i < 6000; i++) {
     s = stepGame(s, NEUTRAL, 1 / 60)

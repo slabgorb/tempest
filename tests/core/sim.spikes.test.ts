@@ -9,7 +9,7 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 describe('spikes', () => {
   it('a spiker raises the spike height in its lane as it climbs', () => {
     let s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.enemies = [makeEnemy('spiker', 6, 0, levelParams(1))]
     for (let i = 0; i < 30; i++) s = stepGame(s, NEUTRAL, 1 / 60)
     expect(s.spikes[6]).toBeGreaterThan(0)
@@ -17,7 +17,7 @@ describe('spikes', () => {
 
   it('a bullet shortens the spike in its lane and scores', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.spikes[2] = 0.5
     s.bullets = [{ lane: 2, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -28,7 +28,7 @@ describe('spikes', () => {
 
   it('leaves spikes in other lanes alone', () => {
     const s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.spikes[2] = 0.5
     s.bullets = [{ lane: 9, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, 1 / 60)

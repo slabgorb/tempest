@@ -42,7 +42,7 @@ function warpDeathState(opts: {
   lives?: number
 } = {}): GameState {
   const s = playingState(1)
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.enemies = []
   s.bullets = []
   s.mode = 'warp'
@@ -112,7 +112,7 @@ describe('post-warp-death re-warp loop is resolved (Story 3-6)', () => {
   // reproduced through stepGame's public surface from a 'playing' state.
   it('resolves the loop end-to-end through the real level-clear path', () => {
     const start = playingState(1)
-    start.spawn.remaining = 0
+    start.spawn = { nymphs: [] }
     start.enemies = []
     start.bullets = []
     start.player.lane = 7
@@ -156,10 +156,10 @@ describe('warp-death resolution preserves existing behavior (Story 3-6 regressio
   // SAME level, not warp forward.
   it('a normal mid-level death respawn resumes the same level (does not advance)', () => {
     let s = playingState(1)
-    s.spawn.remaining = 0
+    s.spawn = { nymphs: [] }
     s.player.lane = 4
     s.enemies = [
-      makeEnemy('flipper', 4, 0.95, levelParams(1)), // kills, cleared on respawn
+      makeEnemy('flipper', 4, 1, levelParams(1)), // kills, cleared on respawn
       makeEnemy('flipper', 9, 0.3, levelParams(1)),  // survives → level NOT clear
     ]
     s = stepGame(s, NEUTRAL, DT)

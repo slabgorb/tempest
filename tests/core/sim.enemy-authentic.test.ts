@@ -70,7 +70,7 @@ function isolated(seed: number): GameState {
   s.player.lane = 8
   s.enemies = []
   s.bullets = []
-  s.spawn = { remaining: 5, timer: 999 } // pending but never fires within a test
+  s.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) } // pending but never fires within a test
   s.spikes = new Array(s.tube.laneCount).fill(0)
   return s
 }
@@ -267,7 +267,7 @@ describe('flipper rim-grab and determinism (story 6-9 guards)', () => {
   it('grabs and kills the Claw when it reaches the rim on the player segment', () => {
     const s = isolated(1)
     s.player.lane = 3
-    s.enemies = [makeEnemy('flipper', 3, 0.95, levelParams(1))] // at the rim, same seg
+    s.enemies = [makeEnemy('flipper', 3, 1, levelParams(1))] // at the rim, same seg
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.mode).toBe('dying')
     expect(out.lives).toBe(2)

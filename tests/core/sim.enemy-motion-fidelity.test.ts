@@ -76,7 +76,7 @@ function isolated(seed: number, spawnRemaining = 5): GameState {
   s.player.lane = 8
   s.enemies = []
   s.bullets = []
-  s.spawn = { remaining: spawnRemaining, timer: 999 } // never auto-fires within a test
+  s.spawn = { nymphs: Array.from({ length: spawnRemaining }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) } // dormant: never hatches within a test
   s.spikes = new Array(s.tube.laneCount).fill(0)
   return s
 }

@@ -36,7 +36,7 @@ function base(level: number, playerLane: number): GameState {
   s.level = level
   s.tube = tubeForLevel(level)
   s.spikes = new Array(s.tube.laneCount).fill(0)
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.player.lane = playerLane
   s.enemies = []
   return s
@@ -79,7 +79,7 @@ function pulsing(s: GameState, p: Pulsar): Pulsar {
 describe('tp1-5 — a pulsar at the rim is SENT DOWN while nymphs remain (CHASER:1828-1838)', () => {
   it('turns around at the rim instead of becoming a chaser', () => {
     const s0 = base(1, 10)
-    s0.spawn.remaining = 5              // NYMCOU != 0 — the wave still owes enemies
+    s0.spawn = { nymphs: Array.from({ length: 5 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) } // NYMCOU != 0 — the wave still owes enemies
     s0.enemies = [makeEnemy('pulsar', 4, 0.99, levelParams(1))]
 
     const s = step(s0, 20)
@@ -104,7 +104,7 @@ describe('tp1-5 — a pulsar at the rim is SENT DOWN while nymphs remain (CHASER
     // frame — roughly 8 frames a lane at wave 1. Over a 40-frame window that is five
     // hops against one, and only the chaser can produce it.
     const s0 = base(1, 10)
-    s0.spawn.remaining = 0              // NYMCOU == 0
+    s0.spawn = { nymphs: [] }              // NYMCOU == 0
     s0.enemies = [makeEnemy('pulsar', 4, 0.99, levelParams(1))]
 
     let s = s0

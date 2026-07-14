@@ -43,7 +43,7 @@ function eventsOfType<T extends GameEvent['type']>(
 // forge an event we did not author.
 function playing(enemies: Enemy[]): GameState {
   const s = playingState(1)
-  s.spawn = { remaining: 1, timer: 999 }
+  s.spawn = { nymphs: Array.from({ length: 1 }, (_, i) => ({ lane: i, py: 30000 + 16 * i })) }
   s.player.lane = 0
   s.enemies = enemies
   return s
@@ -62,7 +62,7 @@ function clearedAtLevel(level: number, playerLane: number): GameState {
   s.tube = tube
   s.spikes = new Array(tube.laneCount).fill(0)
   s.player.lane = playerLane
-  s.spawn.remaining = 0
+  s.spawn = { nymphs: [] }
   s.enemies = []
   return s
 }
