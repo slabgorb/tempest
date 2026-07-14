@@ -251,8 +251,17 @@ describe('tp1-25 — lang-review: 0 is a REAL WFUSCH value, not a missing one', 
     // makes the next reader stop looking.
     //
     // So assert the VALUE through the exported function instead of grepping for a shape.
-    // No refactor can hide from this, because it is the property that actually matters:
-    // `0` is a real answer (CONTOUR's TE path, 442) and it must reach the caller intact.
+    //
+    // ⚠ BE PRECISE ABOUT WHAT THIS DOES AND DOES NOT COVER — the first draft of this comment
+    // overclaimed, and the Reviewer mutation-proved THAT too. This test guards ONE thing: a
+    // fallback baked INSIDE wfuschForLevel, i.e. that `0` is a real answer (CONTOUR's TE path,
+    // 442) and not something the function itself coerces away. It never calls jfuseup, so it
+    // CANNOT see a fallback at the CALL SITE — reintroduce the `gated` mutation above and this
+    // test stays green.
+    //
+    // The call site is guarded by BEHAVIOUR, in tp1-25.fuseball-chase.test.ts: the wave-1/16/17
+    // "ignores the player" tests go red on exactly that mutation. THOSE ARE THE REAL GUARD.
+    // Do not delete them believing this one covers them. It does not.
     for (let level = 1; level <= 17; level++) {
       expect(wfuschForLevel(level), `wave ${level} must be exactly 0 — not "falsy, so default it"`)
         .toBe(0)

@@ -414,7 +414,7 @@ function jjumpm(e: Enemy, ctx: CamContext): number {
 }
 
 /**
- * JFUSEUP (ALWELG.MAC:2095-2135): process the fuse. It rides its lane and rolls between
+ * JFUSEUP (ALWELG.MAC:2095-2145): process the fuse. It rides its lane and rolls between
  * lanes on a fuzz_move roll — NOT "toward the player", which is what this comment used to
  * say and was never true in either regime: below wave 18 the roll is a blind coin (LEFRIT),
  * and from 18 up it aims and then REVERSES, so the fuse rolls deliberately AWAY. See the
