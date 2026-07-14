@@ -207,7 +207,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 356,
+      "line": 408,
       "verbatim": "    enemyCount: 6 + (level - 1) * 2,"
     },
     "claim": "NWNYMC (the wave's nymph count = its total enemy budget) is itemised per wave: 10, 12, 15, 17, 20, 22, 20, 24, 27, 29, 27, 24, 26, 28, 30, 27 for waves 1-16, then TA/T1 records to wave 99 (698-703). Note it is NOT monotonic — it DROPS at wave 7 (22 -> 20) and again at wave 12 (27 -> 24). Ours is 6 + 2*(level-1): 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36. Wave 1 is 6 for us and 10 in the arcade; wave 16 is 36 for us and 27 in the arcade.",
@@ -227,7 +227,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 323,
+      "line": 375,
       "verbatim": "export function flipperSpeedForLevel(level: number): number {"
     },
     "claim": "WINVIL (the base invader speed, used by flippers and tankers, doubled for fuseballs, offset for enemy shots) comes from TINVIN (591-599). Waves 1-8 are TA: -44 with -5 PER WAVE (wave 8 = -79). Waves 9-16 are itemised: -81, -84, -84, -84, -88, -92, -96, -96. Wave 17-25 RESTARTS at -81 (enemies get SLOWER at wave 17), 26-32 at -99, 33-39 at -108, 40-48 at -110, 49-64 at -120, 65-99 alternates -160/-191. TIMES8 (560-578) scales by 8 into 8.8 fixed point, so along-units/frame = |WINVIL|/32. Wave 1 = 1.375, wave 8 = 2.469, wave 16 = 3.000, wave 17 = 2.531, wave 33 = 3.375. Our flipperSpeedForLevel interpolates LINEARLY from 1.375 (L1) to 3.375 (L33): wave 8 = 1.813 (27% too slow), wave 16 = 2.313 (23% too slow), and it never dips at 17.",
@@ -265,7 +265,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 362,
+      "line": 414,
       "verbatim": "    spikerSpeed: 0.22 * ramp,"
     },
     "claim": "The spiker's speed slot is WINVIL+ZABTRA, filled from TSPIIN (602-605) using type code TB, which DOTB (829-832) implements as 'the record byte PLUS the already-computed WINVIL' (the CONTOUR loop walks WTABLE backwards, so WINVIL is set first). TSPIIN's byte is 0 for waves 1-20, so the spiker's speed IS the flipper's speed: 1.375 along-units/frame at wave 1, which at the ROM's 28.44 fps (FR-001) is 0.175 depth/s. It then becomes WINVIL-48 for waves 21-32, WINVIL-40 for 33-48, WINVIL-48 for 49-99 — i.e. FASTER than a flipper in the late game. Our spikerSpeed is 0.22 * (1 + 0.15*(level-1)): 0.22 depth/s at L1, on a curve unrelated to the flipper's — 26% FASTER than the arcade's spiker, not slower.",
@@ -285,7 +285,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 366,
+      "line": 418,
       "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
     },
     "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
@@ -631,7 +631,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 445,
+      "line": 497,
       "verbatim": "    ['fuseball', level >= 11 ? 4 : 0],"
     },
     "claim": "NEWTAN (1445-1474) picks the cargo by drawing a random index 0-3 into WTACAR and walking it until it finds a type with openings. WTACAR has four entries: slots 0 and 1 are hard-set to ZCARFL on every wave (CONTOUR, 551-553); slot 2 comes from WWTAC2 (614-617) = ZCARFL for waves 1-32, ZCARFU for 33-40, ZCARPU for 41-99; slot 3 comes from WWTAC3 (618-620) = ZCARFL for waves 1-48, ZCARFU for 49-99. So ALL FOUR slots are flippers for waves 1-32: a tanker cannot carry anything but flippers until wave 33, cannot carry a pulsar until wave 41, and the pulsar cargo lives in only one of four slots even then. We roll fuseball cargo from level 11 and pulsar cargo from level 17, at weights 4 against flipper's 10.",
@@ -651,7 +651,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 423,
+      "line": 475,
       "verbatim": "export function rollSpawnKind(level: number, rng: Rng): EnemyKind {"
     },
     "claim": "NYMCHA (1266-1412) decides what a hatching nymph becomes, in this order: (1) compute per-type 'openings' = WFLMAX[type] - FLIPCO[type] (the live count of that type) for all 5 types; (2) subtract 2 openings of the carried type for EVERY live tanker, so cargo is reserved in advance (1286-1303); (3) clamp openings to the total free invader slots; (4) if exactly one type has openings, take it; (5) otherwise satisfy any type whose live count is below its WFLMIN first (1351-1364); (6) then attempt a 'smart launch' — if both a spiker and a tanker slot are free, look at the enemy line the nymph is standing on and launch a SPIKER on a short/dead line or a TANKER on a long one (1366-1385); (7) failing all that, draw RANDO2 AND 3, add 1 — a random type that EXCLUDES flippers (1386-1389) — and walk from there to the first needy type. Our rollSpawnKind is a single weighted pick from a fixed table (flipper 10, tanker 4, spiker 3, pulsar 3, fuseball 3) with level gates and a per-cycle 'hard' multiplier.",
@@ -671,7 +671,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 429,
+      "line": 481,
       "verbatim": "    ['tanker', level >= 5 ? 4 * hard : 0],"
     },
     "claim": "WTANMX (651-657) itemises the tanker MAX for waves 1-5 as 0, 0, 1, 0, 1 — so exactly one tanker is allowed on wave 3, none on wave 4, one on wave 5, then 2 for waves 6-16. WTANMI (645-650) itemises the MIN as 0, 0, 1, 0 — wave 3 REQUIRES its tanker. WSPIMX (628-635) itemises the spiker max for waves 1-6 as 0, 0, 0, 2, 3, 4 — the first spiker is possible on wave 4 — and WSPIMI (621-627) makes wave 4 require one. Our gates are `level >= 5` for both, with weights rather than counts.",
@@ -691,7 +691,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 431,
+      "line": 483,
       "verbatim": "    ['pulsar', level >= 17 ? 3 * hard : 0],"
     },
     "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Our gates are `level >= 17` for pulsars and `level >= 11` for fuseballs (rules.ts:252-253).",

@@ -246,6 +246,58 @@ export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hop
 // on a passing roll, so its approach is biased-but-not-relentless. The exact
 // fuzz_move_prb byte is not in the extracted notes; 0.6 keeps it lively.
 export const FUSEBALL_MOVE_PROB = 0.6
+
+// ── WFUSCH: does the fuseball chase, and where? (tp1-25, the other half of W-023) ──
+//
+// JFUSEUP asks the SAME byte two different questions, and they are two different bits:
+//
+//     LDA WFUSCH / IFMI    bit 7 — "CHASE PLAYER AT TOP?"  (ALWELG.MAC:2122-2124)
+//     BIT WFUSCH / IFVS    bit 6 — "CHASE PLAYER ON TUBE?" (ALWELG.MAC:2135-2137)
+//
+// (`BIT` puts operand bit 7 in N and bit 6 in V — which is exactly what IFMI/IFVS read.)
+export const FUSE_CHASE_AT_TOP = 0x80
+export const FUSE_CHASE_ON_TUBE = 0x40
+
+// TWFUSC (ALWELG.MAC:686-690) — the wave contour for WFUSCH, transcribed as records:
+//
+//     TWFUSC: .BYTE TR,17.,32.,0,40
+//             .BYTE TR,33.,48.,40,0C0
+//             .BYTE T1,49.,99.,0C0
+//             .BYTE TE
+//
+// TR IS NOT A RAMP. CONTOUR's own type table says so — `TR=0C;ALTERNATE BETWEEN BYTES 3
+// & 4` (414) — and DOTR (858-865) is `JSR RANGER / AND I,1 / IFNE / INY`: byte 4 on an ODD
+// offset into the range, byte 3 on an EVEN one. RANGER (848-856) is `TEMP2 - startWave`,
+// and TEMP2 is the 1-based wave (CONTOUR loads CURWAV and INCs it, 415-423).
+//
+// So the FIRST wave of a TR range draws byte 3, and wave 17 — offset 0 — draws ZERO:
+// the fuseball does NOT chase at wave 17. The chase starts at 18. Read this table as a
+// ramp and you will be off by one at every range boundary.
+const TWFUSC: ReadonlyArray<
+  | { readonly type: 'TR', readonly start: number, readonly end: number, readonly even: number, readonly odd: number }
+  | { readonly type: 'T1', readonly start: number, readonly end: number, readonly value: number }
+> = [
+  { type: 'TR', start: 17, end: 32, even: 0x00, odd: 0x40 },
+  { type: 'TR', start: 33, end: 48, even: 0x40, odd: 0xc0 },
+  { type: 'T1', start: 49, end: 99, value: 0xc0 },
+]
+
+/**
+ * WFUSCH for a wave — CONTOUR (ALWELG.MAC:398-470) walked over TWFUSC.
+ *
+ * Below wave 17 no record matches, CONTOUR runs off the end of the table onto TE and
+ * "EXIT ON EOT TYPE CODE WITH 0" (442). That zero is a REAL answer, not a missing one:
+ * it is precisely what makes every fuseball decision fall to the LEFRIT coin, which is
+ * the whole of tp1-5's half of W-023. Never `|| fallback` this.
+ */
+export function wfuschForLevel(level: number): number {
+  for (const r of TWFUSC) {
+    if (level < r.start || level > r.end) continue
+    if (r.type === 'T1') return r.value
+    return (level - r.start) % 2 === 1 ? r.odd : r.even   // DOTR: odd offset takes byte 4
+  }
+  return 0   // TE — end of table
+}
 // Spiker near-turnaround (story 6-15). ROM clamps `along` to $20 and reverses
 // (move away) once it climbs below it (rev-3 §C l.202-208). $20 → depth
 // (0xf0-$20)/224 ≈ 0.929 — far closer to the rim than the spike-height cap. Kept
