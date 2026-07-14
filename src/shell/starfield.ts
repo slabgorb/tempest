@@ -47,6 +47,18 @@ export const STAR_RETIRE_Z = 0x10 // 16 — a plane that has descended this far 
 export const STAR_PLANES = 8 // max concurrent planes
 export const STAR_PICTURES = 4 // distinct star pictures, reused across the planes
 
+// tp1-9 (DB-016): a plane's radial reach follows the SAME perspective divide as
+// the well, not a linear spread. DSTARF (ALDISP.MAC:2931-2970) swaps in the
+// starfield eye — EYL = 0xE8 (signed −24), YDEUNI = 0x28 = 40 — puts every plane
+// at world centre, and CASCAL scales its star picture by YDEUNI/(PY − EY) =
+// 40/(z + 24). So the reach is a fraction of full reach: 40/264 = 0.1515 at spawn
+// (z = 0xF0), whipping up to 40/40 = 1.0 at retirement (z = 0x10) — the same
+// hyperbolic 1/(coord − eye) law geometry.perspectiveDepth runs for the well.
+// drawStarfield strokes each plane's dots at r = starReachFraction(z) · reach.
+export function starReachFraction(z: number): number {
+  return 40 / (z + 24)
+}
+
 export function createStarfield(): Starfield {
   // Internal planes are mutable (Z ticks down in place); the public view is readonly.
   let planes: { z: number; picture: number }[] = []

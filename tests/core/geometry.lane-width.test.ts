@@ -166,6 +166,8 @@ describe('laneWidth — degenerate geometry guard (Story 6-17 AC1)', () => {
       closed: true,
       far: [{ x: 5, y: 5 }, { x: 5, y: 5 }],
       near: [{ x: 5, y: 5 }, { x: 5, y: 5 }],
+      farRatio: 0.2, // tp1-9: Tubes now carry a ratio; any valid value — the rails coincide anyway
+      screenZ: 0, // tp1-31: Tubes carry their screen-Z translate; neutral for synthetics
     }
     const w = laneWidth(degenerate, 0, 0.5)
     expect(Number.isNaN(w)).toBe(false)
