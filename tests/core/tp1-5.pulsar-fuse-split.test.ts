@@ -408,20 +408,44 @@ describe('tp1-5 — a split too close to the player produces NON-FLIPPING childr
     expect(born, 'the arrival should have burst the tanker into two children').toHaveLength(2)
     expect(born.map((k) => k.lane).sort((a, b) => a - b)).toEqual([4, 6])
 
-    const s = step(atSplit, 16)
-    const kids = s.enemies.filter((e) => e.kind === 'flipper')
-    expect(kids).toHaveLength(2)
+    // ── RE-SEATED BY tp1-24 (test maintenance, not a goalpost move) ──────────────────
+    // This used to step a fixed 16 frames and assert the children were STILL on lanes 4
+    // and 6, with `chasing === false` carried as a premise. Both only held because the
+    // children were seated at SPLIT_CHILD_DEPTH = 0.85 — low enough that 16 frames of
+    // climb could not reach the rim.
+    //
+    // tp1-24 closes W-030's open half: the children are now born at the PARENT's own
+    // depth (0.9286 — KILINV 2300-2302 -> ACTINV 1219-1226), from which they reach the
+    // rim on frame 10, become CHASERS, and begin WALKING it. That is a lane change, it
+    // is authentic, and it is not a flip — but a fixed window cannot tell the two apart,
+    // so the old spelling would go red on a correct implementation.
+    //
+    // The rule is unchanged; only the window is gone. A child must not change lane while
+    // it is still BELOW the rim, because below the rim only a FLIP can move it. That
+    // holds whatever depth it is born at, and it is what W-032 actually says.
+    let s = atSplit
+    let prev = new Map(s.enemies.filter((e) => e.kind === 'flipper').map((k, i) => [i, k.lane]))
+    let observed = 0
 
-    // Premise: neither child has reached the rim, so a lane change here can only be a
-    // FLIP — never a CHASER walking the rim. (They are seated at SPLIT_CHILD_DEPTH =
-    // 0.85 and climb ~0.0067/frame at wave 3, so 16 frames leaves them short of 1.0.)
-    for (const k of kids) {
-      expect(k.chasing ?? false, 'a child took the rim — shorten the window').toBe(false)
+    for (let f = 0; f < 40; f++) {
+      s = step(s, 1)
+      const kids = s.enemies.filter((e) => e.kind === 'flipper')
+      if (kids.length !== 2) break
+
+      kids.forEach((k, i) => {
+        if (k.depth < 1) {
+          observed++
+          expect(
+            k.lane,
+            `a child flipped on frame ${f} (depth ${k.depth.toFixed(3)}, still below the rim) — on NOJUMP it must sit on the lane it landed on`,
+          ).toBe(prev.get(i))
+        }
+      })
+      prev = new Map(kids.map((k, i) => [i, k.lane]))
     }
 
-    // On NOJUMP they sit on the lanes they landed on. On SPIRAL — what they get today —
-    // the first jump lands around frame 10 and they have moved by now.
-    expect(kids.map((k) => k.lane).sort((a, b) => a - b)).toEqual([4, 6])
+    // Without this the loop above passes vacuously if the children never climb.
+    expect(observed, 'no child was ever seen below the rim — the flip assertion never ran').toBeGreaterThan(0)
   })
 
   it('children of a tanker SHOT deep in the well still get the wave\'s program, and do flip', () => {

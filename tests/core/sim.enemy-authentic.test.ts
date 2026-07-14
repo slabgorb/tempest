@@ -44,7 +44,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy, splitTanker } from '../../src/core/sim'
-import { levelParams, SPLIT_CHILD_DEPTH, ROM_FPS } from '../../src/core/rules'
+import { levelParams, ROM_FPS } from '../../src/core/rules'
 import { wrapLane } from '../../src/core/geometry'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
@@ -166,7 +166,15 @@ describe('authentic tanker split geometry (story 6-9)', () => {
     const lanes = kids.map((k) => k.lane).sort((a, b) => a - b)
     expect(lanes).toEqual([wrapLane(tube, 3), wrapLane(tube, 5)])
     expect(lanes).not.toContain(4) // the tanker's own lane is vacated
-    expect(kids.every((k) => k.depth <= SPLIT_CHILD_DEPTH)).toBe(true)
+    // RE-SEATED BY tp1-24. This used to assert `depth <= SPLIT_CHILD_DEPTH` — a constant
+    // tp1-24 deletes, and an assertion that only ever passed here because this parent is
+    // seated at 0.5, well under the old 0.85 clamp. The contract it was groping for is
+    // the ROM's, and it is exact: KILINV (2300-2302) saves the parent's own INVAY into
+    // TEMP0 and ACTINV (1219-1226) seats each child straight back out of it.
+    expect(
+      kids.every((k) => k.depth === tanker.depth),
+      'both children are born at the parent\'s exact depth',
+    ).toBe(true)
   })
 
   it('vacates the seam correctly when splitting on lane 0 (wraps to 15 and 1)', () => {
