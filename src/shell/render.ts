@@ -175,7 +175,7 @@ const STAR_PICTURE_DOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>>
 // Step the starfield one frame and stroke every live plane. A plane's Z maps to
 // a radial reach: far (Z≈STAR_SPAWN_Z) sits near centre, near (Z≈STAR_RETIRE_Z)
 // flings its dots to the edges — the "flying down the tube" rush. Warp-only.
-function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number, level: number): void {
+export function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number, level: number): void {
   // NOTE: this no longer STEPS the starfield — it only strokes it. Advancing state
   // inside a draw call was the whole defect (FR-017): draw runs once per rendered
   // frame, so the dive's speed tracked the monitor and kept running while paused.
