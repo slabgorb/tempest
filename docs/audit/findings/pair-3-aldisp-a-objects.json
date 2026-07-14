@@ -331,7 +331,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 342,
+      "line": 354,
       "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
     },
     "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
@@ -351,7 +351,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 396,
+      "line": 397,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",

@@ -438,7 +438,7 @@ describe('WIRING — drawEnemy threads s.level to the pixels, and the emblem sur
 describe('WIRING — drawStarfield threads level + plane index (DB-017 is not source-scanned)', () => {
   const starStyles = (level: number): string[] => {
     const { ctx, styles } = makeRecCtx()
-    Render.drawStarfield(ctx, 800, 600, level)
+    Render.drawStarfield(ctx, level)
     return styles.filter((s) => s.startsWith('#'))
   }
 

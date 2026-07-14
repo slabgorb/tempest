@@ -163,10 +163,24 @@ export interface HighScoreEntryState {
   initials: string
 }
 
+// tp1-31 (DB-008): the whole-well screen-Z translation, animated by the sim.
+// INIWLS snaps ZADJL to the well's target on a NEW LIFE ("AT CENTER
+// IMMEDIATELY", ALDISP.MAC:2484-2491) and on a NEW WAVE takes an eighth of the
+// gap into ZADEST ("MOVE UP SLOWLY", :2492-2505), which the frame loop then
+// adds every frame (ALWELG.MAC:75-84) — the well slides into place over ~8
+// frames at each level start.
+export interface CameraState {
+  /** Current whole-well translate, canvas-y ring units (target: tube.screenZ). */
+  screenZ: number
+  /** The ROM's ZADEST: a fixed per-frame step toward tube.screenZ; 0 when parked. */
+  slidePerFrame: number
+}
+
 export interface GameState {
   mode: Mode
   level: number
   tube: Tube
+  camera: CameraState   // tp1-31: screen-Z translate + level-start slide (DB-008)
   player: Player
   bullets: Bullet[]
   enemyBullets: EnemyBullet[]        // enemy energy bolts in flight (6-5), capped at 4
@@ -204,6 +218,7 @@ export function initialState(seed: number): GameState {
     mode: 'attract',
     level: 1,
     tube,
+    camera: { screenZ: tube.screenZ, slidePerFrame: 0 }, // fresh game = new life: snap (CNWLF2 path)
     player: { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full', zapTimer: 0 },
     bullets: [],
     enemyBullets: [],
