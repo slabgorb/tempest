@@ -129,8 +129,9 @@ describe('authentic full-tube traverse (story 6-9)', () => {
     // flipper covers the 224-unit well in 224/39.1 ≈ 5.73 s. The 2.7 s this test
     // used to demand assumed a 60 fps machine that never existed.
     let s = isolated(7)
-    // flipTimer huge: no lane flips, so it climbs straight up lane 0 (off the
-    // Claw's lane 8 — never grabs, never gets culled). depth only ever rises.
+    // Wave 1's program is NOJUMP, so it never leaves its lane: it climbs straight up
+    // lane 0 (off the Claw's lane 8 — never grabs, never gets culled) and depth only
+    // ever rises. (Was `flipTimer: 999` before tp1-4 deleted the timer.)
     s.enemies = [makeEnemy('flipper', 0, 0, levelParams(1))]
     let frames = 0
     // The climb is now 2.11× longer, so the old 400-frame bound would have tripped

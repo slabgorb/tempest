@@ -391,12 +391,19 @@ function killPlayer(s: GameState): void {
 function resolvePlayerHits(s: GameState): void {
   if (!s.player.alive) return
   const pl = currentLane(s.tube, s.player.lane)
-  // A flipper caught MID-FLIP (between lanes) cannot grab — the ROM's p_chk
-  // skips the rim check while the $80 mid-flip bit is set (story 6-14). This is
-  // the fairness pay-off of the multi-tick flip: you can rotate "through" it.
+  // An invader caught MID-JUMP (between two lines) cannot grab — the ROM skips the
+  // kill check while the $80 INVMOT bit is set (JKITST's `IFPL`, ALWELG.MAC:1981-82;
+  // story 6-14). This is the fairness pay-off of the multi-frame flip: you can rotate
+  // "through" one.
+  //
+  // The gate reads the STATE, not the kind. It used to say `e.kind === 'flipper' &&
+  // isJumping(e)`, which was true only because a flipper was the only thing that could
+  // BE mid-flip. Under the CAM a pulsar jumps too (PULSCH's VJUMPS), so that spelling
+  // would have let a pulsar grab from between two lanes while a flipper beside it
+  // could not — an asymmetry the ROM does not have.
   const grabber = s.enemies.find(
     (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl
-      && !(e.kind === 'flipper' && isJumping(e)),
+      && !isJumping(e),
   )
   // A grab takes precedence over a pulse; a pulse is still reported on the
   // player-grab channel (Story 5-1), attributed to the pulsing pulsar.

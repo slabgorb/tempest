@@ -106,8 +106,9 @@ function runZap(
 const activeFrames = (trace: { flashes: number }[]): number =>
   trace.filter((f) => f.flashes > 0).length
 
-// flipTimer parked at 999 so no enemy flips lanes mid-window — lane is a stable
-// identity we can assert against.
+// Built on wave 1's params, so every flipper runs NOJUMP and none of them changes
+// lane mid-window — lane stays a stable identity we can assert against. (Was
+// `flipTimer: 999`, a field tp1-4 deleted along with the timer it drove.)
 const threeFlippers = (): Enemy[] => [
   makeEnemy('flipper', 1, 0.2, levelParams(1)),
   makeEnemy('flipper', 5, 0.6, levelParams(1)),

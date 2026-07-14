@@ -52,8 +52,11 @@ describe('eligible enemies fire energy bolts (AC1, AC5)', () => {
   })
 
   it('a flipper fires a bolt within ~2.5s', () => {
-    // flipTimer 999 keeps it from flipping during the window, so it is never
-    // "mid-flip" (a fire gate) and never wanders onto the player's lane.
+    // Built on wave 1's params, so its CAM program is NOJUMP (CAMWAV[0]) — climb,
+    // yield, repeat, with no VJUMPS in it. It therefore never goes "mid-flip" (a fire
+    // gate) and never wanders onto the player's lane, which is what this fixture needs.
+    // (This used to be spelled `flipTimer: 999`; tp1-4 deleted that field — a flipper's
+    // cadence is its wave's program now, not a timer.)
     let s = fireBoard(2, [makeEnemy('flipper', 4, 0.4, levelParams(1))])
     let fired = false
     for (let i = 0; i < 150 && !fired; i++) {

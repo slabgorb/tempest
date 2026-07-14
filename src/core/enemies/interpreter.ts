@@ -113,14 +113,36 @@ function speedFor(e: Enemy, ctx: CamContext): number {
     // its own hardcoded spd_pulsar.
     case 'pulsar':
       return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed
+    // A sixth EnemyKind would otherwise fall out of here as `undefined` and turn every
+    // speed — and then every depth — into NaN, silently. tp1-5 adds a sixth.
+    default:
+      throw new Error(`CAM: no move rate for enemy kind ${String((e as Enemy).kind)}`)
   }
 }
 
-/** The shorter way round from `from` to `to`: +1 (CCW), -1 (CW), 0 if already there. */
+/**
+ * Which way to turn to face `to`, as POLDEL decides it (ALWELG.MAC:1876-1889).
+ *
+ * POLDEL takes the raw difference and then, ONLY on a closed tube, folds it into the
+ * shorter way round: `AND I,0F` and sign-extend when it lands past 8
+ * (`BIT A,EIGHT / ORA I,0F8`, ";TAKE SHORTEST ROUTE").
+ *
+ * On a PLANAR well it does no such thing. `BIT WELTYP / IFPL` guards that whole
+ * block, and WELTYP is 0xFF on an open sheet — set under Theurer's own comment
+ * `;PREVENT WRAP` (ALWELG.MAC:186-187). A sheet has no seam, so there is no long way
+ * round to be shorter than; the plain difference IS the direction.
+ *
+ * Folding a sheet as if it were a tube is not a rounding error, it inverts the
+ * answer: with the player more than half a board away, wrap-around arithmetic
+ * reports him as lying the OTHER way, and AVOIDR — whose whole purpose is to flee —
+ * turns and charges him. Both of AVOIDR's waves (10 and 15) are open sheets, so that
+ * was every wave it runs on.
+ */
 function shortestRot(tube: Tube, from: number, to: number): -1 | 0 | 1 {
+  if (to === from) return 0
+  if (!tube.closed) return to > from ? 1 : -1   // ;PREVENT WRAP
   const n = tube.laneCount
   const forward = (((to - from) % n) + n) % n
-  if (forward === 0) return 0
   return forward <= n - forward ? 1 : -1
 }
 

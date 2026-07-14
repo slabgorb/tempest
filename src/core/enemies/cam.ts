@@ -277,7 +277,19 @@ function assemble(lines: readonly Line[]): { bytes: number[], labels: Record<str
       // `VSETPC TRALUP` assembles `.BYTE TRALUP-CAM-1` = .BYTE -1 = the byte 0xFF.
       // CAMPC is one byte, so the dispatcher's INC wraps 0xFF back to 0x00 and the
       // jump lands. Store what the ROM stores; interpreter.ts wraps the PC to match.
-      bytes.push((labels[line.operand.at] - 1) & 0xff)
+      //
+      // But that same mask would SILENTLY truncate a target past 255, sending the
+      // program somewhere else entirely — and no byte-range check can ever catch it,
+      // because the mask guarantees the result is in range. A one-byte PC cannot
+      // address a longer CAM, so say so here rather than let the wrap hide it.
+      const target = labels[line.operand.at]
+      if (target > 0xff) {
+        throw new Error(
+          `CAM: ${line.operand.at} is at offset ${target}, past the one-byte PC — `
+          + 'the CAM has outgrown the address space the ROM gave it',
+        )
+      }
+      bytes.push((target - 1) & 0xff)
     }
   }
   return { bytes, labels }

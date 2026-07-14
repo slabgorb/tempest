@@ -260,8 +260,9 @@ describe('fuseball wider hit tolerance (story 6-15)', () => {
 
 describe('pulsar far/near dual climb speed (story 6-15)', () => {
   // Measure a pulsar's climb rate over a short window that stays entirely on one
-  // side of the L0157 ($a0 ≈ depth 0.357) boundary. flipTimer/pulseTimer are
-  // parked so only the climb moves it; the pulsar sits off the Claw's lane.
+  // side of the L0157 ($a0 ≈ depth 0.357) boundary. pulseTimer is parked and the
+  // pulsar sits off the Claw's lane, so only the climb moves it. (The old fixture also
+  // parked a `flipTimer`; tp1-4 deleted it — a pulsar's flips come from PULSCH now.)
   function climbRate(level: number, startDepth: number): number {
     let s = isolated(2)
     s.level = level
