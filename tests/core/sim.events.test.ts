@@ -188,7 +188,7 @@ describe('superzapper events', () => {
 // --- player grabbed / pulsed (AC4) -----------------------------------------
 describe('player-grab and player-death events', () => {
   it('a flipper at the rim emits player-grab + player-death(cause grab)', () => {
-    const s = playing([makeEnemy('flipper', 4, 0.95, levelParams(1))])
+    const s = playing([makeEnemy('flipper', 4, 1, levelParams(1))])
     s.player.lane = 4
     const out = stepGame(s, NEUTRAL, DT)
 

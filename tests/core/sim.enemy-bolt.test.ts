@@ -78,7 +78,7 @@ describe('enemy-bolt motion (AC6)', () => {
 describe('enemy-bolt vs player (AC2)', () => {
   it('kills the player when a bolt reaches the rim on the player lane', () => {
     const s = boltBoard(1, 4)
-    s.enemyBullets = [{ lane: 4, depth: 0.95 }] // at the rim, on the player's lane
+    s.enemyBullets = [{ lane: 4, depth: 1 }] // at the rim, on the player's lane
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.player.alive).toBe(false)
     expect(out.mode).toBe('dying')
@@ -91,7 +91,7 @@ describe('enemy-bolt vs player (AC2)', () => {
 
   it('does NOT kill when the bolt reaches the rim on a different lane (dodge)', () => {
     const s = boltBoard(1, 4)
-    s.enemyBullets = [{ lane: 7, depth: 0.95 }] // rim, but not the player's lane
+    s.enemyBullets = [{ lane: 7, depth: 1 }] // rim, but not the player's lane
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.player.alive).toBe(true)
     expect(out.mode).toBe('playing')
@@ -109,7 +109,7 @@ describe('enemy-bolt vs player (AC2)', () => {
   it('ends the game when the last life is lost to a bolt', () => {
     const s = boltBoard(1, 4)
     s.lives = 1
-    s.enemyBullets = [{ lane: 4, depth: 0.95 }]
+    s.enemyBullets = [{ lane: 4, depth: 1 }]
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.mode).toBe('gameover')
     expect(out.lives).toBe(0)
@@ -118,7 +118,7 @@ describe('enemy-bolt vs player (AC2)', () => {
   it('clears in-flight bolts on respawn (no chain-death from a lingering bolt)', () => {
     let s = boltBoard(1, 4)
     s.enemyBullets = [
-      { lane: 4, depth: 0.95 }, // kills the player this step...
+      { lane: 4, depth: 1 }, // kills the player this step...
       { lane: 9, depth: 0.3 },  // ...an unrelated bolt that must not survive respawn
     ]
     s = stepGame(s, NEUTRAL, DT)

@@ -81,7 +81,35 @@ export const SPIN_SENSITIVITY = 0.15
 // It manufactured an AGREEMENT, and an agreement is the one thing nobody re-checks.
 export const BULLET_SPEED = (9 * ROM_FPS) / WARP_ALONG_SPAN  // 1.143 depth units/sec
 export const MAX_BULLETS = 8
-export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
+// The grab line. It is not a threshold the ROM tunes — it is the RIM itself, and the
+// reason no byte could ever be found for it is that the kill check does not test depth.
+//
+// JKITST (ALWELG.MAC:1980-1993) reads INVAY nowhere. It tests exactly two things: the
+// invader is not mid-jump (the $80 INVMOT bit — W-010), and both its legs sit on both of
+// the cursor's legs. The depth gate lives one level up, in WHO IS ALLOWED TO RUN IT: the
+// opcode VKITST appears in exactly ONE cam program in the cabinet — TOPPER, the CHASER cam
+// (2447-2452, "CHASE PLAYER AROUND TOP"). Only a chaser can grab. And an invader becomes a
+// chaser in exactly one place, where it is seated on the cursor's own line:
+//
+//     CHASER: LDA CURSY      ;PLACE EXACTLY AT TOP
+//             STA X,INVAY                                  (ALWELG.MAC:1824-1826)
+//
+// reached from the climb by `CMP CURSY / BEQ ATOP / IFCC` (1744-1747). With
+// CURSY = ILINLIY = $10 (ALWELG.MAC:57-58; ALCOMN.MAC:820), the grab line is the top of
+// the well: (0xf0 - 0x10) / 224 = 1.0 — which is precisely the depth the cam interpreter
+// already pins a chaser to (RIM_DEPTH, which now derives from this name so the two cannot
+// drift apart again).
+//
+// It used to read 0.92, which inverts to INVAY 33.92 — not a ROM byte, and eight units
+// short of the rim, so an invader still CLIMBING grabbed a player the cabinet would never
+// have touched. Two consequences fell out of that invention: the enemy bolt killed early
+// (it shares this line — the ROM's charge is tested `CMP CURSY / IFCC ;AT TOP?` at
+// 2562-2565, the same CURSY), and tp1-24 ratified a difficulty change — "a split child is
+// born above the grab line, so the player dies on the burst frame" — that the cabinet does
+// not have. With the line derived it sits ABOVE the carrier's burst line ($20 = 0.9286), so
+// no child is ever born lethal: ATOP is tested BEFORE the carrier check, so a carrier that
+// reaches the rim becomes a CHASER instead of bursting. (Story tp1-27; finding W-049.)
+export const PLAYER_RIM_DEPTH = (0xf0 - 0x10) / WARP_ALONG_SPAN  // = 1.0, the rim (CURSY)
 export const RESPAWN_DELAY = 1.5      // seconds
 // Fixed lane the Claw returns to after a death (arcade rev-3: segment 14, near
 // rim) — never the death spot. A constant landing lane plus a fully reset board
@@ -355,11 +383,18 @@ export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.3
 //
 // It was 0.85, and its comment said "Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is
 // not an instant grab" — a deliberate softening, written before the fidelity epic, that
-// clamped a tanker's children safely below the grab line. The cabinet does the opposite on
-// purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own INVAY into TEMP0 and
-// ACTINV (1219-1226) seats each child straight back out of it, so both are born at the
-// parent's EXACT depth. A carrier that arrives on its own bursts at $20 — 0.9286, ABOVE the
-// 0.92 grab line — and a player on a flanking lane is grabbed on the burst frame.
+// clamped a tanker's children safely below the grab line. (That 0.92 was itself invented;
+// the grab line is the RIM — see PLAYER_RIM_DEPTH above, and tp1-27 / W-049.) The cabinet
+// does the opposite on purpose: KILINV (ALWELG.MAC:2300-2302) saves the dying parent's own
+// INVAY into TEMP0 and ACTINV (1219-1226) seats each child straight back out of it, so both
+// are born at the parent's EXACT depth. A carrier that arrives on its own bursts at $20 —
+// 0.9286 — so the children are born high in the well rather than at a soft 0.85.
+//
+// They are NOT born lethal, and tp1-24's claim that they were is retracted (tp1-27). The
+// burst line ($20) sits BELOW the grab line ($10 = the rim), and ATOP is tested BEFORE the
+// carrier check (1744-1750): a carrier that actually reaches the rim becomes a CHASER
+// instead of bursting. So a newborn child is always below the grab line and must climb the
+// last stretch — and become a chaser — before it can touch anyone.
 //
 // The constant is deleted rather than renumbered because there is no number that belongs
 // here: the children's depth is not a constant at all, it is the parent's. Do not
@@ -498,10 +533,16 @@ export function levelParams(level: number): LevelParams {
 /**
  * ININYM (ALWELG.MAC:315-340) — the wave's whole enemy budget enters as a
  * staggered nymph queue (INIENE:303-304 loads NWNYMC into NYMCOU; ours is the
- * queue's length). Nymph i is seeded at NYMPY = (i<<4) | lane — 16-frame bands,
- * strictly increasing, roughly one hatch every 16 frames once the wave opens —
- * and the one all-zero combination is bumped to $0F (`IFEQ / LDA I,0F`) so a
- * nymph is never born already inactive.
+ * queue's length). Nymph i is seeded at NYMPY = ((i & $F) << 4) | lane: the
+ * ROM's shift is `TXA / ASL ASL ASL ASL` on an EIGHT-BIT accumulator, so the
+ * band WRAPS at index 16 — a big wave's nymphs 16+ seed back into the same
+ * 256-frame window as 0-15 and the cabinet opens it with interleaved
+ * double-density hatching. The one all-zero ASSEMBLED byte is bumped to $0F
+ * (`IFEQ / LDA I,0F`) — post-wrap, so index 16 on lane 0 is rescued exactly
+ * like index 0 — and a nymph is never born already inactive.
+ *
+ * (The first GREEN shipped this shift unbounded and stretched every budget
+ * past 16 — level 7 and up — slower than the arcade; review round-trip 1.)
  *
  * The ROM rolls the lane as `RANDOM AND I,0F` over its fixed 16 lines; our open
  * wells have laneCount 15, so we roll the tube's real lane range instead —
@@ -512,7 +553,7 @@ export function spawnForLevel(level: number, rng: Rng, laneCount: number): { nym
   const count = levelParams(level).enemyCount
   for (let i = 0; i < count; i++) {
     const lane = nextInt(rng, laneCount)
-    const py = (i << 4) | lane
+    const py = ((i & 0x0f) << 4) | lane
     nymphs.push({ lane, py: py === 0 ? 0x0f : py })
   }
   return { nymphs }

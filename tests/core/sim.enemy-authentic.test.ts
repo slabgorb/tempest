@@ -267,7 +267,7 @@ describe('flipper rim-grab and determinism (story 6-9 guards)', () => {
   it('grabs and kills the Claw when it reaches the rim on the player segment', () => {
     const s = isolated(1)
     s.player.lane = 3
-    s.enemies = [makeEnemy('flipper', 3, 0.95, levelParams(1))] // at the rim, same seg
+    s.enemies = [makeEnemy('flipper', 3, 1, levelParams(1))] // at the rim, same seg
     const out = stepGame(s, NEUTRAL, DT)
     expect(out.mode).toBe('dying')
     expect(out.lives).toBe(2)

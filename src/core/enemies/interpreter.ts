@@ -27,7 +27,7 @@ import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
 import {
   LevelParams, PULSAR_CLIMB_SPEED, PULSAR_NEAR_FAR_DEPTH, SPIKER_TURNAROUND_DEPTH,
   SPIKE_MAX_DEPTH, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB, PUCHDE_FRAMES, wttfraForLevel,
-  WARP_ALONG_SPAN, FUSE_CHASE_ON_TUBE, wfuschForLevel,
+  WARP_ALONG_SPAN, FUSE_CHASE_ON_TUBE, wfuschForLevel, PLAYER_RIM_DEPTH,
   FUSE_TURNBACK_DEPTH, FUSE_RANGE_FLOOR_DEPTH, FUSE_EARLY_WAVE_MAX,
 } from '../rules'
 import { CAM, CAM_ENTRY, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
@@ -50,8 +50,13 @@ export const JUMP_ANGLE_STEPS = 8
  * is where CHASER takes it. Our depth axis is INVAY inverted and clamped, so the top of
  * the climb IS depth 1 and no epsilon is needed: jsmove's own Math.min lands an
  * overshooting invader exactly here.
+ *
+ * This is the SAME ROM line the grab is tested against — only a CHASER, seated here by
+ * `LDA CURSY / STA X,INVAY`, can run VKITST. It used to be spelled twice, 1 here and 0.92
+ * in rules.ts, and the grab used the wrong copy (tp1-27, W-049). Deriving it from the one
+ * name is what stops them drifting apart again.
  */
-const RIM_DEPTH = 1
+const RIM_DEPTH = PLAYER_RIM_DEPTH
 
 /** One unit of the ROM's 224-unit depth axis — the `INC INVAY` CHASER nudges a flip back by. */
 const ALONG_UNIT = 1 / WARP_ALONG_SPAN

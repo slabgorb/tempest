@@ -283,18 +283,28 @@ describe('tp1-6 — the queue is part of the wave, not bookkeeping', () => {
   })
 
   it('the whole queue lifecycle is deterministic from the seed', () => {
-    const run = (): GameState => {
+    const run = (): { s: GameState; hatchedSeen: number } => {
       let s = playingState(1234)
       s.level = 4
       s.tube = tubeForLevel(4)
-      for (let i = 0; i < 100; i++) s = stepGame(s, NEUTRAL, FRAME)
-      return s
+      let hatchedSeen = 0
+      for (let i = 0; i < 100; i++) {
+        const before = s.enemies.length
+        s = stepGame(s, NEUTRAL, FRAME)
+        hatchedSeen += Math.max(0, s.enemies.length - before)
+      }
+      return { s, hatchedSeen }
     }
     const a = run()
     const b = run()
-    expect(JSON.stringify(a.spawn)).toBe(JSON.stringify(b.spawn))
-    expect(JSON.stringify(a.enemies)).toBe(JSON.stringify(b.enemies))
-    expect(a.enemies.length, 'guard: the run must actually hatch something').toBeGreaterThan(0)
+    expect(JSON.stringify(a.s.spawn)).toBe(JSON.stringify(b.s.spawn))
+    expect(JSON.stringify(a.s.enemies)).toBe(JSON.stringify(b.s.enemies))
+    // Guard on CUMULATIVE hatches, not the final frame's population: the run may
+    // deterministically pass through a death/respawn (which clears the board and
+    // re-arms the queue), so an end-of-run count can be legitimately zero. (GREEN
+    // fixture repair, round-trip 1 — the final-frame guard went stale when tp1-27
+    // moved the bolt kill line and shifted where the respawn cycle sits.)
+    expect(a.hatchedSeen, 'guard: the run must actually hatch something').toBeGreaterThan(0)
   })
 })
 

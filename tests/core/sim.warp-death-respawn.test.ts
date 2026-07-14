@@ -159,7 +159,7 @@ describe('warp-death resolution preserves existing behavior (Story 3-6 regressio
     s.spawn = { nymphs: [] }
     s.player.lane = 4
     s.enemies = [
-      makeEnemy('flipper', 4, 0.95, levelParams(1)), // kills, cleared on respawn
+      makeEnemy('flipper', 4, 1, levelParams(1)), // kills, cleared on respawn
       makeEnemy('flipper', 9, 0.3, levelParams(1)),  // survives → level NOT clear
     ]
     s = stepGame(s, NEUTRAL, DT)

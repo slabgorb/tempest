@@ -185,9 +185,14 @@ function stepNymphs(s: GameState): void {
     if (n.py < 0x40) committed.add(n.lane)
   }
   let hatchedThisFrame = 0
+  // CONYMP's failure latch: a hatch that finds no slot writes TEMPY=-1 ("STOP UP
+  // MOVEMENT FLAG", ALWELG.MAC:1197-1198), so every nymph processed AFTER it this
+  // frame holds too — the queue freezes from the collision onward, not just the
+  // colliding nymph.
+  let latched = false
   const hatched = new Set<Nymph>()
   for (const n of s.spawn.nymphs) {
-    if (!frozen) {
+    if (!frozen && !latched) {
       n.py -= 1
       if (n.py === 0) {
         // CONYMP -> ACTINV: take a free slot or go back in the queue.
@@ -199,6 +204,7 @@ function stepNymphs(s: GameState): void {
           s.enemies.push(makeEnemy(kind, n.lane, 0, params, cargo))
         } else {
           n.py += 1
+          latched = true
         }
       } else if (n.py === 0x3f && committed.has(n.lane)) {
         n.py += 1 // just entering the alone zone on an occupied line: back off
@@ -291,10 +297,17 @@ function stepPulseClock(s: GameState): void {
 //      Both children are born at the parent's EXACT depth. There is no clamp in the
 //      cabinet. This used to read `Math.min(t.depth, SPLIT_CHILD_DEPTH)` — a deliberate
 //      softening (0.85, "so a rim-split is not an instant grab") that predates the
-//      fidelity epic. A carrier that arrives under its own steam bursts at 0.9286, which
-//      is ABOVE PLAYER_RIM_DEPTH (0.92), and drops both children there: a player caught
-//      on a flanking lane is grabbed on the burst frame, with no counterplay. That is the
-//      arcade, and tp1-24 ratified it.
+//      fidelity epic. A carrier that arrives under its own steam bursts at 0.9286, and
+//      drops both children there — high in the well, but BELOW the grab line.
+//
+//      They are not born lethal. tp1-24 claimed they were ("a player caught on a flanking
+//      lane is grabbed on the burst frame … that is the arcade"), and that was wrong: it
+//      measured the child's depth against an INVENTED PLAYER_RIM_DEPTH of 0.92. The grab
+//      line is the RIM (CURSY = $10 = depth 1.0) and only a CHASER can grab, and ATOP is
+//      tested BEFORE this carrier check (ALWELG.MAC:1744-1750) — so a carrier that reaches
+//      the rim becomes a chaser instead of bursting, and a newborn child is ALWAYS below
+//      the grab line. It must climb the last stretch and take the rim before it can grab
+//      anyone. The player on a landing lane gets his reaction time back (tp1-27, W-049).
 //
 //   3. WHAT PROGRAM THEY RUN (W-032, below) — and it is rule 3 that makes rule 2
 //      survivable.
@@ -405,9 +418,6 @@ function cullEnemyBullets(s: GameState): void {
 // Enemies that kill the player by reaching its rim segment. Tankers split
 // before the rim; spikers never reach grab depth.
 const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
-
-/** The rim itself — where JFUSKI's `CMP CURSY` kills, and nowhere shallower. */
-const RIM_DEPTH_EXACT = 1
 
 const HIT_DEPTH = 0.06
 // A fuseball's wider kill tolerance (story 6-15): ROM hit_tol[4]=6 is wider than
@@ -539,16 +549,16 @@ function resolvePlayerHits(s: GameState): void {
   // BE mid-flip. Under the CAM a pulsar jumps too (PULSCH's VJUMPS), so that spelling
   // would have let a pulsar grab from between two lanes while a flipper beside it
   // could not — an asymmetry the ROM does not have.
-  // The FUSE kill is EXACT-RIM: JFUSKI (ALWELG.MAC:1994-2002) is `LDA X,INVAY /
-  // CMP CURSY / IFEQ` — equality with the cursor's own line, not a band. This
-  // stopped being a nicety when W-024 landed: an early-wave fuseball now PATROLS
-  // at $20 = depth 0.9286, above PLAYER_RIM_DEPTH (0.92), and in the arcade that
-  // patrol is harmless. Other grabbers keep the shared band (JKITST is a
-  // different, leg-based predicate — its looseness is a separate, pre-existing
-  // question flagged by tp1-5's review).
-  const grabDepth = (e: Enemy): number => (e.kind === 'fuseball' ? RIM_DEPTH_EXACT : PLAYER_RIM_DEPTH)
+  //
+  // The depth gate is ONE line for every kind, and it is the RIM. The grab's line is
+  // CURSY by construction — only a CHASER runs VKITST and CHASER seats it there
+  // (tp1-27, W-049) — and the FUSE kill agrees from its own routine: JFUSKI
+  // (ALWELG.MAC:1994-2002) is `LDA X,INVAY / CMP CURSY / IFEQ`, equality with the
+  // cursor's own line, not a band. That equality is what keeps W-024's early-wave
+  // patrol (capped at $20 = 0.9286, tp1-6) harmless: a fuse BELOW the rim shares
+  // the lane and the player lives. One ROM byte, one spelling — PLAYER_RIM_DEPTH.
   const grabber = s.enemies.find(
-    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= grabDepth(e) && e.lane === pl
+    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl
       && !isJumping(e),
   )
   // A grab takes precedence over a pulse; a pulse is still reported on the
