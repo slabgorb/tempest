@@ -2,8 +2,9 @@
 import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import { withGlow, glowPolyline } from '@arcade/shared/glow'
-import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, wellIdForLevel } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
+import { WELL_Z_ADJUST, stepFraming } from './framing'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z, starReachFraction } from './starfield'
@@ -114,6 +115,21 @@ function strokeGlyph(
 
 // Animation accumulators (render-only; never feeds back into the sim).
 let renderTime = 0
+
+// tp1-31 (DB-008) — THE FRAMING. The whole tube is translated on screen by the
+// per-well signed ZADJL (src/shell/framing.ts); on a NEW WAVE it slides in. This
+// is the current (eased) offset in RAW ROM units, held across frames like
+// renderTime. A NEW LIFE (respawn at the same level) shows no slide because the
+// offset is already at that well's home; only a level change moves the target.
+let framingZ = 0
+// ROM-Z → scene-world scale for the whole-tube translate. ZADJL is a ROM
+// Z-DEPTH adjustment (SZL/SZH, ALDISP.MAC:500/2192) that we MODEL as a direct
+// vertical screen translate (the DB-008 design choice — see tp1-9's Delivery
+// Findings), so this factor is a PLAY-TEST TUNABLE, not a pinned ROM constant:
+// it sets how many scene-world units (near rim ≈ 300) one ZADJL unit shifts the
+// tube. 0.5 keeps the deepest well (−352) within ≈176 units, comparable to
+// tp1-9's DB-007 vanishing-point displacements so the two framings read together.
+const FRAMING_SCALE = 0.5
 
 // SUPERZAPPER RECHARGE banner latch (Story 10-9). The once-per-level Superzapper
 // rearms to 'full' on level entry; we flash the authentic recharge banner for a
@@ -946,6 +962,10 @@ export function render(
   // playing scene entirely. This is the 4-2 F1 fix — on boot/attract and after
   // gameover→attract the renderer used to leak a ghost tube + frozen enemies.
   if (s.mode === 'attract' || s.mode === 'select' || s.mode === 'highscore') {
+    // tp1-31: park the framing offset at the well the next game will START on, so
+    // the first played frame is already framed (NEW-LIFE snap), not mid-slide. The
+    // new-wave slide then only fires when a level advance moves the target.
+    framingZ = WELL_Z_ADJUST[wellIdForLevel(s.select.selectedLevel)]
     drawFrame(ctx, s, W, H, color)
     drawScanlines(ctx, W, H)
     ctx.shadowBlur = 0
@@ -958,6 +978,14 @@ export function render(
   // canvas. Static geometry stays sharp; fast movers trail. The screen shake is
   // applied by composite() to the whole accumulated image.
   const pctx = phosphor.beginScene(W, H, dpr)
+  // tp1-31 (DB-008): translate the WHOLE tube (and everything in tube-space —
+  // enemies, bullets, the Claw) by the per-well ZADJL. On a level change the
+  // target moves and stepFraming eases the offset in over several frames ("MOVE
+  // UP SLOWLY"); within a level it is already home, so a respawn shows no slide.
+  // X is never adjusted (XADJL = 0, ALDISP.MAC:2507) — the shift is vertical only.
+  // The HUD/frame is drawn later on the main ctx, so it stays fixed.
+  framingZ = stepFraming(framingZ, WELL_Z_ADJUST[wellIdForLevel(s.level)])
+  pctx.translate(0, framingZ * FRAMING_SCALE)
   // Superzapper well-color flash (Story 10-15): while a zap is active the FX
   // layer surfaces the core's `superzapper-flash` index (QFRAME AND 7) as
   // `fx.zapFlash`; tint the whole well/web with that flash hue so it strobes

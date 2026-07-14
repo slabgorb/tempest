@@ -320,3 +320,13 @@ export function clawTransform(tube: Tube, lane: number): ClawTransform {
   const roll = Math.min(7, Math.floor(u * 8))
   return { anchor, scale, rotation, roll }
 }
+
+// Story tp1-31 (DB-008): the wellID a level cycles to — the index into every
+// per-well ROM table (the tube shape, the eye, and the screen-Z framing ZADJL).
+// tubeForLevel() already applies this remap internally; this exposes the bare
+// index so the SHELL can look up a well's ZADJL (src/shell/framing.ts) without
+// duplicating ROM_REMAP. Pure read-only query — no projection, no sim state.
+export function wellIdForLevel(level: number): number {
+  const n = ROM_REMAP.length
+  return ROM_REMAP[(((level - 1) % n) + n) % n]
+}

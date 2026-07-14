@@ -74,12 +74,12 @@ const EXPECTED: ReadonlyArray<{ wellId: number; low: number; high: number; z: nu
   { wellId: 5,  low: 0x40, high: 0xff, z: -192 },
   { wellId: 6,  low: 0x70, high: 0xff, z: -144 }, // 0xFF70
   { wellId: 7,  low: 0x60, high: 0x00, z: 96 },   // 0x0060
-  { wellId: 8,  low: 0x00, high: 0x01, z: 256 },  // 0x0100  (max positive)
+  { wellId: 8,  low: 0x00, high: 0x01, z: 256 },  // 0x0100
   { wellId: 9,  low: 0x20, high: 0xff, z: -224 },
   { wellId: 10, low: 0x40, high: 0x00, z: 64 },   // 0x0040
   { wellId: 11, low: 0x00, high: 0x00, z: 0 },    // 0x0000  (dead centre)
   { wellId: 12, low: 0xa0, high: 0xfe, z: -352 }, // 0xFEA0  (min / most negative)
-  { wellId: 13, low: 0x40, high: 0x01, z: 320 },  // 0x0140
+  { wellId: 13, low: 0x40, high: 0x01, z: 320 },  // 0x0140  (max / most positive)
   { wellId: 14, low: 0x40, high: 0xff, z: -192 },
   { wellId: 15, low: 0x00, high: 0x01, z: 256 },  // 0x0100
 ]
@@ -104,10 +104,11 @@ describe('tp1-31 — the ZADJL table is the authentic per-well signed-16-bit scr
     expect([...WELL_Z_ADJUST]).toEqual(EXPECTED.map((e) => e.z))
   })
 
-  it('spans the exact ROM extremes: well 12 = -352 (deepest), wells 8 & 15 = +256 (highest)', () => {
+  it('spans the exact ROM extremes: well 12 = -352 (deepest), well 13 = +320 (highest)', () => {
     expect(Math.min(...WELL_Z_ADJUST)).toBe(-352) // wellID 12 = 0xFEA0
-    expect(Math.max(...WELL_Z_ADJUST)).toBe(256) // wellID 8 & 15 = 0x0100
-    expect(WELL_Z_ADJUST[8]).toBe(256)
+    expect(Math.max(...WELL_Z_ADJUST)).toBe(320) // wellID 13 = 0x0140
+    expect(WELL_Z_ADJUST[13]).toBe(320)
+    expect(WELL_Z_ADJUST[8]).toBe(256) // 0x0100 — high, but 320 (well 13) is the peak
     expect(WELL_Z_ADJUST[15]).toBe(256)
     expect(WELL_Z_ADJUST[12]).toBe(-352)
   })

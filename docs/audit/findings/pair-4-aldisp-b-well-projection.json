@@ -135,11 +135,16 @@
       "line": 1387,
       "verbatim": "HOLZAD:\t.BYTE 40,20,40,80,40,40,70,60,0,20,40,0,0A0,40,40,0;CENTER ADJUST"
     },
-    "ours": null,
+    "ours": {
+      "file": "src/shell/framing.ts",
+      "line": 24,
+      "verbatim": "export const WELL_Z_ADJUST: readonly number[] = ["
+    },
     "claim": "ZADJL is declared as 'SCREEN Z VANISH PT' (ALCOMN.MAC:543) and is the additive term in WORSCR's SZ (ALDISP.MAC:2274 `ADC ZADJL`). It is loaded per-well from HOLZAD (low byte) + HOLZDH (high byte) (ALDISP.MAC:1387-1388, read at 2489-2498), giving signed 16-bit screen offsets: well 0 0xFF40 = -192, well 1 0xFF20 = -224, well 2 -192, well 3 0xFF80 = -128, wells 4,5 -192, well 6 0xFF70 = -144, well 7 +0x0060 = +96, well 8 +0x0100 = +256, well 9 -224, well 10 +0x0040 = +64, well 11 0, well 12 0xFEA0 = -352, well 13 +0x0140 = +320, well 14 -192, well 15 +256. The X vanishing point is always 0 (ALDISP.MAC:2507 `LDA I,0 ;X SCREEN CENTER`). Furthermore the value is ANIMATED: on a new life it snaps to the table value, but on a new WAVE it eases in — ZADEST = (target - current) >> 3 per step (ALDISP.MAC:2494-2505, applied at ALWELG.MAC:80-84) — so the well slides into place at the start of each level. We have neither the per-well offset nor the slide: our tube is always centred on the canvas origin.",
     "reasoning": "This is a whole-well screen translation (both rings move together), so it is less optically important than DB-007 — but it is why in the cabinet the tall wells (staircase +320, heart -352) sit high or low in frame rather than dead centre, and the slide-in is a signature level-start beat. Implement it as a screen-space translate of the whole Tube plus a per-level tween in the shell; it does not need to touch the core's projection.",
     "recommendation": "fix",
-    "size": "s"
+    "size": "s",
+    "remediated_by": "tp1-31"
   },
   {
     "id": "DB-009",
@@ -188,7 +193,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 236,
+      "line": 252,
       "verbatim": "    { stroke: 'rgba(150,190,255,0.28)', width: 1.5, blur: 6, color }, tube.closed,"
     },
     "claim": "RATS = 0xC0 (ALDISP.MAC:33). WELPIC drives every spoke at that constant intensity (ALDISP.MAC:2625) and OUTLIN drives the rim polylines at the same constant (ALDISP.MAC:2661 `LDA I,RATS` -> VGBRIT), and OUTLIN is called TWICE with the same COLOR and the same VGBRIT — once for the far rim (Y=0x4F) and once for the near rim (Y=0x0F) (ALDISP.MAC:2634-2638). There is no depth cue on the well: the routine that would have added one, SETINT ('SET INTENSITY AS FUNC OF PYL'), is commented out (ALDISP.MAC:1566). The only beam-off in the whole well is the near-to-adjacent-near hop inside SPOKE (ALDISP.MAC:2731-2732), a pen-up move, not a dim line. We instead draw the far ring at alpha 0.28 / width 1.5 versus the near ring's full-alpha width 3.5 (render.ts:206 vs 212), and gradient each spoke from rgba(255,255,255,0.04) at the far end to full colour at the near end (render.ts:192-193).",
@@ -207,7 +212,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 286,
+      "line": 302,
       "verbatim": "    const a = project(s.tube, lane, 0)"
     },
     "claim": "An 'enemy line' (spike) runs from the FAR end of its lane to its tip. FIXSTU (ALDISP.MAC:3100-3128) builds the far endpoint by averaging the screen coords of far rim points i and i+1 (LIFSXL[X] + LIFSXL[Y], Y = (X+1) & 0x0F, then >>1) — i.e. the lane centre at the far ring. TIPACT (ALDISP.MAC:3160-3186) then takes PYL = LINEY[i] (the spike's height, 0 = inactive, ALDISP.MAC:3162-3163), sets PXL/PZL = LINEXM[i]/LINEZM[i] (the pre-computed mid-point between grid lines i and i+1, built at ALDISP.MAC:2534-2552), projects it with WORSCR, and FCONNECs a vector from the far point to it. We do exactly this: a = project(tube, lane, 0) (the far lane-centre) to b = project(tube, lane, h) (render.ts:256-260). Same two endpoints, same lane-centre convention, same 'grows from the far end toward the rim' direction — and, per DB-005, through the same projection curve.",
@@ -224,7 +229,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 281,
+      "line": 297,
       "verbatim": "  ctx.strokeStyle = '#39ff14'"
     },
     "claim": "DSPENL emits ENLFIX in REVERSE byte order (ALDISP.MAC:3024-3031 counts X down from 3), so VGLIST receives 05, 68, 40, 80. VGSTAT stores the colour index as the LSB and 0x60|flags as the MSB (ALVGUT.MAC:226-230), so 05/68 is 'STAT colour = 5'. Colour 5 = GREEN (ALCOMN.MAC: GREEN=5); the source's own comment at ALDISP.MAC:3095 names it CSTATGREEN. 40/80 is the CNTR opcode (VGCNTR, ALVGUT.MAC:239-240). The tip: when the line is not shattered, WHITIP writes 'STAT colour = WHITE' then a JSRL to the DOT picture (ALDISP.MAC:3208-3219, `LDA I,WHITE ;COLOR (SET STAT WHITE)`). Ours: green line #39ff14 (render.ts:251) with a single white dot at b (render.ts:263-266). Match.",
@@ -294,7 +299,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 153,
+      "line": 169,
       "verbatim": "const STAR_COLOR = '#7fc3ff' // blue star dots"
     },
     "claim": "DSTARF (ALDISP.MAC:2949-2961): `LDA CURWAV / CMP I,5 / IFCC / LDA I,BLUE ... ELSE / TXA / AND I,7 / CMP I,7 / IFEQ / LDA I,4 / ENDIF`. So for waves 1-4 every plane is BLUE (colour index 6); from wave 5 on, each plane's colour index is its own plane index (X & 7), with index 7 remapped to 4 — giving a multi-coloured, per-plane starfield (white, yellow, purple, red, turquoise, green, blue, turquoise under the wave-1 palette). We hardcode every dot of every plane to a single blue #7fc3ff (render.ts:129, 149-150).",
