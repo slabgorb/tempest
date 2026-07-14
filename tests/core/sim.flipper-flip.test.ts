@@ -25,7 +25,7 @@ describe('sim — mid-flip flipper grab immunity', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    const enemy: Flipper = makeEnemy('flipper', 4, 0.95, levelParams(1))
+    const enemy: Flipper = makeEnemy('flipper', 4, 1, levelParams(1))
     s.enemies = [enemy]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
@@ -41,7 +41,7 @@ describe('sim — mid-flip flipper grab immunity', () => {
     // the eight a jump takes). Nothing else about the fixture differs from the
     // control above, so the mid-flip state is the ONLY thing standing between this
     // flipper and a grab.
-    const enemy: Flipper = { ...makeEnemy('flipper', 4, 0.95, levelParams(1)), rot: 1, jumpAngle: 0 }
+    const enemy: Flipper = { ...makeEnemy('flipper', 4, 1, levelParams(1)), rot: 1, jumpAngle: 0 }
     s.enemies = [enemy]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)

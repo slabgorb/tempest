@@ -12,7 +12,7 @@ describe('enemy ↔ player collision and death', () => {
     const s = playingState(1)
     s.spawn.remaining = 0
     s.player.lane = 4
-    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.lives).toBe(2)
@@ -40,7 +40,7 @@ describe('enemy ↔ player collision and death', () => {
     // level is NOT incidentally clear afterward — this test exercises the
     // respawn mechanic, not the end-of-level warp (see sim.warp.test.ts).
     s.enemies = [
-      makeEnemy('flipper', 4, 0.95, levelParams(1)),
+      makeEnemy('flipper', 4, 1, levelParams(1)),
       makeEnemy('flipper', 9, 0.3, levelParams(1)),
     ]
     s = stepGame(s, NEUTRAL, 1 / 60)            // → dying
@@ -58,7 +58,7 @@ describe('enemy ↔ player collision and death', () => {
     s.spawn.remaining = 0
     s.lives = 1
     s.player.lane = 4
-    s.enemies = [makeEnemy('flipper', 4, 0.95, levelParams(1))]
+    s.enemies = [makeEnemy('flipper', 4, 1, levelParams(1))]
 
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.mode).toBe('gameover')
