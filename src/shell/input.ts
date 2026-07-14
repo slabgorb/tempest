@@ -185,7 +185,13 @@ export function createInputController(target: HTMLElement): InputController {
       // sim time that just ran. The DIRECTION is a level read (both keys held cancels),
       // the RATE is what `dt` buys. Banked here rather than at sample() so the keyboard
       // can only ever spend time the simulation actually spent.
-      const keyDir = (rightHeld ? 1 : 0) + (leftHeld ? -1 : 0)
+      //
+      // LEFT is +spin and RIGHT is -spin, which is the INVERSE of the obvious mapping and
+      // is meant to be. The cabinet has no arrow keys, so there is no ROM fact to be
+      // faithful to here — only the tube, whose far side runs backwards under the naive
+      // mapping. Playtest asked for the inversion; tests/shell/input.spinner.test.ts pins
+      // it, so a "tidy-up" that swaps it back goes red rather than reaching a player.
+      const keyDir = (leftHeld ? 1 : 0) + (rightHeld ? -1 : 0)
       keyAccum += keyDir * KEY_SPIN_RATE * dt
     },
 
