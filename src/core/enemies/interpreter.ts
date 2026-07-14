@@ -27,7 +27,7 @@ import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
 import {
   LevelParams, PULSAR_CLIMB_SPEED, PULSAR_NEAR_FAR_DEPTH, SPIKER_TURNAROUND_DEPTH,
   SPIKE_MAX_DEPTH, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB, PUCHDE_FRAMES, wttfraForLevel,
-  WARP_ALONG_SPAN,
+  WARP_ALONG_SPAN, FUSE_CHASE_ON_TUBE, wfuschForLevel,
 } from '../rules'
 import { CAM, CAM_ENTRY, CAM_OPS, CAM_PARAM, TNEWCAM } from './cam'
 import { assertNever } from '../assert'
@@ -414,12 +414,17 @@ function jjumpm(e: Enemy, ctx: CamContext): number {
 }
 
 /**
- * JFUSEUP (ALWELG.MAC:2095-2135): process the fuse. It rides its lane and rolls
- * between lanes toward the player on a fuzz_move roll — and that roll IS the
- * vulnerable window (W-022): COLCHK lets a bullet kill a fuseball only while it is
- * rolling; the instant it lands on a line, ";MAKE IT INVINCIBLE". A jitter tick
- * that does not slide is a landing, so it clears the bit even when the roll never
- * fired, or a fuseball that stopped rolling would stay killable forever.
+ * JFUSEUP (ALWELG.MAC:2095-2145): process the fuse. It rides its lane and rolls between
+ * lanes on a fuzz_move roll — NOT "toward the player", which is what this comment used to
+ * say and was never true in either regime: below wave 18 the roll is a blind coin (LEFRIT),
+ * and from 18 up it aims and then REVERSES, so the fuse rolls deliberately AWAY. See the
+ * decision below. (The old wording is exactly the kind of stale comment that seeded this
+ * story's own findings — a comment records what someone meant, the code records what runs.)
+ *
+ * That roll IS the vulnerable window (W-022): COLCHK lets a bullet kill a fuseball only
+ * while it is rolling; the instant it lands on a line, ";MAKE IT INVINCIBLE". A jitter tick
+ * that does not slide is a landing, so it clears the bit even when the roll never fired, or
+ * a fuseball that stopped rolling would stay killable forever.
  */
 function jfuseup(e: Enemy, ctx: CamContext): void {
   if (e.kind !== 'fuseball') return
@@ -434,17 +439,30 @@ function jfuseup(e: Enemy, ctx: CamContext): void {
 
   let rolling = false
   if (nextFloat(ctx.rng) < FUSEBALL_MOVE_PROB) {
-    // W-023: it does NOT chase. Every fuseball decision — JFUSEUP's, MAYBLR's — ends in
-    // one of two calls, FUCHPL (chase) or LEFRIT (coin), and which one it takes is
-    // decided by the two chase bits in WFUSCH. Those come from TWFUSC, whose FIRST record
-    // begins at wave 17 (ALWELG.MAC:686-690); below that CONTOUR's end-of-table path
-    // yields 0, neither bit is set, and the branch is always LEFRIT — "RANDOMLY CHOOSE
-    // LEFT OR RIGHT" (2171-2178), which reads a bit of RANDOM and sets INVROT from it.
-    // The player is not an input to the decision at all.
+    // W-023, BOTH halves. Every fuseball decision — JFUSEUP's and MAYBLR's alike — ends in
+    // one of two calls, FUCHPL (chase) or LEFRIT (coin), and which one it takes is decided
+    // by the chase bits in WFUSCH, read per wave out of TWFUSC (ALWELG.MAC:686-690).
     //
-    // Ours steered by shortestRot: it walked at the player from wave 1, which is the
-    // fuseball's whole reputation for being unfair, and it was never the arcade's.
-    e.rot = nextFloat(ctx.rng) < 0.5 ? 1 : -1
+    // Below wave 17 the table has no record: CONTOUR runs off the end onto TE, yields 0,
+    // neither bit is set, and the branch is always LEFRIT — "RANDOMLY CHOOSE LEFT OR RIGHT"
+    // (2171-2178), a `BIT RANDOM` coin with the player as no input at all. That is tp1-5's
+    // half, and it stands. (Wave 17 itself is still 0 — TR ALTERNATES, so the range's first
+    // wave draws byte 3. See wfuschForLevel.)
+    //
+    // From wave 18 the on-tube bit lights and the ROM takes FUCHPL (2168-2170):
+    //
+    //     FUCHPL: JSR JCHPLA   ;CHASE PLAYER
+    //             JSR JCHROT   ;REVERSE DIRECTION (FUSE IS BACKWARDS)
+    //
+    // It aims the SHORTEST way to the player and then flips that bit straight back, so it
+    // sets off the LONG way round the tube — away from him. That is not a bug to be tidied
+    // up: a fuseball that takes the short way is exactly what tp1-5 tore out.
+    if (wfuschForLevel(ctx.level) & FUSE_CHASE_ON_TUBE) {
+      jchpla(e, ctx)   // aim…
+      jchrot(e)        // …then reverse. FUSE IS BACKWARDS.
+    } else {
+      e.rot = nextFloat(ctx.rng) < 0.5 ? 1 : -1   // LEFRIT
+    }
     const to = wrapLane(ctx.tube, e.lane + e.rot)
     if (to !== e.lane) {          // an open sheet clamps at its edge: no roll, no landing
       e.lane = to

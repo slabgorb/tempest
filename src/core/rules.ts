@@ -246,6 +246,90 @@ export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hop
 // on a passing roll, so its approach is biased-but-not-relentless. The exact
 // fuzz_move_prb byte is not in the extracted notes; 0.6 keeps it lively.
 export const FUSEBALL_MOVE_PROB = 0.6
+
+// ── WFUSCH: does the fuseball chase, and where? (tp1-25, the other half of W-023) ──
+//
+// JFUSEUP asks the SAME byte two different questions, and they are two different bits:
+//
+//     LDA WFUSCH / IFMI    bit 7 — "CHASE PLAYER AT TOP?"  (ALWELG.MAC:2122-2124)
+//     BIT WFUSCH / IFVS    bit 6 — "CHASE PLAYER ON TUBE?" (ALWELG.MAC:2135-2137)
+//
+// (`BIT` puts operand bit 7 in N and bit 6 in V — which is exactly what IFMI/IFVS read.)
+//
+// ⚠ FUSE_CHASE_AT_TOP IS NOT WIRED, AND THAT IS DELIBERATE — see tp1-25 deviation D3.
+// The ROM asks its question on JFUSEUP's "TOO HIGH?" arm (2121-2130), the branch a fuse
+// takes while riding UP near the rim. Our fuseball has no such arm: it climbs on moveAlong
+// with its own clamp at the top and never enters the up/down oscillation the ROM's fuse
+// does, so there is no live decision point for bit 7 to gate. The constant is here because
+// it is half of the byte TWFUSC actually stores (and ALCOMN.MAC:786 names both — "FUSE
+// CHASE PLAYER FLAG (D7 FOR TOP;D6 FOR TUBE)"), not because the port consults it.
+// Do not read this pair and assume both are live. Only ON_TUBE is.
+export const FUSE_CHASE_AT_TOP = 0x80
+export const FUSE_CHASE_ON_TUBE = 0x40
+
+// TWFUSC (ALWELG.MAC:686-690) — the wave contour for WFUSCH, transcribed as records:
+//
+//     TWFUSC: .BYTE TR,17.,32.,0,40
+//             .BYTE TR,33.,48.,40,0C0
+//             .BYTE T1,49.,99.,0C0
+//             .BYTE TE
+//
+// TR IS NOT A RAMP. CONTOUR's own type table says so — `TR=0C;ALTERNATE BETWEEN BYTES 3
+// & 4` (414) — and DOTR (858-865) is `JSR RANGER / AND I,1 / IFNE / INY`: byte 4 on an ODD
+// offset into the range, byte 3 on an EVEN one. RANGER (848-856) is `TEMP2 - startWave`,
+// and TEMP2 is the 1-based wave (CONTOUR loads CURWAV and INCs it, 415-423).
+//
+// So the FIRST wave of a TR range draws byte 3, and wave 17 — offset 0 — draws ZERO:
+// the fuseball does NOT chase at wave 17. The chase starts at 18. Read this table as a
+// ramp and you will be off by one at every range boundary.
+const TWFUSC: ReadonlyArray<
+  | { readonly type: 'TR', readonly start: number, readonly end: number, readonly even: number, readonly odd: number }
+  | { readonly type: 'T1', readonly start: number, readonly end: number, readonly value: number }
+> = [
+  { type: 'TR', start: 17, end: 32, even: 0x00, odd: 0x40 },
+  { type: 'TR', start: 33, end: 48, even: 0x40, odd: 0xc0 },
+  { type: 'T1', start: 49, end: 99, value: 0xc0 },
+]
+
+/**
+ * WFUSCH for a wave — CONTOUR (ALWELG.MAC:398-470) walked over TWFUSC.
+ *
+ * Below wave 17 no record matches, CONTOUR runs off the end of the table onto TE and
+ * "EXIT ON EOT TYPE CODE WITH 0" (442). That zero is a REAL answer, not a missing one:
+ * it is precisely what makes every fuseball decision fall to the LEFRIT coin, which is
+ * the whole of tp1-5's half of W-023. Never `|| fallback` this.
+ *
+ * ── The deep waves fold back IN. The ROM cannot fall off its own table. ──────────────
+ * CONTOUR rewrites the wave BEFORE it walks (415-423):
+ *
+ *     LDA CURWAV / CMP I,98. / IFCS      ;CURWAV >= 98 — displayed wave >= 99
+ *       LDA RANDO2 / AND I,1F / ORA I,40 ;-> 0x40..0x5F = 64..95
+ *     ENDIF
+ *     STA TEMP2 / INC TEMP2              ;-> TEMP2 = 65..96
+ *
+ * From wave 99 up it plays a RANDOM wave in 65..96 — and that band lies wholly inside the
+ * T1 record below, so the draw is UNOBSERVABLE in WFUSCH: every substituted wave yields
+ * the same 0xC0. We fold to 99 and land on the identical byte without touching the RNG,
+ * which is what keeps this a pure function of `level`.
+ *
+ * We need the fold because the PORT reaches a state the ROM cannot: `s.level` increments
+ * without a cap (sim.ts), and `MAX_SELECT_LEVEL` bounds only the level-SELECT screen. Walk
+ * off the end of the table and the TE zero comes back — the same value that means "no
+ * chase" below wave 17 — and the wave-100 fuseball silently returns to the coin, which is
+ * the very bug this story exists to remove. (Found in review, round 1.)
+ */
+export function wfuschForLevel(level: number): number {
+  const wave = level >= 99 ? 99 : level   // CONTOUR's fold — see above
+  for (const r of TWFUSC) {
+    if (wave < r.start || wave > r.end) continue
+    switch (r.type) {
+      case 'T1': return r.value
+      case 'TR': return (wave - r.start) % 2 === 1 ? r.odd : r.even  // DOTR: odd takes byte 4
+      default: return assertNever(r, 'TWFUSC record type')           // TA/TZ/TB are not ported
+    }
+  }
+  return 0   // TE — end of table
+}
 // Spiker near-turnaround (story 6-15). ROM clamps `along` to $20 and reverses
 // (move away) once it climbs below it (rev-3 §C l.202-208). $20 → depth
 // (0xf0-$20)/224 ≈ 0.929 — far closer to the rim than the spike-height cap. Kept
