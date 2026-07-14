@@ -146,9 +146,15 @@ export interface PulseState {
 }
 
 export interface WarpState {
-  progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level
+  progress: number      // 0 = warp just entered (Claw at rim), 1 = cursor at the well bottom (ILINDDY)
   velocity: number      // dive speed in progress/sec; accelerates each frame (Story 6-1)
   warning: number       // seconds left on the AVOID SPIKES countdown before the dive (0 = none)
+  // tp1-13 (S-014): the dive's SECOND phase. Once the cursor passes the well bottom
+  // (progress >= 1, ILINDDY) it is off the lines and in space — crash-proof, T3
+  // droning — for `spaceFrames` sim steps before the level advances. `inSpace`
+  // marks that phase; `spaceFrames` counts it down.
+  inSpace: boolean
+  spaceFrames: number   // sim steps left in the crash-proof space phase (0 = not in space)
 }
 
 export interface SelectState {
@@ -188,6 +194,11 @@ export interface GameState {
   spikes: number[]      // per-lane spike height in depth units (0 = none)
   score: number
   lives: number
+  // tp1-13 (S-015): the ROM's BONUS — points pending from an advanced-wave start
+  // (0 for a wave-1 start). Set at level select from the BONPTM skill-step ladder,
+  // paid ONCE through the shared score path on arrival at the next well, and
+  // cleared there ("CLEAR BONUS", ALWELG.MAC:114-117). See rules.startWaveBonus.
+  startBonus: number
   spawn: SpawnState
   pulse: PulseState     // PULSON/PULTIM — the board's single pulse phase (W-026)
   warp: WarpState
@@ -226,9 +237,10 @@ export function initialState(seed: number): GameState {
     spikes: new Array(tube.laneCount).fill(0),
     score: 0,
     lives: START_LIVES,
+    startBonus: 0,        // set at level select; attract boots with no pending bonus (tp1-13)
     spawn: spawnForLevel(1, rng, tube.laneCount),
     pulse: { son: PULSE_SON_INIT, tim: PULSE_STEP },  // INEWLI, ALWELG.MAC:46-48
-    warp: { progress: 0, velocity: 0, warning: 0 },
+    warp: { progress: 0, velocity: 0, warning: 0, inSpace: false, spaceFrames: 0 },
     select: { selectedLevel: 1 },
     entry: null,
     highScoreTable: [],

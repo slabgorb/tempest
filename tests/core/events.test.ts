@@ -44,6 +44,9 @@ const ALL_EVENTS: GameEvent[] = [
   { type: 'pulsar-hum-start' }, // Story 10-11
   { type: 'pulsar-hum-stop' }, // Story 10-11
   { type: 'warp-end' }, // Story 10-11
+  { type: 'warp-space' }, // tp1-13 (S-014): the dive crossed the well bottom
+  { type: 'wave-bonus', points: 6000 }, // tp1-13 (S-015): end-of-wave skill-step bonus
+  { type: 'bolt-destroyed', lane: 4, depth: 0.5 }, // tp1-13 (S-013): shot downed a bolt
 ]
 
 // Exhaustive narrowing over the union: the `never` default fails to compile if a
@@ -68,6 +71,9 @@ function discriminant(e: GameEvent): string {
     case 'pulsar-hum-start':    return 'pulsar-hum-start'
     case 'pulsar-hum-stop':     return 'pulsar-hum-stop'
     case 'warp-end':            return 'warp-end'
+    case 'warp-space':          return 'warp-space' // tp1-13
+    case 'wave-bonus':          return `${e.points}` // tp1-13
+    case 'bolt-destroyed':      return `${e.lane},${e.depth}` // tp1-13
     default: {
       const _exhaustive: never = e
       return _exhaustive
@@ -76,16 +82,18 @@ function discriminant(e: GameEvent): string {
 }
 
 describe('GameEvent — discriminated union (AC1)', () => {
-  it('covers sixteen distinct, documented event types', () => {
+  it('covers nineteen distinct, documented event types', () => {
     const kinds = ALL_EVENTS.map((e) => e.type)
     // 8 from 5-1 + enemy-fire (6-5) + segment-cross (6-10) + superzapper-flash (10-2)
     // + spike-shot/extra-life/pulsar-hum-start/pulsar-hum-stop/warp-end (10-11)
-    expect(new Set(kinds).size).toBe(16)
+    // + warp-space/wave-bonus/bolt-destroyed (tp1-13)
+    expect(new Set(kinds).size).toBe(19)
     expect(kinds).toEqual([
       'enemy-death', 'player-grab', 'fire', 'enemy-fire', 'warp-spike-crash',
       'level-clear', 'superzapper-activate', 'superzapper-flash', 'player-spawn',
       'player-death', 'segment-cross',
       'spike-shot', 'extra-life', 'pulsar-hum-start', 'pulsar-hum-stop', 'warp-end',
+      'warp-space', 'wave-bonus', 'bolt-destroyed',
     ])
   })
 

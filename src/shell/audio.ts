@@ -34,8 +34,13 @@ const SOUNDS = {
   playerGrab: 'clawcatch.wav', // the Claw was grabbed at the rim (community rip)
   playerDeath: 'player_explosion.wav', // ★ authentic ($cbf5) — the Claw was destroyed (6-11)
   warpSpikeCrash: 'kaboom.wav', // crashed onto a spike during the warp (community rip)
-  levelClear: 'warp.wav', // ★ authentic ($cc75) — level cleared, warp begins
-  superzapper: 'kzap.wav', // superzapper fired (community rip)
+  levelClear: 'warp.wav', // ★ authentic ($cc75 = T2 ";THRUST IN TUBE") — the dive's in-well phase
+  // tp1-13 (S-014): the dive's SPACE phase. ★ authentic ($cc81 = T3 ";THRUST IN
+  // SPACE"), baked+hosted by tp1-2 and wired here — MOVCUD hands the drone over from
+  // T2 the frame the cursor passes ILINDDY. (kzap.wav is DELETED: it was an invention
+  // with no slot in ALSOUN's 13-sound table — S-011. The zap's audio is each kill's EX
+  // burst, already played by their 'enemy-death' events.)
+  thrustSpace: 'thrust_space.wav',
   playerSpawn: 'warpin.wav', // the Claw (re)spawned (community rip)
   segmentTick: 'segment_tick.wav', // ★ authentic ($cc39) — cursor crossed into a new tube segment
   // Story 10-11: previously-baked-but-unwired authentic POKEY samples (idx9/4/3 of
@@ -68,13 +73,16 @@ const CHANNELS: Record<SoundName, string> = {
   playerDeath: 'player-life', // death then respawn never overlap
   playerSpawn: 'player-life',
   warpSpikeCrash: 'warp', // the crash impact owns the warp voice
-  superzapper: 'zap',
   segmentTick: 'segment', // own channel: ticks must survive a held fire
   // Story 10-11: the sustained cues each get their OWN voice. levelClear is now a
   // loop spanning the dive, so it can no longer share 'warp' with the crash impact
   // (a mid-dive crash rings WHILE the zoom loop is up, then warp-end stops only the
   // loop). The hum likewise rings under everything on its own voice.
   levelClear: 'zoom', // the sustained zoom/warp loop (10-11)
+  // tp1-13 (S-014): T3 shares levelClear's 'zoom' voice — the dive's two thrust
+  // phases are the same category and mutually exclusive in time (warp-space stops T2
+  // the frame it starts T3), which is exactly when the channel rule allows sharing.
+  thrustSpace: 'zoom',
   spikeShot: 'spike',
   extraLife: 'bonus',
   pulsarHum: 'pulsar',

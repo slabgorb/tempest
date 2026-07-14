@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 181,
+      "line": 223,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
@@ -166,7 +166,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 239,
+      "line": 246,
       "verbatim": "        ex.color = SPLAT_CYCLE[ex.cycle % SPLAT_CYCLE.length]"
     },
     "claim": "The SPLAT picture (ALVROM.MAC:810-849) alternates `CSTAT PDIWHI` / `CSTAT PDIRED` / `CSTAT PDIYEL` every 2 vectors around the star, so white, red and yellow segments are all on screen AT ONCE, in a fixed spatial pattern. ALTCOL (ALDISP.MAC:1084-1094) seeds those 3 color-RAM slots to white/yellow/red once, and ROTCOL (ALDISP.MAC:1098-1110) 3-way-ROTATES the slot contents every subsequent frame — so the pattern of which star segment is which color visibly spins over time, but a red segment and a white segment always coexist. Our `drawPlayerSplat` (render.ts:495-507) strokes the ENTIRE jagged star with one `ctx.strokeStyle = ex.color`, and `update()` (fx.ts:236-239) advances that single color through `SPLAT_CYCLE` (white→red→yellow) one whole-object flash per frame.",
@@ -206,7 +206,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 237,
+      "line": 244,
       "verbatim": "        ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)"
     },
     "claim": "TSPTIM's picture order (ALDISP.MAC:1022-1030) plays SPLAT6 (the LARGEST picture, `SCAL 2,40`, line 803) first as the \"CHARGE PLAYER EXPLOSION START\", steps down through SPLAT5/4/3/2 to SPLAT1 (the smallest, `SCAL 0,0`, line 793) at the sequence's middle, then climbs back up through SPLAT3/SPLAT5 to SPLAT6 again at the \"FINISH\". So the authentic splat begins already at its biggest size, collapses toward a point, then re-expands to full size. Our `ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)` is the opposite arc: it starts at 0, grows to a single peak at the midpoint, and shrinks back to 0.",
@@ -351,7 +351,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 397,
+      "line": 402,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",

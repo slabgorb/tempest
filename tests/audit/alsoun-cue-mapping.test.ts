@@ -151,7 +151,7 @@ describe('tp1-2 AC#2 — the swap: EX is the enemy explosion, T3 is the thrust d
   it('still ships the THRUST-IN-SPACE record, as its own cue', () => {
     // The bytes currently shipping as enemy_explosion.wav are not garbage — they
     // are ALSOUN's T3, the drone that takes over when the dive reaches space. They
-    // must survive the swap as a cue of their own: tp1-9 wires them to the warp's
+    // must survive the swap as a cue of their own: tp1-13 wires them to the warp's
     // second phase and reuses exactly this record, so losing them here breaks it.
     const thrust = atRom(T3.rom)
     expect(thrust, `exactly one cue must carry the T3 record ${T3.rom}`).toHaveLength(1)
