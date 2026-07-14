@@ -6,7 +6,7 @@ import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform 
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
-import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z } from './starfield'
+import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z, starReachFraction } from './starfield'
 import { titleLogoPasses } from './titleLogo'
 import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
@@ -176,8 +176,11 @@ function drawStarfield(ctx: CanvasRenderingContext2D, W: number, H: number): voi
   ctx.fillStyle = STAR_COLOR
   ctx.shadowColor = STAR_COLOR
   for (const plane of starfield.planes) {
-    const t = (STAR_SPAWN_Z - plane.z) / span // 0 (far, centre) → 1 (near, edge)
-    const r = t * reach
+    const t = (STAR_SPAWN_Z - plane.z) / span // 0 (far) → 1 (near) — brightness/size cue
+    // tp1-9 (DB-016): radial reach is the ROM's hyperbolic divide 40/(z+24), not a
+    // linear spread from centre — a fresh plane already sits ~15% out, not piled on
+    // the centre point, and it whips past at the end.
+    const r = starReachFraction(plane.z) * reach
     const size = 0.6 + t * 1.8
     ctx.globalAlpha = 0.25 + t * 0.7
     ctx.shadowBlur = 4 + t * 8

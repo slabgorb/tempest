@@ -7,16 +7,15 @@ export interface Tube {
   readonly closed: boolean
   readonly far: readonly Point[]
   readonly near: readonly Point[]
+  // tp1-9 (DB-006): the PER-WELL far/near screen-scale ratio R = (16+H)/(240+H),
+  // H = the ROM's per-well eye-Y distance HOLEYL[wellID]. Replaces the old single
+  // module-level FAR_RATIO 0.2. perspectiveDepth reads it, so project/boundaryRail/
+  // laneWidth/flipPivot all foreshorten by THIS well's ratio, not a global.
+  readonly farRatio: number
 }
 
-// --- Story 10-12: true perspective depth projection --------------------------
+// --- Story 10-12 / tp1-9: true perspective depth projection ------------------
 //
-// The well's documented projection parameter. The far ring is the near ring
-// scaled by FAR_RATIO toward the vanishing point (the tube centre), so the far
-// end sits at eye-distance 1/FAR_RATIO times the near end. (60/300 keeps level 1
-// at its original size — see makeRingTube.)
-export const FAR_RATIO = 60 / 300
-
 // Depth -> perspective fraction along the far->near segment. A Tempest well is
 // ONE ring scaled by a perspective DIVIDE toward the vanishing point, NOT an
 // affine lerp: screen distance from the centre is ∝ 1/(eye − z). Pinning both
@@ -24,18 +23,21 @@ export const FAR_RATIO = 60 / 300
 // claw moves) while requiring "screen radius ∝ 1/z with z linear in depth"
 // yields a UNIQUE reparameterisation — one that makes 1/radius affine in depth:
 //
-//   perspectiveDepth(d) = R·d / (R·d + (1−d)),   R = FAR_RATIO
+//   perspectiveDepth(tube, d) = R·d / (R·d + (1−d)),   R = tube.farRatio
+//
+// tp1-9 (DB-006): R is now PER-WELL — the ROM's (16+H)/(240+H), H=HOLEYL[wellID],
+// ranging 0.104..0.164 — NOT a single 0.2. perspectiveDepth therefore takes the
+// tube and reads its ratio; every well foreshortens by its own eye distance.
 //
 // d=0 -> exactly 0, d=1 -> exactly 1; the interior accelerates toward the near
 // rim like the cabinet. (Algebraically R·d/(1+(R−1)d), but written so the
 // denominator is exactly R·d at d=1 and exactly 1 at d=0, keeping the endpoints
-// bit-exact — the rim and claw must not move even by a rounding ULP.) The
-// denominator stays in [R, 1] over depth [0, 1], so the divide never blows up.
-// Pure: the only projection state is the FAR_RATIO constant (a single documented
-// vanishing-point/eye parameter). Per-level lev_y3d camera offset is a deferred
-// render nicety (see the geometry ROM survey).
-export function perspectiveDepth(depth: number): number {
-  return (FAR_RATIO * depth) / (FAR_RATIO * depth + (1 - depth))
+// bit-exact — the rim and claw must not move even by a rounding ULP.) With R in
+// [0.104, 1] the denominator stays in [R, 1] over depth [0, 1], so the divide
+// never blows up. Pure: the only projection state is the tube's own ratio.
+export function perspectiveDepth(tube: Tube, depth: number): number {
+  const r = tube.farRatio
+  return (r * depth) / (r * depth + (1 - depth))
 }
 
 export function makeCircleTube(
@@ -48,7 +50,10 @@ export function makeCircleTube(
     far.push({ x: center.x + Math.cos(a) * farRadius, y: center.y + Math.sin(a) * farRadius })
     near.push({ x: center.x + Math.cos(a) * nearRadius, y: center.y + Math.sin(a) * nearRadius })
   }
-  return { laneCount, closed: true, far, near }
+  // A synthetic circle's ratio IS its far/near radius ratio (60/300 = 0.2 for the
+  // canonical level-1 ring), concentric about `center` so its vanishing point is
+  // the centre. perspectiveDepth reads this the same way it reads a ROM well's.
+  return { laneCount, closed: true, far, near, farRatio: farRadius / nearRadius }
 }
 
 export function wrapLane(tube: Tube, lane: number): number {
@@ -84,7 +89,7 @@ export function laneCenterNear(tube: Tube, lane: number): Point {
 export function project(tube: Tube, lane: number, depth: number): Point {
   const f = laneCenterFar(tube, lane)
   const n = laneCenterNear(tube, lane)
-  const t = perspectiveDepth(depth)
+  const t = perspectiveDepth(tube, depth)
   return { x: f.x + (n.x - f.x) * t, y: f.y + (n.y - f.y) * t }
 }
 
@@ -94,7 +99,7 @@ function boundaryRail(tube: Tube, i: number, depth: number): Point {
   const idx = boundaryIndex(tube, i)
   const f = tube.far[idx]
   const n = tube.near[idx]
-  const t = perspectiveDepth(depth)
+  const t = perspectiveDepth(tube, depth)
   return { x: f.x + (n.x - f.x) * t, y: f.y + (n.y - f.y) * t }
 }
 
@@ -183,12 +188,25 @@ const ROM_REMAP: readonly number[] = [
   0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0d, 0x09, 0x08, 0x0c, 0x0e, 0x0f, 0x0a, 0x0b,
 ]
 
+// tp1-9 (DB-006/DB-007): the per-well EYE, indexed by wellID. From Theurer's 1981
+// source ALDISP.MAC (.RADIX 16 per ALCOMN.MAC:17):
+//   HOLEYL — EYE POSITION (Y), ALDISP.MAC:1385. The eye's Y distance behind the
+//     rim; the far/near screen ratio is R = (16+H)/(240+H), H = HOLEYL[wellID].
+//   HOLEZL — EYE POSITION (Z), ALDISP.MAC:1386. The eye's Z; the far ring is
+//     scaled about the projected vanishing point, off the world Z centre 0x80 on
+//     every well but wellID 11. (EX is hardcoded to the centre 0x80, so X is
+//     never off-axis.)
+const ROM_EYE_Y: readonly number[] = [
+  0x18, 0x1c, 0x18, 0x0f, 0x18, 0x18, 0x18, 0x18, 0x0a, 0x18, 0x10, 0x0f, 0x18, 0x0c, 0x14, 0x0a,
+]
+const ROM_EYE_Z: readonly number[] = [
+  0x50, 0x50, 0x50, 0x68, 0x50, 0x50, 0x68, 0xb0, 0xa0, 0x50, 0x90, 0x80, 0x20, 0xb0, 0x60, 0xa0,
+]
+
 const ROM_CENTER = 0x80
 // Map the ROM rim radius (±112) onto the original circle's near radius (300) so
-// level 1 keeps its size; the far end is the same ring scaled toward the centre
-// by FAR_RATIO (the 60/300 depth ratio defined at the top as the projection
-// parameter). Per-level lev_y3d vanishing-point fidelity is a render follow-up —
-// see the survey's ADR.
+// level 1 keeps its size. The far end is the same ring scaled toward the per-well
+// vanishing point by that well's ratio R (see makeRingTube / DB-006).
 const RING_SCALE = 300 / 112
 
 // Build a Tube from one authentic 16-point ring. Closed wells wrap (16 lanes);
@@ -196,8 +214,19 @@ const RING_SCALE = 300 / 112
 // A self-crossing ring (the figure-8: seg0 == seg8 == origin) is just an ordered
 // point list — lanes are indices, so the crossing is purely a render-space
 // overlap and the simulation is unaffected.
+//
+// tp1-9 perspective (DB-006/DB-007): the far ring is the near ring scaled by the
+// per-well ratio R = (16+H)/(240+H) (H = ROM_EYE_Y[wellID]) ABOUT the projected
+// vanishing point VP, not the ring centroid. The eye sits on the world X centre
+// (0x80) but off-axis in Z at ROM_EYE_Z[wellID], so in our near-ring coordinates
+// VP = (0, (0x80 − EZ)·RING_SCALE) — the origin only on wellID 11 (EZ = 0x80),
+// the one concentric well. Scaling a ring about VP by R reproduces the cabinet's
+// 1/(PY−EY) divide (DB-005 proved the curve; this seats its constants).
 function makeRingTube(tube: number): Tube {
   const closed = ROM_OPEN[tube] === 0x00
+  const H = ROM_EYE_Y[tube]
+  const farRatio = (16 + H) / (240 + H)
+  const vpY = (ROM_CENTER - ROM_EYE_Z[tube]) * RING_SCALE // vanishing point (VP.x = 0)
   const near: Point[] = []
   const far: Point[] = []
   for (let i = 0; i < 16; i++) {
@@ -206,9 +235,10 @@ function makeRingTube(tube: number): Tube {
     const x = sx * RING_SCALE
     const y = sy === 0 ? 0 : -sy * RING_SCALE // negate: ROM +y up -> canvas +y down
     near.push({ x, y })
-    far.push({ x: x * FAR_RATIO, y: y * FAR_RATIO })
+    // far[i] = VP + R·(near[i] − VP); VP.x = 0, so far.x is simply R·x.
+    far.push({ x: x * farRatio, y: vpY + (y - vpY) * farRatio })
   }
-  return { laneCount: closed ? 16 : 15, closed, far, near }
+  return { laneCount: closed ? 16 : 15, closed, far, near, farRatio }
 }
 
 // The 16 geometries in arcade cycle order: GEOMETRIES[(level - 1) mod 16].
