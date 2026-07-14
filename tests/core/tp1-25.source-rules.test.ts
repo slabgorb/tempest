@@ -124,8 +124,11 @@ describe.skipIf(!sourceAvailable)('tp1-25 — TWFUSC starts at 17 and TR ALTERNA
     //     STA TEMP2 / INC TEMP2
     //
     // Derive the band rather than trusting the arithmetic in prose:
+    // CONTOUR: is at 398, but its first INSTRUCTION is at 415 — the intervening lines are
+    // the ";PARAMETER TABLES DATA STRUCTURE" block and the T1/TZ/TE/TA/TB/TR type equates.
+    // A 10-line window stops short of the code and matches nothing but comments.
     const contour = lineOf(/^CONTOUR:/)
-    const head = alwelg.slice(contour, contour + 10).join('\n')
+    const head = alwelg.slice(contour, contour + 26).join('\n')
     expect(head).toMatch(/CMP\s+I,98\./)
     expect(head).toMatch(/LDA\s+RANDO2/)
     expect(head).toMatch(/AND\s+I,1F/)

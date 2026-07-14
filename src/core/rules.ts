@@ -255,6 +255,15 @@ export const FUSEBALL_MOVE_PROB = 0.6
 //     BIT WFUSCH / IFVS    bit 6 — "CHASE PLAYER ON TUBE?" (ALWELG.MAC:2135-2137)
 //
 // (`BIT` puts operand bit 7 in N and bit 6 in V — which is exactly what IFMI/IFVS read.)
+//
+// ⚠ FUSE_CHASE_AT_TOP IS NOT WIRED, AND THAT IS DELIBERATE — see tp1-25 deviation D3.
+// The ROM asks its question on JFUSEUP's "TOO HIGH?" arm (2121-2130), the branch a fuse
+// takes while riding UP near the rim. Our fuseball has no such arm: it climbs on moveAlong
+// with its own clamp at the top and never enters the up/down oscillation the ROM's fuse
+// does, so there is no live decision point for bit 7 to gate. The constant is here because
+// it is half of the byte TWFUSC actually stores (and ALCOMN.MAC:786 names both — "FUSE
+// CHASE PLAYER FLAG (D7 FOR TOP;D6 FOR TUBE)"), not because the port consults it.
+// Do not read this pair and assume both are live. Only ON_TUBE is.
 export const FUSE_CHASE_AT_TOP = 0x80
 export const FUSE_CHASE_ON_TUBE = 0x40
 
@@ -289,12 +298,35 @@ const TWFUSC: ReadonlyArray<
  * "EXIT ON EOT TYPE CODE WITH 0" (442). That zero is a REAL answer, not a missing one:
  * it is precisely what makes every fuseball decision fall to the LEFRIT coin, which is
  * the whole of tp1-5's half of W-023. Never `|| fallback` this.
+ *
+ * ── The deep waves fold back IN. The ROM cannot fall off its own table. ──────────────
+ * CONTOUR rewrites the wave BEFORE it walks (415-423):
+ *
+ *     LDA CURWAV / CMP I,98. / IFCS      ;CURWAV >= 98 — displayed wave >= 99
+ *       LDA RANDO2 / AND I,1F / ORA I,40 ;-> 0x40..0x5F = 64..95
+ *     ENDIF
+ *     STA TEMP2 / INC TEMP2              ;-> TEMP2 = 65..96
+ *
+ * From wave 99 up it plays a RANDOM wave in 65..96 — and that band lies wholly inside the
+ * T1 record below, so the draw is UNOBSERVABLE in WFUSCH: every substituted wave yields
+ * the same 0xC0. We fold to 99 and land on the identical byte without touching the RNG,
+ * which is what keeps this a pure function of `level`.
+ *
+ * We need the fold because the PORT reaches a state the ROM cannot: `s.level` increments
+ * without a cap (sim.ts), and `MAX_SELECT_LEVEL` bounds only the level-SELECT screen. Walk
+ * off the end of the table and the TE zero comes back — the same value that means "no
+ * chase" below wave 17 — and the wave-100 fuseball silently returns to the coin, which is
+ * the very bug this story exists to remove. (Found in review, round 1.)
  */
 export function wfuschForLevel(level: number): number {
+  const wave = level >= 99 ? 99 : level   // CONTOUR's fold — see above
   for (const r of TWFUSC) {
-    if (level < r.start || level > r.end) continue
-    if (r.type === 'T1') return r.value
-    return (level - r.start) % 2 === 1 ? r.odd : r.even   // DOTR: odd offset takes byte 4
+    if (wave < r.start || wave > r.end) continue
+    switch (r.type) {
+      case 'T1': return r.value
+      case 'TR': return (wave - r.start) % 2 === 1 ? r.odd : r.even  // DOTR: odd takes byte 4
+      default: return assertNever(r, 'TWFUSC record type')           // TA/TZ/TB are not ported
+    }
   }
   return 0   // TE — end of table
 }

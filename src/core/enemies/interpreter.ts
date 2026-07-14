@@ -414,12 +414,17 @@ function jjumpm(e: Enemy, ctx: CamContext): number {
 }
 
 /**
- * JFUSEUP (ALWELG.MAC:2095-2135): process the fuse. It rides its lane and rolls
- * between lanes toward the player on a fuzz_move roll — and that roll IS the
- * vulnerable window (W-022): COLCHK lets a bullet kill a fuseball only while it is
- * rolling; the instant it lands on a line, ";MAKE IT INVINCIBLE". A jitter tick
- * that does not slide is a landing, so it clears the bit even when the roll never
- * fired, or a fuseball that stopped rolling would stay killable forever.
+ * JFUSEUP (ALWELG.MAC:2095-2135): process the fuse. It rides its lane and rolls between
+ * lanes on a fuzz_move roll — NOT "toward the player", which is what this comment used to
+ * say and was never true in either regime: below wave 18 the roll is a blind coin (LEFRIT),
+ * and from 18 up it aims and then REVERSES, so the fuse rolls deliberately AWAY. See the
+ * decision below. (The old wording is exactly the kind of stale comment that seeded this
+ * story's own findings — a comment records what someone meant, the code records what runs.)
+ *
+ * That roll IS the vulnerable window (W-022): COLCHK lets a bullet kill a fuseball only
+ * while it is rolling; the instant it lands on a line, ";MAKE IT INVINCIBLE". A jitter tick
+ * that does not slide is a landing, so it clears the bit even when the roll never fired, or
+ * a fuseball that stopped rolling would stay killable forever.
  */
 function jfuseup(e: Enemy, ctx: CamContext): void {
   if (e.kind !== 'fuseball') return
