@@ -231,7 +231,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 954,
+      "line": 972,
       "verbatim": "    drawStarfield(pctx, W, H)"
     },
     "claim": "MOVCUD only kicks the starfield off once the Claw has descended past 0x50: 'LDA CURSY / CMP I,50 / IFCS / LDA PLAGRO / IFEQ / JSR INSTAR / ENDIF / ENDIF' (ALWELG.MAC:1041-1048). CURSY starts at 0x10, so INSTAR fires only after (0x50 - 0x10) / 224 = 64/224 = 28.6% of the dive has elapsed, and INSTAR then activates a single plane at 0xF0 (ALWELG.MAC:3421-3424). Our renderer draws the starfield unconditionally for every frame the mode is 'warp' (render.ts:946-949), i.e. from progress 0 - including during the AVOID SPIKES hold, when the ROM's Claw has not moved at all and PLAGRO is still 0.",

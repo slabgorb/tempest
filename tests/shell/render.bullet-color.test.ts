@@ -8,10 +8,16 @@
 // Today every bullet is drawn white (glyphs.ts playerBulletGlyph, color:'white',
 // stroked by render.ts drawBullets) regardless of how many are on screen.
 //
+// tp1-12 RE-SEAT: Story 10-8 originally mapped the 6-7 tint onto the existing
+// `cyan`, deliberately NOT introducing a `blue` GlyphColor. Audit finding V-011
+// refutes that: DSPCHG loads `ZBLUE` (ALDISP.MAC:925, LDY ZBLUE), which is the
+// ROM's turquoise-distinct blue — "GlyphColor has no 'blue', the type needs one."
+// THE PALETTE story adds `blue`, so these assertions move cyan → blue. The test's
+// intent (tint by charge count; three distinct buckets; never white) is unchanged;
+// only the middle bucket's colour NAME is corrected to the ROM's.
+//
 // TEA test-design decisions (see session "Design Deviations → TEA"):
-//  • "blue" maps to the existing palette colour `cyan` (#00e5ff) — the codebase's
-//    blue. We do NOT introduce a near-duplicate `blue` GlyphColor; the palette
-//    stays tight (GLYPH_HEX already carries cyan).
+//  • The 6-7 tint is the ROM's `blue` (ZBLUE), distinct from `cyan` (ZTURQOI).
 //  • The pure count→colour rule lives in a new exported `playerBulletColor(count)`
 //    in the PURE glyphs module, so the thresholds are unit-testable without a
 //    canvas. render.ts `drawBullets` is the canvas consumer — like Story 6-17,
@@ -30,9 +36,9 @@ describe('playerBulletColor — tint by charges in flight (Story 10-8 AC1)', () 
     }
   })
 
-  it('6–7 charges in flight → blue (the palette\'s cyan)', () => {
-    expect(playerBulletColor(6)).toBe('cyan')
-    expect(playerBulletColor(7)).toBe('cyan')
+  it('6–7 charges in flight → blue (ZBLUE, the ROM\'s turquoise-distinct blue)', () => {
+    expect(playerBulletColor(6)).toBe('blue')
+    expect(playerBulletColor(7)).toBe('blue')
   })
 
   it('8 charges in flight (== MAX_BULLETS cap) → red', () => {
@@ -45,17 +51,17 @@ describe('playerBulletColor — tint by charges in flight (Story 10-8 AC1)', () 
 
   it('flips yellow → blue at the 5/6 boundary', () => {
     expect(playerBulletColor(5)).toBe('yellow')
-    expect(playerBulletColor(6)).toBe('cyan')
+    expect(playerBulletColor(6)).toBe('blue')
   })
 
   it('flips blue → red at the 7/8 boundary', () => {
-    expect(playerBulletColor(7)).toBe('cyan')
+    expect(playerBulletColor(7)).toBe('blue')
     expect(playerBulletColor(8)).toBe('red')
   })
 
   it('gives a distinct colour per bucket and is never white (no longer always white)', () => {
     const buckets = [playerBulletColor(1), playerBulletColor(6), playerBulletColor(8)]
-    expect(buckets).toEqual(['yellow', 'cyan', 'red'])
+    expect(buckets).toEqual(['yellow', 'blue', 'red'])
     expect(new Set(buckets).size).toBe(3) // all three buckets distinct
     expect(buckets).not.toContain('white') // AC3: bullets are no longer always white
   })
