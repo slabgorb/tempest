@@ -23,6 +23,7 @@ import { assertNever } from './assert'
 function cloneState(s: GameState): GameState {
   return {
     ...s,
+    camera: { ...s.camera },
     player: { ...s.player },
     bullets: s.bullets.map((b) => ({ ...b })),
     enemyBullets: s.enemyBullets.map((b) => ({ ...b })),
@@ -625,6 +626,9 @@ function startGameAtLevel(s: GameState, level: number): void {
   s.player = { lane: 0, alive: true, respawnTimer: 0, superzapper: 'full', zapTimer: 0 }
   s.enemies = []
   s.tube = tubeForLevel(level)
+  // New life/new game: the screen-Z translate SNAPS to the well's target — the
+  // ROM's CNWLF2 branch, "AT CENTER IMMEDIATELY" (INIWLS, ALDISP.MAC:2484-2491).
+  s.camera = { screenZ: s.tube.screenZ, slidePerFrame: 0 }
   s.spikes = new Array(s.tube.laneCount).fill(0)
   s.warp.progress = 0
   s.warp.velocity = 0
@@ -745,6 +749,10 @@ function checkLevelClear(s: GameState): void {
 function advanceLevel(s: GameState): void {
   s.level += 1
   s.tube = tubeForLevel(s.level)
+  // New wave: EASE the screen-Z translate toward the new well — the ROM's
+  // ZADEST, a fixed eighth of the gap per frame ("MOVE UP SLOWLY", INIWLS
+  // ALDISP.MAC:2492-2505), applied every frame by ALWELG.MAC:75-84 (stepCamera).
+  s.camera.slidePerFrame = (s.tube.screenZ - s.camera.screenZ) / 8
   s.spikes = new Array(s.tube.laneCount).fill(0)
   s.player.lane = wrapLane(s.tube, s.player.lane)
   startLevel(s)
@@ -752,6 +760,23 @@ function advanceLevel(s: GameState): void {
   s.warp.velocity = 0
   s.warp.warning = 0
   s.mode = 'playing'
+}
+
+// tp1-31 (DB-008): advance the level-start slide one frame — the port of
+// ALWELG.MAC:75-84 ("UPDATE Z CENTER"): ZADJL += ZADEST every frame. The ROM's
+// fixed-point step lands on the target after 8 frames; the float port clamps
+// there and parks. One stepPlaying call = one ROM frame (the qframe convention).
+function stepCamera(s: GameState): void {
+  const step = s.camera.slidePerFrame
+  if (step === 0) return
+  const target = s.tube.screenZ
+  const next = s.camera.screenZ + step
+  if (step > 0 ? next >= target : next <= target) {
+    s.camera.screenZ = target
+    s.camera.slidePerFrame = 0
+  } else {
+    s.camera.screenZ = next
+  }
 }
 
 // During the warp the camera dives from the rim (progress 0 → depth 1) toward the
@@ -821,6 +846,7 @@ function emitPulsarHumEdge(prev: GameState, s: GameState): void {
 // (Story 10-3), so the demo runs the EXACT same pipeline, just on synthetic input.
 // `prev` is the pre-step (read-only) state; `s` is the working clone.
 function stepPlaying(prev: GameState, s: GameState, input: Input, dt: number): void {
+  stepCamera(s)               // level-start screen-Z slide (tp1-31, DB-008)
   stepPlayer(s, input)
   stepFiring(s, input)
   stepZap(s, input)
