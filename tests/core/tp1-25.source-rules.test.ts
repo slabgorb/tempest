@@ -26,6 +26,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { wfuschForLevel } from '../../src/core/rules'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const sourceDir = process.env.TEMPEST_SOURCE_DIR ?? '/Users/slabgorb/Projects/tempest-source-text'
@@ -112,6 +113,43 @@ describe.skipIf(!sourceAvailable)('tp1-25 — TWFUSC starts at 17 and TR ALTERNA
     expect(records.every((r) => !/,(?:[1-9]|1[0-6])\.,/.test(r))).toBe(true)
   })
 
+  it('CONTOUR folds every wave >= 99 back INSIDE the table — so $C0 is the answer forever', () => {
+    // REWORK (Reviewer, round 1). We walked off the end of TWFUSC above wave 99 and returned
+    // the TE zero, which put the fuseball back on the coin. The ROM never reaches the end of
+    // the table, because CONTOUR rewrites the wave before the walk (415-423):
+    //
+    //     LDA CURWAV / CMP I,98. / IFCS      ; CURWAV >= 98 -> displayed wave >= 99
+    //       LDA RANDO2 / AND I,1F / ORA I,40
+    //     ENDIF
+    //     STA TEMP2 / INC TEMP2
+    //
+    // Derive the band rather than trusting the arithmetic in prose:
+    const contour = lineOf(/^CONTOUR:/)
+    const head = alwelg.slice(contour, contour + 10).join('\n')
+    expect(head).toMatch(/CMP\s+I,98\./)
+    expect(head).toMatch(/LDA\s+RANDO2/)
+    expect(head).toMatch(/AND\s+I,1F/)
+    expect(head).toMatch(/ORA\s+I,40/)
+    expect(head).toMatch(/INC\s+TEMP2/)
+
+    const lo = ((0x00 & 0x1f) | 0x40) + 1   // 65
+    const hi = ((0x1f & 0x1f) | 0x40) + 1   // 96
+    expect([lo, hi]).toEqual([65, 96])
+
+    // The whole random band lies inside record 3 (`T1, 49-99`), so the draw is UNOBSERVABLE
+    // in WFUSCH — every substituted wave gives the same byte. That is why a deep wave needs
+    // no RNG to reproduce, and why $C0 is the only correct answer up there.
+    const twfusc = lineOf(/^TWFUSC:/)
+    expect(line(twfusc + 3)).toBe('\t.BYTE T1,49.,99.,0C0')
+    expect(lo).toBeGreaterThanOrEqual(49)
+    expect(hi).toBeLessThanOrEqual(99)
+
+    // And now hold OUR code to it.
+    for (const level of [99, 100, 150, 999]) {
+      expect(wfuschForLevel(level), `wave ${level}`).toBe(0xc0)
+    }
+  })
+
   it('TR is "ALTERNATE BETWEEN BYTES 3 & 4" — the word "ramp" appears nowhere', () => {
     expect(line(414)).toMatch(/ALTERNATE BETWEEN BYTES 3 & 4/)
     expect(line(414)).not.toMatch(/ramp/i)
@@ -194,12 +232,30 @@ describe('tp1-25 — lang-review: 0 is a REAL WFUSCH value, not a missing one', 
     expect(interpreter).toMatch(/wfuschForLevel/)
   })
 
-  it('never falls back on the lookup with `||` or `??` — 0 means NO CHASE (TS check #4)', () => {
-    // `wfuschForLevel(level) || SOMETHING` lights the chase on every wave 1-17, silently
-    // restoring the exact bug tp1-5 removed — and the wave-1 behavioural test is the only
-    // thing that would catch it. Ban the shape outright.
-    const src = stripComments(read('src/core/enemies/interpreter.ts'))
-    expect(src).not.toMatch(/wfuschForLevel\([^)]*\)\s*(\|\||\?\?)/)
+  it('0 survives the lookup as a VALUE — every early wave really is zero (TS check #4)', () => {
+    // THIS TEST REPLACES A FAKE ONE. It used to be a grep:
+    //
+    //     expect(src).not.toMatch(/wfuschForLevel\([^)]*\)\s*(\|\||\?\?)/)
+    //
+    // and the Reviewer mutation-proved it was SCENERY. Hoisting the fallback onto its own
+    // line reintroduces the exact always-chase bug it claimed to ban —
+    //
+    //     const wfusch = wfuschForLevel(ctx.level)
+    //     const gated  = wfusch || FUSE_CHASE_ON_TUBE     // waves 1-17 now chase
+    //
+    // — and the regex sailed through, 14/14 green, because the `||` is no longer textually
+    // adjacent to the call. A guard that cannot fail is not a guard; it is a decoration that
+    // makes the next reader stop looking.
+    //
+    // So assert the VALUE through the exported function instead of grepping for a shape.
+    // No refactor can hide from this, because it is the property that actually matters:
+    // `0` is a real answer (CONTOUR's TE path, 442) and it must reach the caller intact.
+    for (let level = 1; level <= 17; level++) {
+      expect(wfuschForLevel(level), `wave ${level} must be exactly 0 — not "falsy, so default it"`)
+        .toBe(0)
+    }
+    // …and it must be a NUMBER, not undefined/null dressed up as a missing lookup.
+    expect(typeof wfuschForLevel(1)).toBe('number')
   })
 
   it('no `as any` / non-null assertion smuggled into the fuseball path (TS check #1)', () => {

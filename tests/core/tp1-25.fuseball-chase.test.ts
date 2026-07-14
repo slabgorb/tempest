@@ -45,8 +45,8 @@ import {
   levelParams, SIM_STEP, wfuschForLevel, FUSE_CHASE_AT_TOP, FUSE_CHASE_ON_TUBE,
 } from '../../src/core/rules'
 import { tubeForLevel } from '../../src/core/geometry'
-import { Input } from '../../src/core/input'
-import { GameState } from '../../src/core/state'
+import type { Input } from '../../src/core/input'
+import type { GameState } from '../../src/core/state'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const FRAME = SIM_STEP
@@ -139,6 +139,53 @@ describe('tp1-25 — WFUSCH is read from TWFUSC per wave (ALWELG.MAC:686-690)', 
       expect(wfuschForLevel(level), `wave ${level}`).toBe(FUSE_CHASE_AT_TOP | FUSE_CHASE_ON_TUBE)
     }
   })
+
+  // ── REWORK (Reviewer, round 1). The table's LAST record ends at 99, and we walked
+  // off the end of it. ────────────────────────────────────────────────────────────────
+  //
+  // Above wave 99 no record matched and the lookup fell through to the TE `return 0` —
+  // the SAME value that means "no chase" below wave 17. So a wave-100 fuseball dropped
+  // back to the LEFRIT coin and stopped chasing altogether: the exact bug this story
+  // exists to remove, reinstated at the other end of the table. And it is REACHABLE —
+  // `advanceLevel` runs `s.level += 1` on every clear with no cap (sim.ts), and
+  // MAX_SELECT_LEVEL bounds only the level-SELECT screen.
+  //
+  // The ROM never gets there, because CONTOUR intercepts the wave BEFORE the table walk
+  // (ALWELG.MAC:415-423):
+  //
+  //     LDA CURWAV / CMP I,98. / IFCS      ; CURWAV >= 98  (i.e. displayed wave >= 99)
+  //       LDA RANDO2 / AND I,1F / ORA I,40 ; -> 0x40..0x5F = 64..95
+  //     ENDIF
+  //     STA TEMP2 / INC TEMP2              ; -> TEMP2 = 65..96
+  //
+  // It substitutes a RANDOM wave in 65..96. And that band lies WHOLLY INSIDE the third
+  // record (`T1, 49-99`), so every draw yields the same byte: the randomness cannot be
+  // observed in WFUSCH at all. **For every wave >= 99 the ROM's WFUSCH is $C0** —
+  // deterministically, with no RNG needed to reproduce it. See tp1-25.source-rules.test.ts,
+  // which pins that band against the source.
+  describe('above the table: the deep waves the ROM folds back in (CONTOUR 415-423)', () => {
+    it('stays $C0 above wave 99 — it must NOT fall off the end and revert to the coin', () => {
+      for (const level of [100, 101, 150, 999]) {
+        expect(wfuschForLevel(level), `wave ${level} fell off the end of TWFUSC`)
+          .toBe(FUSE_CHASE_AT_TOP | FUSE_CHASE_ON_TUBE)
+      }
+    })
+
+    it('from wave 33 the on-tube bit NEVER drops out again — not at 48, not at 99, not ever', () => {
+      // The bug in one sweep. From record 2 onward every byte carries $40 (33-48 alternate
+      // $40/$C0; 49+ is a flat $C0), so from wave 33 up there is no wave at which the
+      // fuseball stops chasing. A zero anywhere in here means it has quietly gone back to
+      // flipping a coin — which is precisely what happened at 100.
+      //
+      // NOTE the floor is 33, not 18: waves 17-32 ALTERNATE, so wave 19 legitimately
+      // returns 0. Asserting "never 0 above 17" would be a false test, and I wrote it that
+      // way first.
+      for (let level = 33; level <= 200; level++) {
+        expect(wfuschForLevel(level) & FUSE_CHASE_ON_TUBE, `wave ${level} lost the on-tube bit`)
+          .toBeTruthy()
+      }
+    })
+  })
 })
 
 // ── AC-4: BOTH sides, driven through a REAL wave ────────────────────────────────────
@@ -180,6 +227,11 @@ describe('tp1-25 — from wave 18 the fuseball DOES chase (FUCHPL, ALWELG.MAC:21
 
   it('wave 18 — the first wave TWFUSC actually lights the on-tube bit', () => chasesPlayer(18))
   it('wave 49 — $C0, both bits, no alternation left', () => chasesPlayer(49))
+
+  // REWORK (Reviewer, round 1): the table lookup is only half the story — prove the fuseball
+  // on the BOARD still hunts past the last record. The unit test above pins the byte; this
+  // pins the behaviour, which is what the player actually meets.
+  it('wave 100 — past the end of TWFUSC, and it had better still be hunting', () => chasesPlayer(100))
 })
 
 // ── AC-2: and it chases BACKWARDS. Do not "fix" this. ───────────────────────────────
