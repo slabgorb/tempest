@@ -14,7 +14,15 @@
 // This module is SHELL-only: it never imports the sim/core (the Hard
 // Architectural Boundary), keeping it a deterministic value producer.
 
-export type GlyphColor = 'red' | 'green' | 'yellow' | 'cyan' | 'white' | 'orange' | 'purple'
+// The palette's turquoise is `cyan`; `blue` (ZBLUE) is distinct from it — the ROM
+// carries both, so the type must too (tp1-12 / V-011). `orange` is NOT a palette
+// colour (it is the spiker's, tp1-3); it stays here for its non-palette uses.
+export type GlyphColor = 'red' | 'green' | 'yellow' | 'cyan' | 'white' | 'orange' | 'purple' | 'blue'
+
+// A COLTAB slot can also resolve to black — the invisible well of waves 65-80
+// (ALDISP.MAC:2447 `.BYTE ZBLACK`). No glyph is ever black (only the well, which
+// is not a glyph), so `black` is a palette colour, not a GlyphColor.
+export type PaletteColor = GlyphColor | 'black'
 
 export interface GlyphStroke {
   readonly points: readonly { readonly x: number; readonly y: number }[]
@@ -284,14 +292,15 @@ export function playerBulletGlyph(): Glyph {
   ]
 }
 
-// Story 10-8: ammo-count bullet tint (ROM CHACOU). The bullet body is recoloured
-// by how many player charges (shots) are currently in flight — the closer to the
-// 8-shot cap, the "hotter" the colour: <6 yellow, 6–7 cyan (the palette's blue,
-// GlyphColor has no separate `blue`), 8 (== core MAX_BULLETS) red. Pure: the
-// caller passes the live count, keeping this module core-free.
+// Story 10-8 / tp1-12: ammo-count bullet tint (ROM CHACOU, ALDISP.MAC:919-930).
+// The centre is recoloured by how many player charges (shots) are in flight — the
+// closer to the 8-shot cap, the "hotter" the colour: <6 yellow (ZYELLO), 6–7 blue
+// (ZBLUE — the ROM's turquoise-distinct blue, V-011 corrected this from `cyan`),
+// 8 (== core MAX_BULLETS) red (ZRED). Pure: the caller passes the live count,
+// keeping this module core-free.
 export function playerBulletColor(chargesInFlight: number): GlyphColor {
   if (chargesInFlight >= 8) return 'red'
-  if (chargesInFlight >= 6) return 'cyan'
+  if (chargesInFlight >= 6) return 'blue'
   return 'yellow'
 }
 
@@ -315,4 +324,56 @@ const LIFE1: readonly V[] = [
 
 export function lifeIconGlyph(): Glyph {
   return [{ points: LIFE1, closed: true, color: 'yellow' }]
+}
+
+// ==========================================================================
+// J. THE PALETTE — per-wave-group COLTAB (tp1-12).
+// ==========================================================================
+// Enemy/well colours are not fixed hues: they come from a per-wave-group colour
+// bank. COLTAB (ALDISP.MAC:2405-2456, radix 16 per ALCOMN.MAC:17) is SIX 8-byte
+// banks. INICOL selects the bank (ALDISP.MAC:2349-2374):
+//     LDA CURWAV / AND I,70 / CMP I,5F / IFCS / LDA I,5F / LSR / ORA I,07 / TAX
+// → bank = (min(CURWAV & 0x70, 0x5F)) >> 4 = floor(CURWAV / 16) clamped to 5.
+// CURWAV is 0-based; our `level` is 1-based, so bank = clamp(floor((level-1)/16), 0, 5).
+//
+// Each COLTAB byte is nibble-packed: the LOW nibble → COLRAM[0-7] (the primary
+// colour, transcribed here); the HIGH nibble → COLRAM+8[8-15] (the SPLAT/NYMPH/
+// FLASH alternates, not modelled). The slot MEANING is fixed and the colour per
+// slot cycles by bank (bank-0 comments, ALDISP.MAC:2406-2413):
+//   0 EXPLOSIONS · 1 CURSOR/FLASHLIGHT · 2 TANKERS · 3 FLIPPERS · 4 PULSARS
+//   5 LETTERS · 6 WELL · 7 LETTERS/FLASH
+// ZTURQOI→'cyan', ZBLUE→'blue', ZYELLO/ZYELLOW→'yellow', ZBLACK→'black' (the
+// invisible well of bank 4). Orange is not in the ROM's palette at all.
+export const COLTAB_BANKS: readonly (readonly PaletteColor[])[] = [
+  // bank 0  ;1  ALDISP.MAC:2406-2413
+  ['white', 'yellow', 'purple', 'red', 'cyan', 'green', 'blue', 'blue'],
+  // bank 1  ;2  ALDISP.MAC:2414-2421
+  ['white', 'green', 'blue', 'purple', 'yellow', 'cyan', 'red', 'red'],
+  // bank 2  ;3  ALDISP.MAC:2422-2429
+  ['white', 'blue', 'cyan', 'green', 'purple', 'red', 'yellow', 'yellow'],
+  // bank 3  ;4  ALDISP.MAC:2430-2437
+  ['white', 'blue', 'purple', 'green', 'yellow', 'red', 'cyan', 'cyan'],
+  // bank 4  ;5  ALDISP.MAC:2441-2448  — slot 6 = ZBLACK (2447), the invisible well
+  ['white', 'yellow', 'purple', 'red', 'cyan', 'green', 'black', 'blue'],
+  // bank 5  ;6  ALDISP.MAC:2449-2456
+  ['white', 'red', 'purple', 'yellow', 'cyan', 'blue', 'green', 'green'],
+]
+
+/** The COLTAB well slot (ALDISP.MAC:2412 `;WELL(6)`). */
+export const WELL_SLOT = 6
+
+/** The per-wave-group bank for a 1-based level. INICOL: advances every 16 waves,
+ *  saturates at the sixth bank (the ROM's `CMP I,5F` clamp — our level has no cap). */
+export function paletteBank(level: number): number {
+  return Math.max(0, Math.min(COLTAB_BANKS.length - 1, Math.floor((level - 1) / 16)))
+}
+
+/** Resolve a colour slot (0-7) through the level's COLTAB bank. */
+export function paletteColor(level: number, slot: number): PaletteColor {
+  return COLTAB_BANKS[paletteBank(level)][slot]
+}
+
+/** The well's colour for a level — `black` (invisible) on waves 65-80 (bank 4). */
+export function wellColor(level: number): PaletteColor {
+  return paletteColor(level, WELL_SLOT)
 }
