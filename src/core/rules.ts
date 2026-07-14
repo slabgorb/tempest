@@ -81,7 +81,35 @@ export const SPIN_SENSITIVITY = 0.15
 // It manufactured an AGREEMENT, and an agreement is the one thing nobody re-checks.
 export const BULLET_SPEED = (9 * ROM_FPS) / WARP_ALONG_SPAN  // 1.143 depth units/sec
 export const MAX_BULLETS = 8
-export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab
+// The grab line. It is not a threshold the ROM tunes — it is the RIM itself, and the
+// reason no byte could ever be found for it is that the kill check does not test depth.
+//
+// JKITST (ALWELG.MAC:1980-1993) reads INVAY nowhere. It tests exactly two things: the
+// invader is not mid-jump (the $80 INVMOT bit — W-010), and both its legs sit on both of
+// the cursor's legs. The depth gate lives one level up, in WHO IS ALLOWED TO RUN IT: the
+// opcode VKITST appears in exactly ONE cam program in the cabinet — TOPPER, the CHASER cam
+// (2447-2452, "CHASE PLAYER AROUND TOP"). Only a chaser can grab. And an invader becomes a
+// chaser in exactly one place, where it is seated on the cursor's own line:
+//
+//     CHASER: LDA CURSY      ;PLACE EXACTLY AT TOP
+//             STA X,INVAY                                  (ALWELG.MAC:1824-1826)
+//
+// reached from the climb by `CMP CURSY / BEQ ATOP / IFCC` (1744-1747). With
+// CURSY = ILINLIY = $10 (ALWELG.MAC:57-58; ALCOMN.MAC:820), the grab line is the top of
+// the well: (0xf0 - 0x10) / 224 = 1.0 — which is precisely the depth the cam interpreter
+// already pins a chaser to (RIM_DEPTH, which now derives from this name so the two cannot
+// drift apart again).
+//
+// It used to read 0.92, which inverts to INVAY 33.92 — not a ROM byte, and eight units
+// short of the rim, so an invader still CLIMBING grabbed a player the cabinet would never
+// have touched. Two consequences fell out of that invention: the enemy bolt killed early
+// (it shares this line — the ROM's charge is tested `CMP CURSY / IFCC ;AT TOP?` at
+// 2562-2565, the same CURSY), and tp1-24 ratified a difficulty change — "a split child is
+// born above the grab line, so the player dies on the burst frame" — that the cabinet does
+// not have. With the line derived it sits ABOVE the carrier's burst line ($20 = 0.9286), so
+// no child is ever born lethal: ATOP is tested BEFORE the carrier check, so a carrier that
+// reaches the rim becomes a CHASER instead of bursting. (Story tp1-27; finding W-049.)
+export const PLAYER_RIM_DEPTH = (0xf0 - 0x10) / WARP_ALONG_SPAN  // = 1.0, the rim (CURSY)
 export const RESPAWN_DELAY = 1.5      // seconds
 // Fixed lane the Claw returns to after a death (arcade rev-3: segment 14, near
 // rim) — never the death spot. A constant landing lane plus a fully reset board

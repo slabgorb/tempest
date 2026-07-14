@@ -302,7 +302,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 198,
+      "line": 226,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, and in the same units: ROM GAME frames, converted to seconds only at the call site (sim.ts:223), where the divisor is wrong.",
@@ -319,7 +319,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 184,
+      "line": 212,
       "verbatim": "const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]"
     },
     "claim": "FIREIC (2705-2708) draws RANDOM and fires when RANDOM >= CHANCE[ESHCOU], where ESHCOU is the number of enemy shots already on screen. The thresholds 0, $E0, $F0, $FA, $FF give firing probabilities of 256/256 = 1.0, 32/256 = 0.125, 16/256 = 0.0625, 6/256 = 0.0234, 1/256 = 0.0039. Our ENEMY_FIRE_CHANCE is [1.0, 0.125, 0.0625, 0.023, 0.004], indexed the same way (sim.ts:229).",
@@ -336,7 +336,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 176,
+      "line": 204,
       "verbatim": "    case 'pulsar':  return level >= 60"
     },
     "claim": "FIREIC gates on the INVFIR ($40) bit of INVAC2 (2696-2698). TNEWI2 (1485-1489) sets that bit per type: flipper ZFIRYE, pulsar ZFIRNO, tanker ZFIRYE, spiker(TRALER) ZFIRYE, fuse ZFIRNO. NEWPUL (1434-1438) then ORs WPULFI into the pulsar's byte, and WPULFI comes from TWFULF/TWPULF — which has NO record below wave 60 (so it resolves to 0 via the TE default) and ZFIRYE for waves 60-99. Our enemyCanShoot returns true for flipper/tanker/spiker, level >= 60 for pulsar, false for fuseball.",
@@ -353,7 +353,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 153,
+      "line": 181,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "FIREIC searches enemy-charge slots WCHAMX..0 for a vacancy (2709-2726), so the live cap is WCHAMX+1 (hence the ';ADD 1' comment). TCHAMX (586-588) gives WCHAMX = 1,1,1,2,3,2,2,3,3 for waves 1-9, then 2 for waves 10-64, then 3 for 65-99. The cap is therefore 2 bolts on waves 1-3, 3 on wave 4, 4 on wave 5, 3 on waves 6-7, 4 on waves 8-9, 3 on waves 10-64 and 4 on waves 65+ — it goes DOWN as well as up. NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count. We hard-cap at 4 on every level (sim.ts:225).",
@@ -373,7 +373,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 166,
+      "line": 194,
       "verbatim": "export const ENEMY_BOLT_SPEED_OFFSET = 0.72"
     },
     "claim": "TCHARIN is a single TB record for waves 1-99 with byte -64, and TB (DOTB, 829-832) means 'byte + WINVIL'. So WCHARL = WINVIL - 64 for EVERY wave, then TIMES8 scales it: the bolt is always exactly 64*8/256 = 2.0 along-units/frame faster than the invader that fired it. At the ROM's real 28.44 fps (FR-001) that offset is 2.0 * (256/9) / 224 = 0.254 depth/s, and the wave-1 bolt's absolute speed is (44+64)/32 = 3.375 along/frame = 0.4286 depth/s. Our ENEMY_BOLT_SPEED_OFFSET is 0.72 depth/s — 2.83x the ROM's offset — giving 0.368 + 0.72 = 1.088 depth/s at L1, 2.54x the arcade's bolt. The code comment claiming 'flipper-relative +0xc0' is not what the source says.",
@@ -393,7 +393,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 156,
+      "line": 184,
       "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
     },
     "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
@@ -455,7 +455,7 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 232,
+      "line": 237,
       "verbatim": "  e.depth = Math.max(0, Math.min(RIM_DEPTH, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))"
     },
     "claim": "JFUSEUP (2105-2130): if there are nymphs left AND CURWAV < 17 ('EARLY WAVE?'), the fuseball's climb is capped at Y = $20 (depth 0.929) instead of CURSY — reaching it triggers a lateral move (LEFRIT/FUCHPL) rather than an arrival. Only when the nymph queue is empty does it 'HEAD FOR THE TOP' (2118). It also reverses at the BOTTOM of its range ($80, 2132-2143), so it yo-yos. Our fuseball climbs monotonically to depth 1 and grabs.",
@@ -538,7 +538,7 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 170,
+      "line": 175,
       "verbatim": "      return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed"
     },
     "claim": "JPULMO (1780-1788) selects the speed index: ZABPUL by default, but if the pulsar is going up and INVAY >= PULPOT (i.e. it is still deeper than the potency height) it swaps to ZABFLI — 'NO. GO FASTER'. WINVIL+ZABPUL / WINVIN+ZABPUL are hard-set to $A0/$FE (547-550) = -1.375 along-units per GAME frame, level-independent — the same byte as the wave-1 flipper. At the ROM's real 28.44 fps (FR-001) that is 1.375 * (256/9) / 224 = 0.175 depth/s. We ship PULSAR_CLIMB_SPEED = 82.5/224 = 0.368 depth/s, and 82.5 is literally 1.375 * 60: the constant carries the invented frame rate on its face. PULSAR_NEAR_FAR_DEPTH = (0xf0-0xa0)/224 = 0.357 is a pure position ratio and IS correct, and the finding's structural half (dual speed, selected exactly this way) stands. The pulsar's other speed — params.flipperSpeed — is 2.11x fast for the same reason (FR-008).",
@@ -558,7 +558,7 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 170,
+      "line": 175,
       "verbatim": "      return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed"
     },
     "claim": "The pulsar's INVAC2 carries a direction bit (INVDIR, ALCOMN.MAC:869). JPULMO (1789-1801) moves it DOWN when the bit is set, and reverses it back to UP once it descends past PULPOT — unless the nymph queue is empty, in which case it forces the pulsar up ('SEND PULSAR UP', 1793). CHASER (1829-1837) likewise sends a pulsar that reaches the rim back DOWN if any nymphs remain. So a pulsar patrols up and down between the rim and the potency height for as long as the wave still has nymphs. Our pulsar's depth only ever increases.",
@@ -581,8 +581,8 @@
       "line": 222,
       "verbatim": "  const depth = Math.min(t.depth, SPLIT_CHILD_DEPTH)"
     },
-    "claim": "KILINV (2300-2302) opens by saving the DYING PARENT's own along value — `LDA Y,INVAY / STA TEMP0` — and ACTINV (1219-1226), called once per child off KILINV's tail, seats each one straight back out of it: `LDA TEMP0 / STA Y,INVAY` (line 1226, cited). Both children are therefore born at the parent's EXACT depth; there is no clamp anywhere in the cabinet. Ours clamped them with `Math.min(t.depth, SPLIT_CHILD_DEPTH)` where SPLIT_CHILD_DEPTH = 0.85 — a deliberate softening whose own comment said so ('Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab') and which predates this epic. It matters because a carrier that arrives under its own steam bursts at $20 = depth 0.9286, which is ABOVE the 0.92 grab line: in the arcade the children are born lethal and a player caught on a flanking lane is grabbed on the burst frame. Ours were born safely below it.",
-    "reasoning": "[SCOPE, tp1-24] This finding originally asserted TWO divergences: (1) the carrier bursts at $20 (depth 0.9286), not our invented TANKER_SPLIT_DEPTH = 0.9, and (2) the children are born at the parent's depth, not clamped to SPLIT_CHILD_DEPTH = 0.85. Divergence (1) was closed by tp1-5, which made TANKER_SPLIT_DEPTH an alias of SPLIT_TOO_CLOSE_DEPTH so that the arrival gate and SPLCHA's too-close test read the one ROM byte (they had been two numbers, which is what made W-032's no-flip branch dead code for a whole review cycle). tp1-5 deliberately did NOT stamp a remediated_by, because half the finding was still open and the stamp would have been a lie. The title, claim and source anchor above have been rescoped to divergence (2) alone — the half that was still live — and it is that half `remediated_by` names. The original ROM-side verification, which is the durable authority here and is unchanged by any of this, follows.\n\n[REFUTATION, original] Re-opened ALWELG.MAC:1740-1762 (JSMOVU tail). Decoded the branch structure: 1744-1747 handles reaching the rim (CMP CURSY/BEQ ATOP, or IFCC->ATOP) via CHASER; the ELSE at 1748 is the not-yet-at-rim path, where CMP I,20/IFCC (line 1750) checks INVAY < $20 (hex, no trailing period, consistent with this file's convention — confirmed against the identical $20 already used for SPIKER_TURNAROUND_DEPTH) using the ALREADY-UPDATED INVAY from lines 1741-1743. Only then, if the invader is actually carrying cargo (AND INVCAR), does it call KILINV. INVAY < $20 => depth = (0xf0-along)/224 > (0xf0-0x20)/224 ≈ 0.929. Re-opened KILINV (2300-2302): `LDA Y,INVAY; STA TEMP0` saves the PARENT's own along value. Followed TEMP0 through to ACTINV (1219-1226): `LDA TEMP0; STA Y,INVAY` — the new invader's INVAY is set directly from the parent's saved depth, for both children (ACTINV is called twice at KILINV's tail, once per child, both reading the same TEMP0). Both halves of the claim verified byte-accurate.\n\n[REMEDIATION, tp1-24] The clamp is deleted — splitTanker now seats both children at `t.depth`, and SPLIT_CHILD_DEPTH is removed from rules.ts rather than renumbered, because the children's depth is not a constant at all: it is the parent's. This was ratified as a deliberate DIFFICULTY CHANGE, not a transcription fix. Measured on wave 3 (children on the flanking lanes 4 and 6 of a tanker bursting on lane 5): a player standing on a landing lane now dies on the burst frame, where before he had ~22 frames. It is shippable because the other two thirds of the same ROM mechanism carry the fairness — splitTanker VACATES the parent's own lane (so the player who tracked the tanker and stood on its lane to shoot it is the one player it cannot grab), and the no-flip rule (W-032, NEWGEN) means the children cannot flip ONTO him. Measured, that no-flip rule doubles his reaction window on the vacated lane: he survives 18 frames with it, 9 without. Burst depth, child depth and no-flip are ONE mechanism; tp1-24 landed the last third.",
+    "claim": "KILINV (2300-2302) opens by saving the DYING PARENT's own along value — `LDA Y,INVAY / STA TEMP0` — and ACTINV (1219-1226), called once per child off KILINV's tail, seats each one straight back out of it: `LDA TEMP0 / STA Y,INVAY` (line 1226, cited). Both children are therefore born at the parent's EXACT depth; there is no clamp anywhere in the cabinet. Ours clamped them with `Math.min(t.depth, SPLIT_CHILD_DEPTH)` where SPLIT_CHILD_DEPTH = 0.85 — a deliberate softening whose own comment said so ('Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is not an instant grab') and which predates this epic. It matters because a carrier that arrives under its own steam bursts at $20 = depth 0.9286, so the children are born high in the well rather than at a soft 0.85. [CORRECTED, tp1-27] This finding originally added that they are therefore 'born lethal' and grab a flanking player on the burst frame. That was wrong, and it was wrong because it compared the child's depth against our INVENTED PLAYER_RIM_DEPTH = 0.92. The real grab line is the rim (CURSY = $10 = depth 1.0) and the grab is reachable only from the CHASER cam (W-049), and ATOP is tested BEFORE the carrier check (1744-1750) — so a carrier that reaches the rim becomes a chaser instead of bursting, and a newborn child is ALWAYS below the grab line. No child is ever born lethal; it must climb to the rim first.",
+    "reasoning": "[SCOPE, tp1-24] This finding originally asserted TWO divergences: (1) the carrier bursts at $20 (depth 0.9286), not our invented TANKER_SPLIT_DEPTH = 0.9, and (2) the children are born at the parent's depth, not clamped to SPLIT_CHILD_DEPTH = 0.85. Divergence (1) was closed by tp1-5, which made TANKER_SPLIT_DEPTH an alias of SPLIT_TOO_CLOSE_DEPTH so that the arrival gate and SPLCHA's too-close test read the one ROM byte (they had been two numbers, which is what made W-032's no-flip branch dead code for a whole review cycle). tp1-5 deliberately did NOT stamp a remediated_by, because half the finding was still open and the stamp would have been a lie. The title, claim and source anchor above have been rescoped to divergence (2) alone — the half that was still live — and it is that half `remediated_by` names. The original ROM-side verification, which is the durable authority here and is unchanged by any of this, follows.\n\n[REFUTATION, original] Re-opened ALWELG.MAC:1740-1762 (JSMOVU tail). Decoded the branch structure: 1744-1747 handles reaching the rim (CMP CURSY/BEQ ATOP, or IFCC->ATOP) via CHASER; the ELSE at 1748 is the not-yet-at-rim path, where CMP I,20/IFCC (line 1750) checks INVAY < $20 (hex, no trailing period, consistent with this file's convention — confirmed against the identical $20 already used for SPIKER_TURNAROUND_DEPTH) using the ALREADY-UPDATED INVAY from lines 1741-1743. Only then, if the invader is actually carrying cargo (AND INVCAR), does it call KILINV. INVAY < $20 => depth = (0xf0-along)/224 > (0xf0-0x20)/224 ≈ 0.929. Re-opened KILINV (2300-2302): `LDA Y,INVAY; STA TEMP0` saves the PARENT's own along value. Followed TEMP0 through to ACTINV (1219-1226): `LDA TEMP0; STA Y,INVAY` — the new invader's INVAY is set directly from the parent's saved depth, for both children (ACTINV is called twice at KILINV's tail, once per child, both reading the same TEMP0). Both halves of the claim verified byte-accurate.\n\n[REMEDIATION, tp1-24] The clamp is deleted — splitTanker now seats both children at `t.depth`, and SPLIT_CHILD_DEPTH is removed from rules.ts rather than renumbered, because the children's depth is not a constant at all: it is the parent's. This was ratified as a deliberate DIFFICULTY CHANGE, not a transcription fix. Measured on wave 3 (children on the flanking lanes 4 and 6 of a tanker bursting on lane 5): a player standing on a landing lane now dies on the burst frame, where before he had ~22 frames. It is shippable because the other two thirds of the same ROM mechanism carry the fairness — splitTanker VACATES the parent's own lane (so the player who tracked the tanker and stood on its lane to shoot it is the one player it cannot grab), and the no-flip rule (W-032, NEWGEN) means the children cannot flip ONTO him. Measured, that no-flip rule doubles his reaction window on the vacated lane: he survives 18 frames with it, 9 without. Burst depth, child depth and no-flip are ONE mechanism; tp1-24 landed the last third.\n\n[CORRECTION, tp1-27] The REMEDIATION note above states that after tp1-24 'a player standing on a landing lane now dies on the burst frame', and ratified that as the authentic difficulty. It is not authentic — it is an artefact of the invented grab line this finding was measured against (see W-049). With PLAYER_RIM_DEPTH derived from CURSY ($10 = depth 1.0), the grab line sits ABOVE the burst line ($20 = 0.9286), so a child born at the parent's depth is born BELOW it and cannot grab until it has climbed to the rim and become a chaser. The player on a landing lane gets his reaction window back. What tp1-24 actually landed — and what stands — is that the children are born at the parent's EXACT depth with no clamp; that half is byte-verified above and is unaffected.",
     "recommendation": "fix",
     "size": "s",
     "verdict": "CONFIRMED",
@@ -729,7 +729,7 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 322,
+      "line": 327,
       "verbatim": "  if (e.depth >= SPIKER_TURNAROUND_DEPTH) {"
     },
     "claim": "JSTRAI (2222-2229) compares the spiker's INVAY against $20; when it climbs past it ('MAX HEIGHT?'), it sets the ZDIRDO bit to send it back down and pins INVAY at $20. That is depth ($F0-$20)/224 = 0.929, which is exactly our SPIKER_TURNAROUND_DEPTH (rules.ts:115).",
@@ -746,7 +746,7 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 319,
+      "line": 324,
       "verbatim": "  ctx.spikes[e.lane] = Math.min(SPIKE_MAX_DEPTH, Math.max(ctx.spikes[e.lane], e.depth))"
     },
     "claim": "JSTRAI (2214-2221) writes the spiker's own INVAY straight into LINEY whenever it is higher than the current line height — the spike IS the spiker's high-water mark, with no cap other than the spiker's own $20 turnaround (W-038). So a fully grown spike reaches depth 0.929, essentially the rim. We clamp the stored spike height to SPIKE_MAX_DEPTH = 0.75 (rules.ts:28) even though we already turn the spiker around at 0.929 — so the last 0.18 of the spiker's climb lays no spike at all.",
@@ -787,7 +787,7 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 352,
+      "line": 357,
       "verbatim": "    return { camSta: 0, became: { ...e, kind: 'tanker', contains: 'flipper' } }"
     },
     "claim": "JSTRAI (2236-2247): when the spiker reaches the bottom of its range and NYMCOU is zero, it rewrites INVAC2's carrier bits to ZCARFL and INVAC1's appearance bits to ZABTAN — it becomes a tanker carrying flippers, and CAMSTA is set to 0 so the CAM branches it out of TRALUP into NOJUMP (2381). Our spiker does exactly this when s.spawn.remaining === 0, spawning a flipper-carrying tanker at depth 0.",
@@ -824,7 +824,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 110,
+      "line": 138,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "With CSUSTA=3 and CSUINT=1 (3490-3492), TIMAX resolves to 0, 3+8*2 = 19, 3+1*2 = 5, 0, 0, indexed by SUZCNT. So the first zap runs 19 frames and the second 5. KILENE (3542-3546) only kills when SUZTIM >= CSUSTA (3) AND (SUZTIM AND CSUINT) == 0 — i.e. on every SECOND frame from frame 4 — giving at most 8 kills across the first window (which is exactly what the '8*' in TIMAX is sizing). It also takes the first live invader scanning DOWN from slot WINVMX (3548), which is slot order, not nearest-the-rim. Our ZAP_WINDOW_FIRST is 13 frames with one kill on EVERY active frame (runZapFrame, sim.ts:473-480), targeting the enemy nearest the rim. Our ZAP_WINDOW_SECOND = 5 is correct.",
@@ -922,11 +922,32 @@
     },
     "ours": {
       "file": "src/core/enemies/interpreter.ts",
-      "line": 232,
+      "line": 237,
       "verbatim": "  e.depth = Math.max(0, Math.min(RIM_DEPTH, e.depth + e.direction * speedFor(e, ctx) * ctx.dt))"
     },
     "claim": "JSMOVE (1731-1777) keeps each invader's position as a 16-bit fixed-point pair — INVAYL (fraction) and INVAY (integer, 0 = rim end, $F0 = far end) — and adds the per-type WINVIL/WINVIN increment once per GAME frame with a carry between the bytes. A game frame is one FRTIMR-gated MAINLN pass (ALEXEC.MAC:49-57), i.e. NINE IRQ ticks of a ~256 Hz interrupt (ALHARD.MAC:149-151) = 35.16 ms: 256/9 = 28.44 frames/second. It is NOT one IRQ, and it is not 60 Hz. Every threshold in the game ($20, $30, PULPOT, CURSY) is an integer comparison on INVAY. We carry `depth` as a float in [0,1] and integrate it as depth += speed * dt.",
     "reasoning": "The float integration itself is acceptable and is required by our frame-rate-independent core — that half of the verdict stands, and the 'accept' covers the REPRESENTATION only (8.8 fixed point vs float+dt). Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json, which calls this finding the audit's linchpin): the mapping declared here was wrong twice. The position mapping depth = ($F0 - INVAY)/224 is right, but one along-unit/frame is (256/9)/224 = 0.127 depth/s — NOT the '60/224' (0.268) asserted here and hard-coded in rules.ts — and the increment is applied once per LOGIC frame, not 'once per 60 Hz IRQ'. This finding's closing reassurance, that 'every value quoted in this audit was converted through that mapping before being compared', is therefore an indictment rather than a defence: every seconds-valued figure in the audit was 2.11x off, and each has been rebased (FR-006 through FR-017). The numeric fix belongs to FR-001/FR-008/FR-012, not here.",
     "recommendation": "accept"
+  },
+  {
+    "id": "W-049",
+    "remediated_by": "tp1-27",
+    "class": "DIVERGENCE",
+    "title": "The grab line is the RIM (CURSY = $10 = depth 1.0), not a threshold — PLAYER_RIM_DEPTH = 0.92 was invented",
+    "source": {
+      "file": "ALWELG.MAC",
+      "line": 1825,
+      "verbatim": "\tLDA CURSY\t\t;PLACE EXACTLY AT TOP"
+    },
+    "ours": {
+      "file": "src/core/rules.ts",
+      "line": 84,
+      "verbatim": "export const PLAYER_RIM_DEPTH = 0.92  // enemy depth ≥ this on player's lane = grab"
+    },
+    "claim": "There is no byte to derive the grab line from, because the kill check does not test depth. JKITST (1980-1993) reads INVAY nowhere: it tests `LDA X,INVAC1 / IFPL` (not mid-jump — W-010) and then INVAL1/INVAL2 against CURSL1/CURSL2, and calls INIPSQ. The depth gate lives one level up, in which cam program may reach the opcode: `VKITST` occurs exactly twice in ALWELG.MAC — its definition (`CAMAC JKITST,VKITST,18`, 1624) and ONE use, `KICHEK: VKITST ;TEST FOR CURSOR KILL` (2450) inside TOPPER, the CHASER cam (2447, 'CHASE PLAYER AROUND TOP'). Only a chaser can grab. CHASER (1824-1826) seats the invader on the cursor's own line — `LDA CURSY / STA X,INVAY ;PLACE EXACTLY AT TOP` — and is reached from the climb by `CMP CURSY / BEQ ATOP / IFCC` (1744-1747). CURSY is loaded from ILINLIY at every wave start (57-58) and ILINLIY = 010 (ALCOMN.MAC:820). So the grab line is (0xf0 - 0x10) / 224 = 1.0, exactly the rim. Ours was 0.92, which inverts to INVAY 33.92 — not a ROM byte — and let an invader still CLIMBING, eight along-units short of the rim, grab the player. The same constant gates resolveEnemyBoltHits, and the ROM agrees it should: the enemy charge is tested `CMP CURSY / IFCC ;AT TOP?` -> `JSR CHATOP ;YES. CHECK FOR COLLISION WITH CURSOR` (2562-2565), the same CURSY — so our bolts also killed early.",
+    "reasoning": "The cabinet already had the right number in the repo, under a different name: interpreter.ts's RIM_DEPTH = 1, whose own doc comment reads 'the ROM's CURSY, the line the cursor sits on'. One ROM constant was spelled twice, and the grab used the wrong copy — which is why no test caught it: the chaser was pinned at 1 and the grab fired at 0.92, and nothing asserted the two were the same line.\n\nCONSEQUENCE FOR W-030 / tp1-24. With the grab line derived, it sits ABOVE the carrier's burst line ($20 = 0.9286), not below it. ATOP is tested BEFORE the carrier check (1744-1750): a carrier that actually reaches CURSY becomes a CHASER instead of bursting, so a burst can only happen strictly below the rim, and a child seated at the parent's INVAY is therefore ALWAYS born below the grab line. No split child is ever born lethal — it must climb the last ~11 frames and become a chaser first. tp1-24 ratified a difficulty change ('the children are born ABOVE the grab line, therefore a player on a flanking lane dies on the burst frame') that was an artefact of the invented 0.92; W-030's claim and REMEDIATION note are corrected accordingly. The two-threshold structure is authentic — $10 and $20 are genuinely different bytes — but their ORDER is the opposite of the one that was assumed, so the 'born lethal AND still flipping' band is empty.\n\nVerified by re-reading Theurer's source: the provenance suite in tests/core/tp1-27.player-rim-depth.test.ts re-opens ALWELG.MAC and ALCOMN.MAC and asserts (a) ILINLIY=010, (b) JKITST's body contains no INVAY, (c) VKITST has exactly one use and it is inside TOPPER, (d) CHASER's `LDA CURSY / STA X,INVAY`.\n\n[FIX, tp1-27] Derive it: `export const PLAYER_RIM_DEPTH = (0xf0 - 0x10) / WARP_ALONG_SPAN` (= 1.0), and derive interpreter.ts's RIM_DEPTH from that same name so the two cannot drift apart again.",
+    "recommendation": "fix",
+    "size": "s",
+    "verdict": "CONFIRMED"
   }
 ]
