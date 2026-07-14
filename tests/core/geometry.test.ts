@@ -22,7 +22,8 @@ describe('wrapLane (closed tube)', () => {
 })
 
 describe('wrapLane (open tube)', () => {
-  const open: Tube = { laneCount: 4, closed: false, far: [], near: [], farRatio: 0.2 }
+  // tp1-31: screenZ joins farRatio on the Tube; neutral values — wrapLane reads neither.
+  const open: Tube = { laneCount: 4, closed: false, far: [], near: [], farRatio: 0.2, screenZ: 0 }
   it('clamps below 0', () => { expect(wrapLane(open, -2)).toBe(0) })
   it('clamps above laneCount-1', () => { expect(wrapLane(open, 9)).toBe(3) })
 })
