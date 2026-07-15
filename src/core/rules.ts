@@ -207,18 +207,20 @@ export const WARP_AVOID_SPIKES_MAX_LEVEL = 7
 // I,50 / IFCS / ... / JSR INSTAR", ALWELG.MAC:1041-1048). CURSY starts at 0x10 and
 // bottoms at 0xF0, so the gate is (0x50 - 0x10) / WARP_ALONG_SPAN = 64/224 ≈ 0.2857.
 export const WARP_STARFIELD_GATE = (0x50 - 0x10) / WARP_ALONG_SPAN  // 64/224 ≈ 0.2857
-// The eye fly-in AFTER the descent bottoms out (tp1-10, WD-018). ENDWAV increments
-// the wave, then NEWAV2 walks the eye back into the new well at +0x18 (24) units/frame
-// ("LDA EYL / CLC / ADC I,18", ALWELG.MAC:85-88). During the descent the eye tracked
-// the cursor 1:1 over the whole WARP_ALONG_SPAN (EYL += CURSVL alongside CURSY,
-// ALWELG.MAC:1049-1057), so it must fly that same 224-unit span back at 24/frame:
-// ceil(224/24) = 10 frames. Per the qframe convention (one warp step == one ROM
-// frame, like the tp1-31 camera slide), this is a frame count, not a dt-scaled span.
+// tp1-37 (WD-018): the eye FLY-IN after the descent bottoms out. ENDWAV increments the
+// wave (ALEXEC.MAC:361-382), then INEWAV parks the eye far back — EYH:EYL = 0xFA00 =
+// -1536 ("LDA I,0FA / STA EYH … STA EYL", ALWELG.MAC:29-33) — and NEWAV2 walks it INTO
+// the new well at +0x18 (24) units/frame ("LDA EYL / CLC / ADC I,18", ALWELG.MAC:85-88),
+// clamping at the per-well destination EYLDES = -H (INIWLS ALDISP.MAC:2470-2475; the
+// stop-at-dest is ALWELG.MAC:104-108). The fly-in therefore lasts the per-well count
+// ceil((1536 - H)/24) ≈ 63-64 frames — computed from the new well in beginFlyIn via
+// warpEyeDest. Per the qframe convention (one warp step == one ROM frame), this is a
+// frame count, not a dt-scaled span.
 //
-// This is the authentic camera span tp1-13's provisional WARP_SPACE_FRAMES (=9)
-// deferred to "the story that owns the camera timing": the space/drone beat and the
-// eye fly-in are the SAME post-descent phase, so the two constants unify to this one.
-export const WARP_FLYIN_FRAMES = Math.ceil(WARP_ALONG_SPAN / 0x18)  // ceil(224/24) = 10
+// (Supersedes tp1-10's placeholder ceil(WARP_ALONG_SPAN / 0x18) = ceil(224/24) = 10,
+// which flew the DESCENT span back — an invented derivation; see the tp1-37 deviation log.)
+export const EYE_FLYIN_START = -1536  // 0xFA00 as signed 16-bit (INEWAV, ALWELG.MAC:29-33)
+export const EYE_FLYIN_STEP = 0x18    // 24 ROM units/frame (NEWAV2, ALWELG.MAC:87)
 // --- Enemy energy bolts (Story 6-5), authentic rev-3 -------------------------
 // The live concurrent-bolt cap is PER WAVE — `enemyBoltCapForLevel` (TCHAMX, tp1-7), read
 // at the fire gate in sim.ts — NOT a flat 4. NICHARG=4 (ALCOMN.MAC:813) was only the ROM's

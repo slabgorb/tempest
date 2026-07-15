@@ -23,7 +23,17 @@ import { playingState } from './helpers'
 import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import type { Input } from '../../src/core/input'
-import { WARP_FLYIN_FRAMES } from '../../src/core/rules'
+import type { Tube } from '../../src/core/geometry'
+
+// tp1-37 (WD-018): the fly-in length is the ROM's per-well ceil((1536 - H)/24) — the
+// eye flies EYH:EYL from 0xFA00 (-1536) to -H at +0x18/frame (NEWAV2, ALWELG.MAC:56-121).
+// H is recovered from the destination well's farRatio, as in tp1-33. (This retires the
+// old flat WARP_FLYIN_FRAMES=10, an invented ceil(224/24); see tp1-37.warp-flyin-eye.test.ts.)
+function expectedFlyInFrames(tube: Tube): number {
+  const r = tube.farRatio
+  const H = Math.round((240 * r - 16) / (1 - r))
+  return Math.ceil((1536 - H) / 24)
+}
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -75,17 +85,22 @@ describe('tp1-10 AC-2 — the eye flies INTO the new well (WD-018)', () => {
     expect(heldFrames).toBeGreaterThanOrEqual(1) // at least one dedicated fly-in frame
   })
 
-  it('the fly-in lasts exactly WARP_FLYIN_FRAMES (the ROM-derived ceil(224/24) = 10)', () => {
-    // Pin BOTH the constant's value (so an accidental edit is caught — heldFrames >= 1
-    // alone would accept any nonzero count) AND that the observed held-frame count
-    // actually tracks it (so the sim can't silently desync from the constant).
-    expect(WARP_FLYIN_FRAMES).toBe(10)
+  it('the fly-in lasts the ROM per-well count ceil((1536 - H)/24) — ~63 frames, not 10 (tp1-37)', () => {
+    // tp1-37 (WD-018): the eye flies the full EYH:EYL span (0xFA00 → -H) at +0x18/frame,
+    // so the hold is per-well ceil((1536 - H)/24) ≈ 63, NOT the retired flat 10. Pin the
+    // observed held-frame count against the destination well's own H so an accidental
+    // desync is caught, and guard that the ~6× longer ROM beat is in force (heldFrames ≥ 60).
     let s = enterCleanWarp()
     let heldFrames = 0
-    for (let i = 0; i < 1000 && s.mode !== 'playing'; i++) {
+    let destTube = s.tube
+    for (let i = 0; i < 4000 && s.mode !== 'playing'; i++) {
       s = stepGame(s, NEUTRAL, DT)
-      if (s.level === 2 && s.mode !== 'playing') heldFrames++
+      if (s.level === 2 && s.mode !== 'playing') {
+        heldFrames++
+        destTube = s.tube
+      }
     }
-    expect(heldFrames).toBe(WARP_FLYIN_FRAMES)
+    expect(heldFrames).toBe(expectedFlyInFrames(destTube))
+    expect(heldFrames).toBeGreaterThanOrEqual(60)
   })
 })
