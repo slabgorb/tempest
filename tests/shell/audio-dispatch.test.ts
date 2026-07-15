@@ -10,29 +10,32 @@
 //     extraLife.
 //   - SUSTAINED cues via the engine's new startLoop/stopLoop:
 //       'pulsar-hum-start' -> startLoop('pulsarHum'),  'pulsar-hum-stop' -> stopLoop
-//       'level-clear'      -> startLoop('levelClear'), 'warp-end'        -> stopLoop
+//       'warp-descent-start' -> startLoop('levelClear'), 'warp-end' -> stopLoop
 //     The warp/zoom sound used to be a one-shot `play('levelClear')` clipped to the
-//     wav length; it is now a loop that STARTS on warp entry and STOPS on warp-end,
-//     so it spans the actual dive (no early silence, no bleed into the next level).
+//     wav length; it is now a loop that spans the actual dive.
 //
-// Story tp1-13 UPDATES this contract again (audit cluster C9):
-//   - 'warp-space' (S-014): the dive crossed the well bottom — the T2 in-well
-//     loop STOPS and the T3 space drone ('thrustSpace') STARTS, the handover
-//     MOVCUD performs via SOUTS3 (ALWELG.MAC:1032-1037). A row therefore may now
-//     carry MULTIPLE effects, so `effect` became `effects: Effect[] | null`.
-//   - 'warp-end' now stops BOTH loops: levelClear (a crashed dive dies in the
-//     well with T2 up) and thrustSpace (a completed dive ends in space with T3
-//     up). Stops are idempotent at the engine, so the off-path stop is harmless.
-//   - 'wave-bonus' (S-015): the end-of-wave skill-step bonus plays the WP
-//     special-score chime — the same extraLife cue, SAUSON's second trigger
-//     (ENDWAV, ALEXEC.MAC:371-376).
+// tp1-10 (WD-017) RE-SEATED the sustained warp loop: it starts on the first
+// DESCENDING frame ('warp-descent-start'), NOT at warp entry ('level-clear'), so it
+// no longer hums under the AVOID-SPIKES hold. 'level-clear' now sounds nothing here.
+//
+// Story tp1-13 (audit cluster C9) EXTENDS the same dive audio into a two-phase drone
+// and unifies with tp1-10's re-seat here:
+//   - 'warp-space' (S-014): the dive crossed the well bottom — the T2 in-well loop
+//     (levelClear, started by 'warp-descent-start') STOPS and the T3 space drone
+//     ('thrustSpace') STARTS, the handover MOVCUD performs via SOUTS3
+//     (ALWELG.MAC:1032-1037). A row may therefore carry MULTIPLE effects, so `effect`
+//     became `effects: Effect[] | null`.
+//   - 'warp-end' now stops BOTH loops: levelClear (a crashed dive dies in the well
+//     with T2 up, before the bottom-crossing) and thrustSpace (a completed dive ends
+//     in space / fly-in with T3 up). Stops are idempotent, so the off-path stop is
+//     harmless. Fired at the fly-in's end (success) or on the crash path.
+//   - 'wave-bonus' (S-015): the end-of-wave skill-step bonus plays the WP special-
+//     score chime — the same extraLife cue, SAUSON's second trigger (ALEXEC.MAC:371-376).
 //   - 'bolt-destroyed' (S-013): a shot-down enemy bolt plays the EX explosion
 //     (INCCSQ → CCEXPL, ALWELG.MAC:2797).
-//   - 'superzapper-activate' (S-011): now SILENT. kzap.wav was an invention with
-//     no slot in ALSOUN's 13-sound table; the authentic zap audio is the EX
-//     burst of each vaporised enemy's own 'enemy-death' event.
-// The tp1-13 event variants do not exist yet and the dispatcher does not wire
-// them, so the new/changed rows below fail today (valid RED).
+//   - 'superzapper-activate' (S-011): now SILENT. kzap.wav was an invention with no
+//     slot in ALSOUN's 13-sound table; the authentic zap audio is the EX burst of
+//     each vaporised enemy's own 'enemy-death' event.
 import { describe, it, expect } from 'vitest'
 import type { GameEvent } from '../../src/core/events'
 import type { SoundName } from '../../src/shell/audio'
@@ -102,8 +105,13 @@ const EVENT_EFFECT: ReadonlyArray<{ event: GameEvent; effects: Effect[] | null }
   { event: { type: 'wave-bonus', points: 6000 }, effects: [{ kind: 'play', sound: 'extraLife' }] },
   // tp1-13 (S-013): a shot-down bolt plays the EX explosion, like any kill.
   { event: { type: 'bolt-destroyed', lane: 4, depth: 0.5 }, effects: [{ kind: 'play', sound: 'enemyDeath' }] },
-  // --- sustained / looping cues (10-11, tp1-13) -----------------------------
-  { event: { type: 'level-clear', newLevel: 2 }, effects: [{ kind: 'startLoop', sound: 'levelClear' }] },
+  // --- sustained / looping cues (10-11, tp1-10 WD-017, tp1-13 S-014) ---------
+  // UNIFIED: the sustained warp/zoom loop starts on 'warp-descent-start' (the first
+  // descending frame), NOT at 'level-clear' (warp entry, before the AVOID-SPIKES hold)
+  // — tp1-10 moved it so it no longer hums under the warning hold. 'level-clear' now
+  // makes NO sound here; its white entry flash is an fx-layer concern.
+  { event: { type: 'level-clear', newLevel: 2 }, effects: null },
+  { event: { type: 'warp-descent-start' }, effects: [{ kind: 'startLoop', sound: 'levelClear' }] },
   // tp1-13 (S-014): the bottom-crossing hands the drone over — T2 out, T3 in.
   {
     event: { type: 'warp-space' },
@@ -175,14 +183,16 @@ describe('audio-dispatch playEventSounds (story 6-12 / 10-11)', () => {
     expect(audio.calls).toEqual([])
   })
 
-  // The 10-11 behaviour, extended by tp1-13 (S-014): the dive is TWO sustained
-  // phases. T2 (levelClear) spans the well transit; the bottom-crossing hands
-  // over to T3 (thrustSpace); warp-end silences whatever is still up.
-  it('runs the full dive loop lifecycle: T2 in the well, T3 in space, silence at the end', async () => {
+  // The headline behaviour, UNIFIED (tp1-10 WD-017 + tp1-13 S-014): the warp/zoom
+  // sound is a TWO-PHASE sustained loop. It starts on the first DESCENDING frame
+  // ('warp-descent-start', NOT at 'level-clear'/entry, so it stays silent through the
+  // AVOID-SPIKES hold); the bottom-crossing ('warp-space') hands T2 (levelClear) over
+  // to T3 (thrustSpace); 'warp-end' silences whatever is still up at the fly-in's end.
+  it('runs the full dive loop lifecycle: T2 on descent-start, T3 in space, silence at warp-end', async () => {
     const { playEventSounds } = await loadDispatch()
     const audio = recordingAudio()
     playEventSounds(audio, [
-      { type: 'level-clear', newLevel: 2 },
+      { type: 'warp-descent-start' },
       { type: 'warp-space' },
       { type: 'warp-end' },
     ])
@@ -195,6 +205,15 @@ describe('audio-dispatch playEventSounds (story 6-12 / 10-11)', () => {
     ])
     // Neither thrust phase is a one-shot play — that was the clipped-on-entry bug.
     expect(audio.calls.some((c) => c.kind === 'play')).toBe(false)
+  })
+
+  // tp1-10 (WD-017): 'level-clear' fires at warp ENTRY, before the descent — it must
+  // NOT start the sustained rumble (that would hum under the AVOID-SPIKES hold).
+  it('does NOT start the warp loop on level-clear (entry precedes the descent)', async () => {
+    const { playEventSounds } = await loadDispatch()
+    const audio = recordingAudio()
+    playEventSounds(audio, [{ type: 'level-clear', newLevel: 2 }])
+    expect(audio.calls).toEqual([])
   })
 
   it('never starts the space drone on a crashed dive — the crash path has no warp-space', async () => {
@@ -254,6 +273,6 @@ describe('audio-dispatch playEventSounds (story 6-12 / 10-11)', () => {
     // compile-time half).
     const types = EVENT_EFFECT.map((r) => r.event.type)
     expect(new Set(types).size, 'no duplicate event rows').toBe(types.length)
-    expect(types.length, 'all 19 core GameEvent discriminants covered (16 pre-tp1-13 + 3 new)').toBe(19)
+    expect(types.length, 'all 20 core GameEvent discriminants covered (16 + tp1-10 warp-descent-start + tp1-13 warp-space/wave-bonus/bolt-destroyed)').toBe(20)
   })
 })

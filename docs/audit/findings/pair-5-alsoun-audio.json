@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/shell/audio-dispatch.ts",
-      "line": 88,
+      "line": 97,
       "verbatim": "        audio.play('segmentTick') // ★ authentic POKEY tick as the Claw crosses a lane (6-10)"
     },
     "claim": "SBOING (ALSOUN's LO entry, comment \"CURSOR CROSSED A LINE\") fires from ALWELG's cursor-position update exactly when CURSL1 (the cursor's/claw's current lane) changes to a new value — i.e. a lane crossing. Our 'segment-cross' GameEvent -> 'segmentTick' fires on the identical condition (crossing into a new lane). LO5F/LO5A (0x0f,0x04,0x00,0x01 / 0xa2,0x04,0x40,0x01) are also byte-identical to the ROM data baked as segment_tick.wav ($cc39) in tools/pokey-bake/sfx-data.mjs.",
@@ -44,7 +44,7 @@
     },
     "ours": {
       "file": "src/shell/audio-dispatch.ts",
-      "line": 91,
+      "line": 100,
       "verbatim": "        audio.play('spikeShot') // ★ authentic spike_shot bake (ROM cc51, 10-11)"
     },
     "claim": "SELICO fires exactly when a player charge lands on an active enemy line (LINEY nonzero) at or past the line's current height, immediately followed by UPSCORE for the hit. Whether the hit fully retires the line (LINEY forced to 0 past ILINDDY) or merely shortens it, SELICO plays either way. Our SpikeShotEvent -> spikeShot fires on \"a player bullet shortened a standing spike\" — the same condition. EL7F/EL7A (0x80,0x01,0xe8,0x05 / 0xa1,0x01,0x01,0x05) are byte-identical to the ROM data baked as spike_shot.wav ($cc51).",
@@ -78,7 +78,7 @@
     },
     "ours": {
       "file": "src/shell/audio-dispatch.ts",
-      "line": 97,
+      "line": 106,
       "verbatim": "        audio.startLoop('pulsarHum') // ★ loop the authentic pulsar_hum (ROM cc99, 10-11)"
     },
     "claim": "PULSTR (ALSOUN's PU) is called when `FLIPCO+ZABPUL` (active pulsars) is nonzero and the cursor is alive — the rising edge of \"a pulsar exists\". PULSTO (ALSOUN's PO) is called both on the falling edge (ALWELG.MAC:1546, \"JSR PULSTO ;YES. TURN OFF\") and defensively when the cursor dies on a line (ALWELG.MAC:1093). Our PulsarHumStartEvent/PulsarHumStopEvent fire on the identical 0→>0 / >0→0 transitions of the pulsar population. PU6F (0xb0,0x02,0x00,0xff, delta 0 = constant pitch) plus PU6A's repeated (0xc8,0x01,0x02,0xff) throb are byte-identical to pulsar_hum.wav's stream bytes (audfStart 0x65/audcStart 0x68).",
@@ -95,7 +95,7 @@
     },
     "ours": {
       "file": "src/shell/audio-dispatch.ts",
-      "line": 94,
+      "line": 103,
       "verbatim": "        audio.play('extraLife') // ★ authentic extra_life bake (ROM cc11, 10-11)"
     },
     "claim": "GIVBON (ALEXEC.MAC:580-589) increments LIVES1 (capped at 6) when a score-threshold interval is crossed, then calls SAUSON. Our ExtraLifeEvent -> extraLife fires on \"the score crossed one (or more) EXTRA_LIFE_INTERVAL boundaries\" — the same condition. WP4F/WP4A's 8-step descending arpeggio (0x40,0x01,0x00,0x01 ... 0x10,0x01,0xff,0x10 / 0xa8,0x93,0x00,0x02) is byte-identical to extra_life.wav's stream bytes (audfStart 0x21/audcStart 0x32).",
@@ -233,7 +233,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 381,
+      "line": 382,
       "verbatim": "function resolveEnemyBulletHits(s: GameState): void {"
     },
     "claim": "INCCSQ plays the EX (\"ENEMY EXPLOSION\") cue via CCEXPL whenever a player charge destroys an enemy charge in flight, then deactivates the enemy shot and decrements ESHCOU. Our resolveEnemyBulletHits (src/core/sim.ts:245-261) implements the identical collision rule — its own comment says \"player shots can destroy enemy bolts\" (src/core/sim.ts:638) — but the function pushes no GameEvent at all, so no sound plays and no other system (particles, score) reacts either.",

@@ -43,9 +43,16 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
         audio.play('warpSpikeCrash')
         break
       case 'level-clear':
-        // Story 10-11: the warp/zoom cue is now SUSTAINED. It starts here (warp
-        // entry) with the T2 in-well drone and hands over to T3 at the bottom-crossing
-        // ('warp-space'); 'warp-end' stops whichever is still up.
+        // tp1-10 (WD-017): warp ENTRY (before the AVOID-SPIKES hold) makes NO sound —
+        // the sustained rumble no longer starts here, so it can't hum under the hold.
+        // The white entry flash is an fx-layer concern (fx.ts), not audio.
+        break
+      case 'warp-descent-start':
+        // tp1-10 (WD-017): the sustained warp/zoom rumble starts on the first DESCENDING
+        // frame (SOUTS2, ALWELG.MAC:1019-1023) — the T2 in-well drone — silent through
+        // the AVOID-SPIKES hold. It hands over to T3 at the bottom-crossing ('warp-space')
+        // and 'warp-end' stops whichever loop is up, so it spans the actual dive, not a
+        // one-shot clipped on entry.
         audio.startLoop('levelClear')
         break
       case 'warp-space':
@@ -56,9 +63,11 @@ export function playEventSounds(audio: SoundPlayer, events: readonly GameEvent[]
         audio.startLoop('thrustSpace')
         break
       case 'warp-end':
-        // The dive ended: silence whichever thrust loop is still up — T2 on a crash
-        // (died in the well), T3 on a completion (ended in space). Stops are idempotent
-        // at the engine, so the off-path stop is a harmless no-op.
+        // The dive ended: silence whichever thrust loop is still up — T2 (levelClear) on
+        // a crash (died in the well, before the bottom-crossing), T3 (thrustSpace) on a
+        // completion (handed over at 'warp-space', stopped at the fly-in's end). Stops are
+        // idempotent at the engine, so the off-path stop is a harmless no-op — warp-end
+        // always leaves the dive silent (tp1-10 rumble + tp1-13 S-014 space drone unified).
         audio.stopLoop('levelClear')
         audio.stopLoop('thrustSpace')
         break

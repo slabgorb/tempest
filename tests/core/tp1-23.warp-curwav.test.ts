@@ -128,7 +128,12 @@ describe('WD-010: the warp ramp is indexed by CURWAV (0-based), not the displaye
     // figure is the 224-along traverse, which the bottom-crossing bounds exactly.
     let s = enterWarpAt(1)
     let frames = 0
-    while (!s.warp.inSpace && frames < 200) {
+    // tp1-10 (WD-018) / tp1-13 (S-014) UNIFIED: count only the DESCENT frames. After the
+    // descent bottoms out the warp enters its post-descent SECOND phase — the eye fly-in
+    // (mode stays 'warp' for WARP_FLYIN_FRAMES, warp.flyIn > 0), which is tp1-13's crash-
+    // proof space segment — NOT part of the 46-frame dive the audit derives. Stop the
+    // moment the fly-in begins (flyIn > 0, set by beginFlyIn on the bottom-crossing frame).
+    while (s.mode === 'warp' && (s.warp.flyIn ?? 0) === 0 && frames < 200) {
       s = stepGame(s, NEUTRAL, SIM_STEP)
       frames++
     }

@@ -177,18 +177,26 @@ describe("tp1-13 AC-1 — 'warp-space' fires when the dive passes the well botto
     expect(endIdx - spaceIdx, 'the space phase must span at least two frames').toBeGreaterThanOrEqual(2)
   })
 
-  it('does not advance the level on the warp-space frame — space is still the warp', () => {
+  it('stays in the warp on the warp-space frame — play deferred through the fly-in', () => {
     const { frames } = runDive(warpingState())
     const spaceIdx = frameIndexOf(frames, 'warp-space')
     expect(spaceIdx).toBeGreaterThanOrEqual(0)
-    expect(frames[spaceIdx].mode, 'the bottom-crossing frame is still mode=warp').toBe('warp')
-    expect(frames[spaceIdx].level, 'the level must not advance at the bottom-crossing').toBe(1)
+    // tp1-13's "space is still the warp" intent (mode not yet 'playing') UNIFIED with
+    // tp1-10's ROM ordering: ENDWAV increments the wave (INC CURWAV) at the bottom-
+    // crossing, BEFORE the NEWAV2 eye fly-in, so the LEVEL has already advanced to the
+    // new wave while mode stays 'warp' — play resumes only when the fly-in completes.
+    // (tp1-13's provisional model advanced the wave at the END of the space phase; the
+    // ROM pays ENDWAV first, which is the ordering tp1-10 established and this unifies to.)
+    expect(frames[spaceIdx].mode, 'the bottom-crossing frame is still mode=warp (fly-in)').toBe('warp')
+    expect(frames[spaceIdx].level, 'ENDWAV advances the wave before the fly-in (ROM ordering)').toBe(2)
   })
 
-  it('still ends the dive with exactly one warp-end, on the frame the level advances', () => {
+  it('still ends the dive with exactly one warp-end, on the frame play resumes (fly-in end)', () => {
     const { frames, state } = runDive(warpingState())
     expect(countAcross(frames, 'warp-end')).toBe(1)
     const endIdx = frameIndexOf(frames, 'warp-end')
+    // UNIFIED: warp-end fires as the eye fly-in completes (mode → 'playing'); the level
+    // already advanced earlier, at the warp-space bottom-crossing (ENDWAV before NEWAV2).
     expect(frames[endIdx].mode).toBe('playing')
     expect(frames[endIdx].level).toBe(2)
     expect(state.level).toBe(2)
@@ -308,8 +316,10 @@ describe("tp1-13 AC-2 — 'wave-bonus' fires once, at the end of the starting wa
   })
 
   it('survives a spike crash and pays exactly once, on the eventual successful dive', () => {
-    // ROM: BONUS is only cleared on ARRIVAL — a mid-dive death leaves it
-    // pending, and the replayed dive still collects it.
+    // ROM: BONUS is only cleared on ARRIVAL — a mid-dive death leaves it pending, and
+    // the eventual successful dive collects it. tp1-10 (WD-015) UNIFIED: a spike crash
+    // REPLAYS the same wave (board re-armed, one life spent) rather than advancing, so the
+    // pending bonus stays owed until a SECOND, successful dive off wave 3 arrives and pays.
     let s = startAtWave(3)
     // Stage the crash: clear the board but leave a spike on the player's lane.
     s.enemies = []
@@ -325,11 +335,18 @@ describe("tp1-13 AC-2 — 'wave-bonus' fires once, at the end of the starting wa
 
     const allFrames: DiveFrame[] = []
     let steps = 0
-    // Ride through crash → dying → respawn → re-warp → completion.
+    // Ride through crash → dying → respawn → replayWave (SAME wave 3, board re-armed) →
+    // clear the re-armed board → re-warp → successful arrival at wave 4. On the post-
+    // respawn 'playing' frame, clear the re-armed board (and any lingering spike) so the
+    // retry dive can actually complete — the level stays 3 until that arrival's ENDWAV.
     while (s.level === 3 && steps < 6000) {
       s = stepGame(s, NEUTRAL, DT)
       allFrames.push({ events: [...s.events], mode: s.mode, level: s.level, lives: s.lives })
-      if (s.mode === 'playing' && s.spikes[lane] > 0) s.spikes[lane] = 0 // dodge the retry
+      if (s.mode === 'playing') {
+        s.enemies = []
+        s.spawn = { nymphs: [] }
+        s.spikes = s.spikes.map(() => 0)
+      }
       steps++
     }
     expect(s.level, 'the retry dive must eventually complete').toBe(4)

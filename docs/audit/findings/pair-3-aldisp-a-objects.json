@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 223,
+      "line": 229,
       "verbatim": "export const MAX_ENEMY_BULLETS = 4"
     },
     "claim": "NICHARG=4 (ALCOMN.MAC:813) is only the physical slot count reserved in the charge array for enemy shots — it is not the live concurrent-bolt cap. FIREIC bounds its vacancy search by WCHAMX (ALWELG.MAC:2709, `LDY WCHAMX`), and WCHAMX is filled per wave from TCHAMX (ALWELG.MAC:586), so the real concurrent cap is WCHAMX+1 — 2 bolts at wave 1, not 4. Our MAX_ENEMY_BULLETS hard cap (sim.ts, enforced at `if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break`) is a flat 4 at every wave, doubling the authentic wave-1 bolt pressure.",
@@ -240,7 +240,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 88,
+      "line": 89,
       "verbatim": "  const a = a0 + dA * t"
     },
     "claim": "JUMPX/JUMPZ (ALDISP.MAC:754-779) is a 16-sample lookup table of world-space (X,Z) offsets applied to a flipping/leaping invader's base-line position (IJMPDS, ALDISP.MAC:711-753). Decoding the byte values (DG000=2C=44, DG225=28=40, DG450=1F=31, DG675=10=16, DG900=0, and their negatives) against 22.5-degree steps confirms X[i]=44*cos(i*22.5deg) and — because JUMPZ's 4 bytes are immediately followed in memory by JUMPX's own bytes and both are indexed by the same `AND I,0F` 0-15 value (line 720) — Z[i]=44*sin(i*22.5deg): a genuine 16-point circle of radius 44 world-units. Our `arcAbout()` (render.ts:53-66) computes a continuous circular arc (interpolating angle and radius from source to target) for the same mid-flip tumble.",
@@ -275,7 +275,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 27,
+      "line": 28,
       "verbatim": "const CLAW_COLOR = '#ffe600'"
     },
     "claim": "ALCOMN.MAC hardcodes the cursor to YELLOW. Our `CLAW_COLOR`, used for the player claw glyph, lives icon, and warp-dive claw, is `#ffe600` — an authentic yellow.",
@@ -331,7 +331,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 354,
+      "line": 355,
       "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
     },
     "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",
@@ -392,7 +392,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 78,
+      "line": 79,
       "verbatim": "function arcAbout("
     },
     "claim": "The ROM indexes its 16-entry JUMPX/JUMPZ circle (DA-013) with a 4-bit integer step counter (`INVAL2 AND 0F`, line 720) that advances one discrete step at a time — 16 fixed positions per full loop, updated once per GAME frame, i.e. on the FRTIMR-gated 256/9 = 28.44 Hz logic cadence (FR-001), not on a 60 Hz one and not on the ~256 Hz IRQ. `arcAbout()` instead evaluates `cos`/`sin`/`hypot` continuously for an arbitrary float `t` each frame, with no 16-step quantization.",
