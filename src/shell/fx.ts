@@ -7,6 +7,7 @@
 import { GameState } from '../core/state'
 import type { GameEvent } from '../core/events'
 import { currentLane, project } from '../core/geometry'
+import { ROM_FPS } from '../core/rules'
 
 interface Particle {
   x: number
@@ -38,21 +39,30 @@ export interface EnemyBurst {
   max: number
 }
 
-// Player death ("splat control"): a concentric jagged star that GROWS THEN
-// SHRINKS while its colour cycles white → red → yellow EACH FRAME (ROTCOL).
+// Player death, charge/bolt channel ("splat control", V-013/DA-009/DA-010/DA-011):
+// the ROM's one closed ragged tri-colour ring (splatGlyph) that GROWS THEN SHRINKS
+// (radius, DA-011 unchanged) while ROTCOL spins its three colours over frames (`rot`).
 export interface PlayerSplat {
   kind: 'player'
   x: number
   y: number
-  spokes: number // jagged star points
-  radius: number // grows to a peak then shrinks back
-  color: string // cycles through SPLAT_CYCLE each frame
-  cycle: number // frame counter driving the colour cycle
+  radius: number // grows to a peak then shrinks back (DA-011 — do not invert)
+  rot: number // ROTCOL colour-slot rotation phase, advanced each frame (DA-009)
   life: number
   max: number
 }
 
-export type Explosion = EnemyBurst | PlayerSplat
+// Player death, invader-collision channel ("SPARK1", DA-007): the ROM's distinct
+// STATIC 4-dot yellow cross (sparkGlyph) — NOT the colour-cycling splat.
+export interface PlayerSpark {
+  kind: 'spark'
+  x: number
+  y: number
+  life: number
+  max: number
+}
+
+export type Explosion = EnemyBurst | PlayerSplat | PlayerSpark
 
 export interface Fx {
   /**
@@ -85,11 +95,14 @@ const ENEMY_BURST_LIFE = 0.24 // ~4 quick frames
 const ENEMY_DIM = 7
 const ENEMY_BRIGHT = 14
 
-const SPLAT_POINTS = 12 // jagged star points
-const SPLAT_LIFE = 0.9
+// The charge-player splat sequence: TSPTIM = 2,2,2,2,2,4,3,2,1 (ALDISP.MAC:1022-1030)
+// = 20 game frames, REBASED through ROM_FPS (28.44) → ≈0.703 s (DA-010; the following
+// .BYTE 20 at :1031 is the SEPARATE pulsar-player tail, not the splat).
+const SPLAT_FRAMES = 20
+const SPLAT_LIFE = SPLAT_FRAMES / ROM_FPS
 const SPLAT_PEAK_RADIUS = 30
-// White → red → yellow, the canonical ROTCOL cycle.
-const SPLAT_CYCLE: readonly string[] = ['#ffffff', '#ff0000', '#ffff00']
+// The invader-collision SPARK1 cross is a brief static cue (DA-007).
+const SPARK_LIFE = 0.25
 
 export function createFx(): Fx {
   let parts: Particle[] = []
@@ -125,14 +138,18 @@ export function createFx(): Fx {
     })
   }
 
-  // The color-cycling player splat. Starts at radius 0 / first cycle colour;
-  // update() grows-then-shrinks the radius and advances the colour each frame.
+  // The ROM player-death splat (charge/bolt death). radius grows-then-shrinks
+  // (DA-011, unchanged); update() spins the tri-colour ring via `rot` each frame.
   function spawnPlayerSplat(p: { x: number; y: number }): void {
     explosions.push({
-      kind: 'player', x: p.x, y: p.y, spokes: SPLAT_POINTS,
-      radius: 0, color: SPLAT_CYCLE[0], cycle: 0,
+      kind: 'player', x: p.x, y: p.y, radius: 0, rot: 0,
       life: SPLAT_LIFE, max: SPLAT_LIFE,
     })
+  }
+
+  // The invader-collision SPARK1 cross (DA-007) — a distinct static yellow cue.
+  function spawnPlayerSpark(p: { x: number; y: number }): void {
+    explosions.push({ kind: 'spark', x: p.x, y: p.y, life: SPARK_LIFE, max: SPARK_LIFE })
   }
 
   function detect(s: GameState, _dt: number, events: readonly GameEvent[] = []): void {
@@ -155,12 +172,15 @@ export function createFx(): Fx {
     }
     prevBullets = cur.map((b) => ({ lane: b.lane, depth: b.depth }))
 
-    // Player death → the color-cycling splat, shake, red flash. (The old twin
-    // particle bursts are replaced by the authentic jagged-star splat; the red
-    // full-screen flash + shake stay.)
+    // Player death → the death cue + shake + red flash. DA-007: an invader-PLAYER
+    // DIRECT collision (cause 'grab') gets the ROM's distinct static SPARK1 yellow
+    // cross; a charge/bolt/pulse death gets the colour-cycling splat. (A warp-spike
+    // crash is a death too and is overridden to cyan in the event loop below.)
     if (prevAlive && !s.player.alive) {
       const p = project(tube, currentLane(tube, s.player.lane), 1.0)
-      spawnPlayerSplat(p)
+      const death = events.find((e): e is Extract<GameEvent, { type: 'player-death' }> => e.type === 'player-death')
+      if (death?.cause === 'grab') spawnPlayerSpark(p)
+      else spawnPlayerSplat(p)
       shake = 18
       flash = 0.5
       flashColor = '#ff5a3c'
@@ -239,12 +259,14 @@ export function createFx(): Fx {
         const frame = Math.min(ENEMY_SCALE_STEPS.length - 1, Math.floor(progress * ENEMY_SCALE_STEPS.length))
         ex.scale = ENEMY_SCALE_STEPS[frame]
         ex.brightness = frame < 1 ? ENEMY_DIM : ENEMY_BRIGHT
-      } else {
-        // Grow-then-shrink (sin arch), with the colour advancing every frame.
+      } else if (ex.kind === 'player') {
+        // Grow-then-shrink (sin arch). DA-011 REFUTED (wont_fix): SPLAT1 is full-size
+        // at the sequence middle, SPLAT6 smallest at both ends — do NOT invert this.
         ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)
-        ex.cycle += 1
-        ex.color = SPLAT_CYCLE[ex.cycle % SPLAT_CYCLE.length]
+        // ROTCOL: advance the tri-colour slot rotation each frame (DA-009).
+        ex.rot += 1
       }
+      // spark: a static cross — no per-frame animation, it just ages out.
     }
     explosions = explosions.filter((ex) => ex.life > 0)
 

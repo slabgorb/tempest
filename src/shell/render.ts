@@ -4,7 +4,7 @@ import type { HighScoreTable } from '@arcade/shared/highscore'
 import { withGlow, glowPolyline } from '@arcade/shared/glow'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube, warpEyeDest } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
-import { Fx, EnemyBurst, PlayerSplat } from './fx'
+import { Fx, EnemyBurst, PlayerSplat, PlayerSpark } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z, starReachFraction } from './starfield'
 import { titleLogoPasses } from './titleLogo'
@@ -12,6 +12,7 @@ import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
   playerBulletColor, playerClawGlyph, lifeIconGlyph, wellColor, starColor,
+  splatGlyph, sparkGlyph,
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
@@ -548,40 +549,27 @@ function drawEnemyBurst(ctx: CanvasRenderingContext2D, ex: EnemyBurst): void {
   ctx.stroke()
 }
 
-// One jagged star outline (alternating outer/inner radius) centred on (cx, cy).
-function jaggedStarPath(
-  ctx: CanvasRenderingContext2D, cx: number, cy: number, points: number, outerR: number, innerR: number,
-): void {
-  ctx.beginPath()
-  const steps = points * 2
-  for (let i = 0; i <= steps; i++) {
-    const a = (i / steps) * Math.PI * 2
-    const r = i % 2 === 0 ? outerR : innerR
-    const x = cx + Math.cos(a) * r
-    const y = cy + Math.sin(a) * r
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-}
-
+// The ROM player-death SPLAT (V-013/DA-009): one closed ragged tri-colour ring
+// (splatGlyph, normalised to unit extent), scaled by the grow/shrink radius, its
+// three colours spun by ROTCOL (`rot`). Replaces the eyeballed two procedural rings.
 function drawPlayerSplat(ctx: CanvasRenderingContext2D, ex: PlayerSplat): void {
   if (ex.radius < 0.5) return
   ctx.globalAlpha = Math.max(0.25, ex.life / ex.max)
-  ctx.strokeStyle = ex.color
-  ctx.shadowColor = ex.color
-  ctx.shadowBlur = 12
-  ctx.lineWidth = 2
-  // Two concentric jagged rings for the "concentric jagged star" splat.
-  jaggedStarPath(ctx, ex.x, ex.y, ex.spokes, ex.radius, ex.radius * 0.45)
-  ctx.stroke()
-  jaggedStarPath(ctx, ex.x, ex.y, ex.spokes, ex.radius * 0.55, ex.radius * 0.25)
-  ctx.stroke()
+  strokeGlyph(ctx, splatGlyph(ex.rot), ex.x, ex.y, ex.radius, 0, 12)
+}
+
+// The ROM invader-collision SPARK1 (DA-007): a static yellow 4-dot axis cross.
+const SPARK_RADIUS = 14 // on-screen half-extent of the cross
+function drawPlayerSpark(ctx: CanvasRenderingContext2D, ex: PlayerSpark): void {
+  ctx.globalAlpha = Math.max(0.25, ex.life / ex.max)
+  strokeGlyph(ctx, sparkGlyph(), ex.x, ex.y, SPARK_RADIUS, 0, 12)
 }
 
 function drawExplosions(ctx: CanvasRenderingContext2D, fx: Fx): void {
   for (const ex of fx.explosions) {
     if (ex.kind === 'enemy') drawEnemyBurst(ctx, ex)
-    else drawPlayerSplat(ctx, ex)
+    else if (ex.kind === 'player') drawPlayerSplat(ctx, ex)
+    else drawPlayerSpark(ctx, ex)
   }
   ctx.globalAlpha = 1
   ctx.shadowBlur = 0
