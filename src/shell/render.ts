@@ -15,7 +15,7 @@ import {
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
-import { WARP_STARFIELD_GATE } from '../core/rules'
+import { WARP_STARFIELD_GATE, ROM_FPS } from '../core/rules'
 
 // The Superzapper strobe ramp (Story 10-15): eight hues the well flashes through
 // while a zap is active, indexed by the core's flash counter. The per-level WELL
@@ -346,14 +346,18 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
 }
 
 // Enemy energy bolts (Story 6-5, glyph fidelity 6-8): the authentic white
-// 4-hook pinwheel + red 4-dot cross, spinning through its 4 ROM frames as it
-// rides down its lane toward the rim. Frame + rotation derive from depth so the
-// spin stays deterministic with the sim.
+// The ROM's ESHOT1-4 (four white diagonal ticks + red dots) shimmering down its lane
+// toward the rim. The ROM selects the frame off the GLOBAL frame counter QFRAME
+// (ALDISP.MAC:910-914), NOT the bullet depth (V-009 / DA-018) — every bolt on screen
+// shares one phase and cycles once every 4 game frames (ROM_FPS/4 ≈ 7.1 Hz). So drive it
+// off `renderTime * ROM_FPS` (a QFRAME analog, shared across bolts, as fuseball/pulsar use
+// the shell clock). It is a table-SWAP shimmer, not a spin, so no per-bullet rotation.
 function drawEnemyBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
+  const frame = Math.floor(renderTime * ROM_FPS) // ≙ QFRAME; enemyBoltGlyph wraps on & 3 → 7.1 Hz
   for (const b of s.enemyBullets) {
     const p = project(s.tube, b.lane, b.depth)
     const scale = 0.4 + b.depth * 0.5 // grows as it nears the player
-    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)
+    strokeGlyph(ctx, enemyBoltGlyph(frame), p.x, p.y, scale, 0, 12)
   }
 }
 
@@ -422,9 +426,12 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
       // resolved through the wave-group bank. `beat` drives only the glow (no ROM
       // counterpart); it must not reach the colour.
       const beat = e.pulsing ? 0.5 + 0.5 * Math.sin(renderTime * 18) : 0
+      // Feed pulsarVariant the ROM's PULSON domain, ~[-63,15] (ALWELG.MAC:1557-1570), so
+      // PULPIC's index (PULSON+64)>>4 sweeps 0..4 (flat→sharp→flat) — NOT a full byte,
+      // which would sit on the idx>=5 flat clamp for most of the cycle and read flat (V-005).
       const variant = e.pulsing
-        ? pulsarVariant(Math.floor((0.5 + 0.5 * Math.sin(renderTime * 12)) * 0xff))
-        : 4 // flat bar when dormant
+        ? pulsarVariant(Math.round(-63 + (0.5 + 0.5 * Math.sin(renderTime * 12)) * 78))
+        : 4 // flat bar (PULS0) when dormant
       const color = pulsarColor(s.level, e.pulsing)
       strokeGlyph(ctx, pulsarBar(variant), p.x, p.y, r / 4, 0, e.pulsing ? 22 + beat * 18 : 12, color)
       if (e.pulsing) {

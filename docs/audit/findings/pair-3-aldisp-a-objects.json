@@ -339,7 +339,8 @@
     "reasoning": "The authentic pinwheel spin is a globally-synchronized flicker independent of each bolt's travel; ours instead ties the spin rate to travel speed (which varies by level via ENEMY_BOLT_SPEED_OFFSET) and desyncs simultaneous bolts from one another. Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json): the divergence is unchanged, but the target cadence is ~7.1 Hz, not the ~15 Hz stated here — a fix that reproduces QFRAME's cadence must step at ROM_FPS/4, so the 60 Hz reading would have made the pinwheel spin twice as fast as the arcade's. [REFUTATION] Re-opened ALDISP.MAC:910 verbatim ('LDA QFRAME ;ENEMY SHOT') in context (896-915, DSPCHG): `ASL; AND I,6; ADC I,PTESHO` -- since ASL doubles QFRAME then masks to bits 1-2, the picture index has period 4 in QFRAME, i.e. cycles once every 4 increments of QFRAME. Confirmed QFRAME is incremented exactly once per real game frame at ALEXEC.MAC:252 (`INC QFRAME`), inside NONSTA, itself called once per FRTIMR>=9-gated MAINLN pass (28.444fps per the audit's established ground truth) -- so the cycle rate is 28.444/4 = 7.11Hz, matching the claim, and is a single GLOBAL counter shared by every enemy bolt on screen (confirmed no invader/bolt-specific offset is added before the table lookup). Checked our side: render.ts:297 derives the frame purely from `Math.floor(b.depth * 8)`, per-bolt and depth/speed-dependent, with the file's own comment (289-292) admitting frame+rotation 'derive from depth so the spin stays deterministic with the sim' -- i.e. a deliberate design choice that is nonetheless a real divergence from the ROM's shared, time-driven cadence. The finding's self-correction from a 60Hz-implied ~15Hz to the correct ~7.1Hz is arithmetically right.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-35"
   },
   {
     "id": "DA-019",
