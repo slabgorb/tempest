@@ -85,11 +85,17 @@ describe('warp ramp — accelerating descent, not constant speed (AC1, AC5)', ()
     // No spikes ⇒ no countdown ⇒ a clean dive that isolates the SPEED CURVE.
     let s = enterWarp(1, 4)
     const samples: number[] = [s.warp.progress] // starts at 0
-    for (let i = 0; i < 2000 && s.mode === 'warp'; i++) {
+    // tp1-10 (WD-018): sample only the DESCENT. After it bottoms out the warp enters
+    // the post-descent EYE FLY-IN (mode stays 'warp', warp.flyIn > 0, progress reset),
+    // whose frames are not part of the speed curve — stop when the fly-in begins.
+    for (let i = 0; i < 2000 && s.mode === 'warp' && (s.warp.flyIn ?? 0) === 0; i++) {
       s = stepGame(s, NEUTRAL, DT)
-      if (s.mode === 'warp') samples.push(s.warp.progress)
+      if (s.mode === 'warp' && (s.warp.flyIn ?? 0) === 0) samples.push(s.warp.progress)
     }
-    expect(s.mode).toBe('playing') // the dive actually completed
+    expect((s.warp.flyIn ?? 0) > 0).toBe(true) // the descent actually bottomed out
+    // ...and the whole warp still converges to normal play on the next wave.
+    for (let i = 0; i < 200 && s.mode !== 'playing'; i++) s = stepGame(s, NEUTRAL, DT)
+    expect(s.mode).toBe('playing')
 
     const deltas: number[] = []
     for (let i = 1; i < samples.length; i++) deltas.push(samples[i] - samples[i - 1])

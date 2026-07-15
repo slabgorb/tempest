@@ -91,7 +91,13 @@ describe('fire events', () => {
 // --- per-frame reset (AC3) --------------------------------------------------
 describe('events channel resets every frame', () => {
   it('clears the previous frame\'s events when nothing new happens', () => {
-    const fired = stepGame(playing([]), FIRE, DT)
+    // tp1-10 (WD-017): an empty board clears into the warp, whose first descending
+    // frame now emits 'warp-descent-start' — so keep this board OUT of the level-clear
+    // path (a far-future nymph, the file's established fixture) so frame 2 is a genuine
+    // "nothing happens" PLAYING frame and the events-clear property is what's tested.
+    const board = playing([])
+    board.spawn = { nymphs: [{ lane: 0, py: 30000 }] }
+    const fired = stepGame(board, FIRE, DT)
     expect(eventsOfType(fired, 'fire')).toHaveLength(1)   // frame 1 emitted
 
     const next = stepGame(fired, NEUTRAL, DT)             // frame 2, neutral

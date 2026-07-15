@@ -149,12 +149,17 @@ export interface WarpState {
   progress: number      // 0 = warp just entered (Claw at rim), 1 = cursor at the well bottom (ILINDDY)
   velocity: number      // dive speed in progress/sec; accelerates each frame (Story 6-1)
   warning: number       // seconds left on the AVOID SPIKES countdown before the dive (0 = none)
-  // tp1-13 (S-014): the dive's SECOND phase. Once the cursor passes the well bottom
-  // (progress >= 1, ILINDDY) it is off the lines and in space — crash-proof, T3
-  // droning — for `spaceFrames` sim steps before the level advances. `inSpace`
-  // marks that phase; `spaceFrames` counts it down.
-  inSpace: boolean
-  spaceFrames: number   // sim steps left in the crash-proof space phase (0 = not in space)
+  // tp1-10 (WD-018) / tp1-13 (S-014): the dive's SECOND phase — the post-descent EYE
+  // FLY-IN. Once the cursor passes the well bottom (progress ≥ 1, ILINDDY) it is off
+  // the lines and in space — crash-proof, the T3 space drone ringing (MOVCUD/SOUTS3,
+  // ALWELG.MAC:1032-1037) — while ENDWAV increments the wave and NEWAV2 flies the eye
+  // INTO the new well over `flyIn` frames before play resumes (ALWELG.MAC:56-121).
+  // This single counter unifies tp1-10's fly-in with tp1-13's provisional inSpace/
+  // spaceFrames space phase (WARP_SPACE_FRAMES) — the ROM camera timing tp1-13 deferred.
+  // >0 = flying in (new geometry loaded, mode stays 'warp', play deferred); 0/absent
+  // = descending or not warping. Optional so the pre-tp1-10 3-field warp literals in
+  // the suite still type-check (undefined ≡ 0).
+  flyIn?: number
 }
 
 export interface SelectState {
@@ -240,7 +245,7 @@ export function initialState(seed: number): GameState {
     startBonus: 0,        // set at level select; attract boots with no pending bonus (tp1-13)
     spawn: spawnForLevel(1, rng, tube.laneCount),
     pulse: { son: PULSE_SON_INIT, tim: PULSE_STEP },  // INEWLI, ALWELG.MAC:46-48
-    warp: { progress: 0, velocity: 0, warning: 0, inSpace: false, spaceFrames: 0 },
+    warp: { progress: 0, velocity: 0, warning: 0 },
     select: { selectedLevel: 1 },
     entry: null,
     highScoreTable: [],

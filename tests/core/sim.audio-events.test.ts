@@ -178,22 +178,33 @@ describe('warp-end events (AC3: the warp sound spans the dive, no bleed/silence)
     expect(eventsOfType(out, 'level-clear')).toHaveLength(1)
   })
 
-  it('emits exactly one warp-end, on the frame the dive completes (warp → playing)', () => {
+  // tp1-10 (WD-017/WD-018) + tp1-13 (S-014) UNIFIED: the sustained thrust drone spans the
+  // WHOLE dive as two phases — T2 (in-well) from warp-descent-start, handed over to T3
+  // (space) at the bottom-crossing (warp-space), and stopped by ONE warp-end at the
+  // fly-in's END, exactly as play resumes. The intent is unchanged: exactly ONE warp-end
+  // across the dive (no bleed/silence). The capture is re-keyed onto the frame warp-end is
+  // actually emitted — now the ARRIVAL frame (mode → 'playing'), not the descent bottom
+  // (which now emits warp-space to hand the drone over to T3, not warp-end).
+  it('emits exactly one warp-end, on the frame the dive completes (play resumes)', () => {
     let s = stepGame(clearedAtLevel(1, 0), NEUTRAL, DT) // enter warp
     expect(s.mode).toBe('warp')
 
     let totalEnds = 0
-    let endsOnTransition = -1
-    for (let i = 0; i < 1000 && s.mode === 'warp'; i++) {
-      const wasWarp = s.mode === 'warp'
+    let endsWhenEmitted = -1
+    let modeWhenEmitted = ''
+    for (let i = 0; i < 1000 && s.mode !== 'playing'; i++) {
       s = stepGame(s, NEUTRAL, DT)
       const ends = eventsOfType(s, 'warp-end').length
       totalEnds += ends
-      if (wasWarp && s.mode !== 'warp') endsOnTransition = ends
+      if (ends > 0) {
+        endsWhenEmitted = ends
+        modeWhenEmitted = s.mode // the fly-in has completed — play resumes on this frame
+      }
     }
-    expect(s.mode).toBe('playing') // the dive really finished
+    expect(s.mode).toBe('playing') // the dive really finished (descent + fly-in)
     expect(totalEnds).toBe(1) // one stop signal across the whole dive — no bleed
-    expect(endsOnTransition).toBe(1) // emitted exactly as the dive ends
+    expect(endsWhenEmitted).toBe(1) // emitted exactly once, as the dive ends
+    expect(modeWhenEmitted).toBe('playing') // warp-end coincides with play resuming (fly-in end)
   })
 
   it('emits a warp-end on a mid-dive spike crash (the loop stops, no runaway hum)', () => {

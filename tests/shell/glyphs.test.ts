@@ -110,11 +110,6 @@ function bbox(pts: readonly Pt[]): { w: number; h: number } {
   return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
 }
 
-function centroid(pts: readonly Pt[]): Pt {
-  const n = pts.length
-  return { x: pts.reduce((a, p) => a + p.x, 0) / n, y: pts.reduce((a, p) => a + p.y, 0) / n }
-}
-
 function peakToPeakY(pts: readonly Pt[]): number {
   const ys = pts.map((p) => p.y)
   return Math.max(...ys) - Math.min(...ys)
@@ -228,14 +223,16 @@ describe('flipperGlyph (Story 6-8: authentic bowtie/butterfly)', () => {
 // B. Tanker — elongated X-diamond body (color idx 2) + cargo emblem variants
 // ===========================================================================
 describe('tankerGlyph (Story 6-8: X-diamond + cargo emblem by split type)', () => {
-  it('has an elongated (non-square) PURPLE diamond body', () => {
+  it('has a PURPLE diamond body (GENTNK)', () => {
+    // tp1-17 RE-SEAT: Story 6-8 pinned this body as an *elongated* (9×6), closed
+    // 4-point diamond. Audit V-006 refutes that — the ROM's GENTNK (ALVROM.MAC:651)
+    // is a SQUARE 17-vertex laced double diamond, and it is not necessarily a closed
+    // loop. Those specifics now live in tests/shell/tp1-17.shapes.test.ts; here we
+    // keep only the invariant that survives both shapes: there IS a purple body.
     const g = tankerGlyph(1, 'flipper')
     const body = g.find((s) => s.color === 'purple')
-    expect(body, 'tanker body stroke (GENTNK purple — Story 10-7)').toBeDefined()
-    expect(body!.closed).toBe(true)
-    const { w, h } = bbox(body!.points)
-    // "elongated" — the body is deliberately not a square diamond.
-    expect(Math.abs(w - h)).toBeGreaterThan(0.1 * Math.max(w, h))
+    expect(body, 'tanker body stroke (GENTNK purple)').toBeDefined()
+    expect(bbox(body!.points).w, 'the body has real geometry').toBeGreaterThan(0)
   })
 
   it('renders a distinct emblem per cargo type (showing what it splits into)', () => {
@@ -500,39 +497,18 @@ describe('playerClawGlyph (Story 12-1: authentic ROM CURSOR NCRS1–8, yellow)',
 })
 
 // ===========================================================================
-// H. Player bullet — two concentric dotted octagon rings
+// H. Player bullet — the ROM DIARA2 (17 dots), see tp1-17.shapes.test.ts
 // ===========================================================================
-describe('playerBulletGlyph (Story 6-8: two concentric dotted octagons)', () => {
-  it('has two octagon rings (8 points each)', () => {
-    const g = playerBulletGlyph()
-    const rings = g.filter((s) => s.points.length === 8)
-    expect(rings).toHaveLength(2)
-  })
-
-  it('rings are concentric (centred on the origin) but different radii', () => {
-    const g = playerBulletGlyph()
-    const rings = g.filter((s) => s.points.length === 8)
-    const radius = (r: (typeof rings)[number]) => {
-      const c = centroid(r.points)
-      expect(Math.hypot(c.x, c.y)).toBeLessThan(1e-6) // concentric on origin
-      return Math.hypot(r.points[0].x - c.x, r.points[0].y - c.y)
-    }
-    const r0 = radius(rings[0])
-    const r1 = radius(rings[1])
-    const inner = Math.min(r0, r1)
-    const outer = Math.max(r0, r1)
-    expect(outer).toBeGreaterThan(inner * 1.1) // genuinely two rings, not coincident
-  })
-
-  it('each ring is a regular octagon (all 8 vertices equidistant from centre)', () => {
-    const g = playerBulletGlyph()
-    const rings = g.filter((s) => s.points.length === 8)
-    for (const ring of rings) {
-      const c = centroid(ring.points)
-      const radii = ring.points.map((p) => Math.hypot(p.x - c.x, p.y - c.y))
-      const r0 = radii[0]
-      for (const r of radii) expect(Math.abs(r - r0)).toBeLessThan(1e-3 * r0)
-    }
+describe('playerBulletGlyph (tp1-17 RE-SEAT: the ROM DIARA2 is 17 dots, not two octagons)', () => {
+  // Story 6-8 pinned two stroked, regular-octagon outlines. Audit V-010/DA-004
+  // refute that: the ROM's DIARA2 (ALVROM.MAC:383-403) is 17 loose SCDOT dots in
+  // two rings, only the inner ring ammo-tinted. The exhaustive ROM pins now live in
+  // tests/shell/tp1-17.shapes.test.ts; this guards the headline contract in place so
+  // the old octagon silhouette cannot creep back.
+  it('is 17 single-point dots, not stroked polygon outlines', () => {
+    const g = playerBulletGlyph('yellow')
+    expect(g.filter((s) => s.points.length === 1)).toHaveLength(17)
+    expect(g.some((s) => s.points.length > 2), 'no multi-point ring outlines remain').toBe(false)
   })
 })
 

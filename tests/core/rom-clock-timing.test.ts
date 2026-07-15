@@ -184,12 +184,13 @@ describe('the warp dive — the squared error, felt as time (AC5, AC6)', () => {
     expect(warping.mode, 'the cleared level must enter the warp').toBe('warp')
     expect(warping.warp.progress).toBe(0)
 
-    // Measure the IN-WELL dive: rim (progress 0) to the well bottom (ILINDDY,
-    // warp.inSpace), the 224-along traverse this 1.62 s figure is derived from.
-    // tp1-13 added a SECOND phase (the crash-proof space segment) AFTER the bottom
-    // before the level advances, so `mode !== 'warp'` now lands ~9 frames late; the
-    // ROM's dive time is the in-well leg, which the bottom-crossing bounds exactly.
-    const { seconds } = runUntil(warping, (x) => x.warp.inSpace, 10)
+    // tp1-10 (WD-018) / tp1-13 (S-014) UNIFIED: the warp has a post-descent SECOND
+    // phase — the eye fly-in (mode stays 'warp' for WARP_FLYIN_FRAMES after the descent
+    // bottoms out, warp.flyIn > 0), which is tp1-13's crash-proof space segment. This
+    // times the DESCENT — the squared-error subject, the 224-along in-well traverse the
+    // 1.62 s figure derives from — so it stops the moment the fly-in begins (flyIn > 0,
+    // set by beginFlyIn on the bottom-crossing frame), not when the whole warp mode ends.
+    const { seconds } = runUntil(warping, (x) => x.mode !== 'warp' || (x.warp.flyIn ?? 0) > 0, 10)
 
     expect(seconds).toBeGreaterThan(1.30)
     expect(seconds).toBeLessThan(1.90)

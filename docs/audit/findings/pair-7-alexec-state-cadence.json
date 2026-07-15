@@ -29,7 +29,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 207,
+      "line": 212,
       "verbatim": "  highScoreTable: HighScoreTable<'level'>  // in-memory top scores (persistence is 4-6)"
     },
     "claim": "ENDGAM (ALEXEC.MAC:429-446) computes HIWAVE — the highest wave any player reached that game — every time a game ends, immediately before the state machine requests HISCHK (the hi-score ladder check, ALEXEC.MAC:450). Our `GameState.highScoreTable` is explicitly typed `HighScoreTable<'level'>` (state.ts:125), i.e. the shared high-score module is parameterised to carry a level/wave reached alongside each score entry, the same pairing the ROM computes at end-of-game.",
@@ -215,7 +215,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 187,
+      "line": 192,
       "verbatim": "  level: number"
     },
     "claim": "WAVEN1's own comment says the stored byte is the wave number MINUS 1 — i.e. wave 1 (what the player sees) is stored as 0. `GameState.level` (state.ts:112) is initialised to `level: 1` (state.ts:138) and incremented directly (`s.level += 1` in advanceLevel) to match the number actually shown to the player — no off-by-one offset anywhere.",

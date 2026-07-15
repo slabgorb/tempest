@@ -15,6 +15,7 @@ import {
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
+import { WARP_STARFIELD_GATE } from '../core/rules'
 
 // The Superzapper strobe ramp (Story 10-15): eight hues the well flashes through
 // while a zap is active, indexed by the core's flash counter. The per-level WELL
@@ -324,12 +325,13 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
   }
 }
 
-// Player bullets render as the authentic two concentric dotted octagon rings
-// (Story 6-8), with a short motion streak behind for the sense of travel.
+// Player charges render as the ROM's DIARA2 — 17 loose dots in two rings, the
+// inner ring ammo-tinted (tp1-17) — with a short motion streak behind for travel.
 function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   // Story 10-8: the whole volley shares one CHACOU tint set by how many charges
-  // are in flight this frame (the count is constant across these bullets). Only
-  // the bullet body (glyph) is recoloured; the travel streak keeps its hue.
+  // are in flight this frame (the count is constant across these bullets). Per DA-004
+  // the tint lands on the INNER ring only — pass it INTO the glyph, never as a
+  // strokeGlyph override (which would also recolour the fixed-yellow outer ring).
   const tint = playerBulletColor(s.bullets.length)
   for (const b of s.bullets) {
     const p = project(s.tube, b.lane, b.depth)
@@ -339,7 +341,7 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.shadowBlur = 14
     ctx.lineWidth = 2.5
     ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(p.x, p.y); ctx.stroke()
-    strokeGlyph(ctx, playerBulletGlyph(), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14, tint)
+    strokeGlyph(ctx, playerBulletGlyph(tint), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14)
   }
 }
 
@@ -861,11 +863,15 @@ function drawHud(
   }
 }
 
-// End-of-level warp: the Claw dives down its lane from the near rim toward the
-// vanishing point as warp.progress goes 0 -> 1 (mirrors the core's
-// warpClawDepth = 1 - progress). Speed streaks rush outward along every spoke
-// for the "flying down the tube" sensation; spikes stay drawn (by the caller)
-// so the 3-3 spike crash reads on screen.
+// End-of-level warp (tp1-10, WD-012): the ROM dives the CAMERA with the Claw. MOVCUD
+// advances the eye by the SAME velocity as the cursor every frame ("LDA EYLL / CLC /
+// ADC CURSVL", ALWELG.MAC:1049-1057), so (CURSY - EY) is invariant — the Claw's
+// projected size and screen position DO NOT change; the well rushes outward around
+// it. So the Claw is drawn rim-anchored and fixed through the same clawTransform as
+// normal play (NOT marched down a static tube at a receding depth), and the well
+// itself is scaled up about its vanishing point as the dive progresses (the caller
+// applies that zoom to the tube). Speed streaks rush outward along every spoke for
+// the dive sensation; spikes stay drawn (by the caller) so the spike crash reads.
 function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): void {
   const tube = s.tube
   const progress = Math.max(0, Math.min(1, s.warp.progress))
@@ -891,49 +897,18 @@ function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): v
   }
   ctx.globalAlpha = 1
 
-  // The diving Claw, on the player's (still-rotatable) lane.
-  const lane = currentLane(tube, s.player.lane)
-  const clawDepth = 1 - progress
-  const rim = project(tube, lane, 1)
-  const p = project(tube, lane, clawDepth)
-
-  // Dive trail from the rim down to the current Claw position.
-  ctx.strokeStyle = CLAW_COLOR
-  ctx.shadowColor = CLAW_COLOR
-  ctx.globalAlpha = 0.25
-  ctx.lineWidth = 2
-  ctx.shadowBlur = 10
-  ctx.beginPath(); ctx.moveTo(rim.x, rim.y); ctx.lineTo(p.x, p.y); ctx.stroke()
-  ctx.globalAlpha = 1
-
-  // Claw glyph: muzzle points inward (toward the vanishing point), shrinks with depth.
-  const inward = project(tube, lane, Math.max(0, clawDepth - 0.1))
-  const outward = project(tube, lane, Math.min(1, clawDepth + 0.1))
-  let ux = outward.x - inward.x
-  let uy = outward.y - inward.y
-  const ulen = Math.hypot(ux, uy) || 1
-  ux /= ulen
-  uy /= ulen
-  const wx = -uy
-  const wy = ux
-  const size = 6 + clawDepth * 14
-  const apex = { x: p.x - ux * size * 0.8, y: p.y - uy * size * 0.8 }
-  const footL = { x: p.x + wx * size + ux * size * 0.4, y: p.y + wy * size + uy * size * 0.4 }
-  const footR = { x: p.x - wx * size + ux * size * 0.4, y: p.y - wy * size + uy * size * 0.4 }
-
-  ctx.strokeStyle = CLAW_COLOR
-  ctx.shadowColor = CLAW_COLOR
-  ctx.shadowBlur = 16
-  ctx.lineWidth = 2.5
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  ctx.beginPath()
-  ctx.moveTo(footL.x, footL.y); ctx.lineTo(apex.x, apex.y); ctx.lineTo(footR.x, footR.y)
-  ctx.stroke()
-  ctx.beginPath(); ctx.moveTo(footL.x, footL.y); ctx.lineTo(footR.x, footR.y); ctx.stroke()
+  // The Claw is CONSTANT during the dive — rim-anchored and fixed, exactly as in
+  // normal play (drawPlayer). clawTransform(tube, lane) is progress-independent
+  // (geometry.claw-transform.test.ts), so the camera-with-the-Claw invariant holds:
+  // the Claw neither shrinks nor slides toward the vanishing point as the well
+  // expands past it.
+  const { anchor, scale, rotation, roll } = clawTransform(tube, s.player.lane)
+  strokeGlyph(ctx, playerClawGlyph(roll), anchor.x, anchor.y, scale, rotation, 18)
   ctx.fillStyle = '#fff'
+  ctx.shadowColor = '#fff'
   ctx.shadowBlur = 14
-  ctx.beginPath(); ctx.arc(apex.x, apex.y, 2.4, 0, Math.PI * 2); ctx.fill()
+  ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 2.6, 0, Math.PI * 2); ctx.fill()
+  ctx.globalAlpha = 1
 }
 
 export function render(
@@ -1002,9 +977,12 @@ export function render(
   drawTube(pctx, s, wellHex, currentLane(s.tube, s.player.lane))
   drawSpikes(pctx, s)
   if (s.mode === 'warp') {
-    // Diving-Claw warp transition; spikes above stay drawn so a crash reads.
-    // The 8-plane starfield streams out behind the Claw for the dive spectacle.
-    drawStarfield(pctx, s.level)
+    // tp1-10 (WD-013): the starfield does not open until the dive is ~29% down the
+    // well (WARP_STARFIELD_GATE) — gated on the dive progress, not merely on the warp
+    // mode, so it stays dark through the AVOID-SPIKES hold (progress 0).
+    if (s.warp.progress >= WARP_STARFIELD_GATE) drawStarfield(pctx, s.level)
+    // Diving warp transition; spikes above stay drawn so a crash reads. drawWarp
+    // draws the streaks + the rim-anchored, constant Claw (WD-012, via clawTransform).
     drawWarp(pctx, s, color)
   } else {
     // Not warping — clear the starfield so the next dive starts from centre.
