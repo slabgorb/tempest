@@ -325,8 +325,8 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
   }
 }
 
-// Player bullets render as the authentic two concentric dotted octagon rings
-// (Story 6-8), with a short motion streak behind for the sense of travel.
+// Player charges render as the ROM's DIARA2 — 17 loose dots in two rings, the
+// inner ring ammo-tinted (tp1-17) — with a short motion streak behind for travel.
 function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   // Story 10-8: the whole volley shares one CHACOU tint set by how many charges
   // are in flight this frame (the count is constant across these bullets). Per DA-004
