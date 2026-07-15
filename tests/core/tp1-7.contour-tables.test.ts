@@ -254,3 +254,84 @@ describe('tp1-7 — lang-review on the new table lookups', () => {
     expect(rulesCode).not.toMatch(/initialSpikeHeightForLevel[\s\S]{0,400}as any/)
   })
 })
+
+// ── WSPIMX record 6: the RADIX TYPO the Reviewer caught (red rework) ───────────
+// ALWELG.MAC:633 `.BYTE T1,35,39.,1` — the start byte `35` has NO trailing dot (od -c: a
+// comma follows it directly), so under ALWELG's HEX ambient radix (bare 0FF/1F immediates
+// prove radix 16 — e.g. the CONTOUR fold's `AND I,1F` at :419) it assembles to 0x35 = 53,
+// NOT decimal 35. The assembled record is [53,39] — start > end — so it covers NO wave:
+// waves 35-39 fall through to spiker-max 0, exactly like every OTHER gap in this table
+// (17-19, 33-34, 40-42). The port transcribed it as DECIMAL 35 -> {start:35,end:39,v:1} ->
+// max 1, an AC-1 verbatim violation. RULING: match the assembled bytes (0x35=53 -> max 0);
+// the sibling min table WSPIMI:625 DOTS it (`35.` = dec 35, min 1), so the ROM is genuinely
+// self-contradictory on 35-39 (min 1 > max 0) — a 1981 typo that tp1-8's NYMCHA solver, not
+// this story, must resolve. Latent for tp1-7 (only firstNonZeroWave=4 is consumed), so this
+// pin is what makes Dev's one-line fix verifiable. This suite is CI-safe (reads rules.ts,
+// which is not copyrighted) — unlike tp1-7.source-rules.test.ts, which skips when the ROM is
+// absent; the ROM-side byte pins for :633/:625 live there.
+describe('tp1-7 — WSPIMX record 6 assembles the ROM byte (the radix rework)', () => {
+  // Parse the port's WSPIMX literal and walk it exactly as contourValue does (rules.ts:556).
+  // Records are single-brace objects; the only inner `]` is a vs:[...] array (never at column
+  // 0), so match the array's true close at a `]` that starts a line.
+  const block = /const WSPIMX:[^\n]*=\s*\[\n([\s\S]*?)\n\]/.exec(rulesCode)
+  const records = [...(block?.[1] ?? '').matchAll(/\{[^{}]*\}/g)].map((m) => {
+    const body = m[0]
+    const vs = /vs:\s*\[([^\]]*)\]/.exec(body)
+    const v = /\bv:\s*(-?\d+)/.exec(body)
+    return {
+      t: /t:\s*'(\w+)'/.exec(body)![1],
+      start: Number(/start:\s*(-?\d+)/.exec(body)![1]),
+      end: Number(/end:\s*(-?\d+)/.exec(body)![1]),
+      v: v ? Number(v[1]) : undefined,
+      vs: vs ? vs[1].split(',').map((x) => Number(x.trim())) : undefined,
+    }
+  })
+  // The playable band (<=42) needs no CONTOUR fold; mirror the walk: first covering record, else 0.
+  const spikerMax = (wave: number): number => {
+    for (const r of records) {
+      if (wave < r.start || wave > r.end) continue
+      if (r.t === 'T1') return r.v!
+      if (r.t === 'TZ') return r.vs![wave - r.start]
+    }
+    return 0
+  }
+
+  it('sanity: the WSPIMX table was parsed out of rules.ts', () => {
+    expect(block, 'const WSPIMX not found in rules.ts').not.toBeNull()
+    expect(records.length).toBeGreaterThan(5)
+  })
+
+  it('BITES: waves 35-39 have spiker-max 0 (assembled 0x35=53 dead range), not the decimal-misread 1', () => {
+    for (let w = 35; w <= 39; w++) {
+      expect(spikerMax(w), `wave ${w}: ALWELG.MAC:633 assembles [53,39] -> a gap -> max 0`).toBe(0)
+    }
+  })
+
+  it('BITES: the decimal-misread record {start:35,end:39} is gone (verbatim 0x35=53, or the record dropped)', () => {
+    expect(
+      records.some((r) => r.start === 35 && r.end === 39),
+      'rules.ts still reads ALWELG.MAC:633 as decimal 35 — the un-dotted byte is HEX 0x35 = 53',
+    ).toBe(false)
+  })
+
+  it('GUARD: the fix leaves the spiker INTRODUCTION and every other early-wave max byte-identical', () => {
+    // Record 6 is latent; the fix must touch nothing else. These are the keep-behavior anchors.
+    expect(spikerMax(4)).toBe(2) // TZ intro (:628) — spikers first appear on wave 4 (W-035)
+    expect(spikerMax(7)).toBe(4) // T1 :629
+    expect(spikerMax(16)).toBe(3) // T1 :630
+    expect(spikerMax(25)).toBe(2) // T1 :631
+    expect(spikerMax(32)).toBe(2) // TZ :632 (vs[6])
+    expect(spikerMax(43)).toBe(1) // T1 :634 — the record AFTER the gap
+    let firstNonZero = 1
+    for (let w = 1; w <= 99; w++) if (spikerMax(w) > 0) { firstNonZero = w; break }
+    expect(firstNonZero, 'SPIKER_INTRO_WAVE must stay 4').toBe(4)
+  })
+
+  it('the radix decode, written into the test so no one regresses to decimal', () => {
+    // WSOBJ/ALVROM radix lesson: pin the refutation, not just the value.
+    expect(parseInt('35', 16)).toBe(53) // :633 un-dotted -> hex
+    expect(parseInt('35', 16)).not.toBe(35) // NOT decimal
+    expect(parseInt('35', 16)).toBeGreaterThan(39) // start 53 > end 39 => covers no wave => max 0
+    expect(parseInt('35', 10)).toBe(35) // :625 `35.` dotted -> decimal, min 1: the typo is one dot
+  })
+})

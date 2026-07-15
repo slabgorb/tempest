@@ -228,3 +228,58 @@ describe.skipIf(!sourceAvailable)('tp1-7 — WTABLE binds each table to the para
     expect(body).toMatch(/\.WORD\s+TELIHI,NWTELI/)
   })
 })
+
+describe.skipIf(!sourceAvailable)('tp1-7 — WSPIMX record 6 is a RADIX TYPO (:633 vs :625) — the Reviewer finding', () => {
+  // The "intro waves" test above pins only WSPIMX's FIRST record (the TZ, waves 1-6). Record 6
+  // (:633) went unpinned and a decimal misread of an un-dotted hex byte slipped through. Pin it
+  // now, radix-decoded, so no future transcription can regress. ALWELG.MAC has NO `.RADIX` line
+  // — the radix is inherited HEX (bare 0FF/1F immediates only parse under radix 16; the CONTOUR
+  // fold's `AND I,1F` at :419, already pinned above, is the proof). A trailing dot forces
+  // DECIMAL; its absence leaves the ambient hex. EVERY multi-digit start in BOTH tables is
+  // dotted — except :633.
+
+  /** One numeric token, assembled the way MACRO does: trailing dot = decimal, else ambient HEX. */
+  const asm = (tok: string): number =>
+    tok.endsWith('.') ? parseInt(tok.slice(0, -1), 10) : parseInt(tok, 16)
+
+  it('the ambient radix is HEX — the assembler reads a bare token as base 16', () => {
+    expect(asm('1F')).toBe(31) // bare hex-only literal — cannot be decimal or octal
+    expect(asm('0FF')).toBe(255)
+    expect(asm('35')).toBe(53) // the disputed byte, UN-dotted -> 0x35
+    expect(asm('35.')).toBe(35) // its dotted sibling -> decimal
+  })
+
+  it(':633 WSPIMX record 6 — `35` is UN-dotted, so it assembles to 0x35 = 53: a DEAD [53,39] range', () => {
+    const w = lineOf(/^WSPIMX:/)
+    expect(line(w + 5)).toBe('\t.BYTE T1,35,39.,1') // verbatim: 35 has no dot, 39. does
+    const [, startTok, endTok] = /\.BYTE T1,([^,]+),([^,]+),/.exec(line(w + 5))!
+    expect(startTok).toBe('35') // no trailing dot
+    expect(endTok).toBe('39.') // dotted
+    expect(asm(startTok)).toBe(53) // 0x35
+    expect(asm(endTok)).toBe(39)
+    expect(asm(startTok)).toBeGreaterThan(asm(endTok)) // 53 > 39 => the record covers NO wave
+  })
+
+  it(':625 WSPIMI record — the SAME band is DOTTED (`35.` = decimal 35, min 1): the typo is one dot', () => {
+    const m = lineOf(/^WSPIMI:/)
+    expect(line(m + 4)).toBe('\t.BYTE T1,35.,39.,1') // dotted 35. — decimal, min 1 on 35-39
+    const [, startTok] = /\.BYTE T1,([^,]+),/.exec(line(m + 4))!
+    expect(startTok).toBe('35.')
+    expect(asm(startTok)).toBe(35) // decimal — WSPIMI covers waves 35-39 with min 1
+  })
+
+  it('the assembled ROM is SELF-CONTRADICTORY on 35-39: min 1 (WSPIMI) > max 0 (WSPIMX) — a 1981 typo', () => {
+    // Not a decode bug — a ROM bug. tp1-8's NYMCHA reads both tables per wave and must resolve
+    // min>max on these five waves; pinned here so tp1-8 cannot miss it. WSPIMX's dead [53,39]
+    // range yields the gap value 0; WSPIMI's dotted 35. yields min 1. The verbatim transcription
+    // SURFACES the contradiction — the decimal misread hides it behind an accidental max=1.
+    const maxStart = asm('35') // 53
+    const maxEnd = asm('39.') // 39
+    for (let wave = 35; wave <= 39; wave++) {
+      const wspimxCovers = wave >= maxStart && wave <= maxEnd
+      expect(wspimxCovers, `WSPIMX record 6 must NOT cover wave ${wave} (max 0)`).toBe(false)
+      const wspimiCovers = wave >= 35 && wave <= 39 // WSPIMI:625 dotted -> decimal 35..39
+      expect(wspimiCovers, `WSPIMI record must cover wave ${wave} (min 1)`).toBe(true)
+    }
+  })
+})
