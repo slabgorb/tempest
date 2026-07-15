@@ -174,8 +174,9 @@ export function makeEnemy<K extends EnemyKind>(
  *     other. We track the committed-lane set directly instead of the ROM's
  *     NEOFLI/OLOFLI bit double-buffer.
  *
- * The invader's KIND rolls at hatch time (the ROM's NYMCHA — the per-type
- * population solver — is story tp1-8; until it lands, rollSpawnKind stands in).
+ * The invader's KIND is decided at hatch time by NYMCHA (rules.ts, tp1-8) — the ROM's
+ * per-type min/max population solver reading the live board — which may also DECLINE
+ * (no type may launch), in which case the nymph goes back in the queue like a full board.
  */
 function stepNymphs(s: GameState): void {
   s.qframe += 1

@@ -63,7 +63,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 759,
+      "line": 760,
       "verbatim": "    const spikeThreat = s.spikes.some((h) => h > 0)"
     },
     "claim": "INDROP counts live enemy lines across ALL 16 lanes before deciding to warn: 'LDX I,NLINES-1 / BEGIN / LDA X,LINEY / IFNE / INC ELICNT ;COUNT LIVE SPIKES / ENDIF / DEX / MIEND' (ALWELG.MAC:3150-3157), then 'LDA ELICNT / IFNE ;ENEMY LINES?' (3158-3159). It does NOT check whether the spike is on the player's own lane. Our spikeThreat = s.spikes.some((h) => h > 0) is the same any-lane predicate.",
@@ -97,7 +97,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 905,
+      "line": 906,
       "verbatim": "  if (s.warp.warning > 0) {"
     },
     "claim": "When it warns, INDROP does not enter drop mode: it sets 'LDA I,CPAUSE / STA QSTATE ;PAUSE FIRST' then 'LDA I,CDROP / STA QNXTSTA ;THEN DROP MODE' (ALWELG.MAC:3166-3169), so the Claw sits at CURSY = ILINLIY for the whole timer with no descent and no spike check. The PAUSE state handler still rotates the player - it ends with 'JMP MOVCUR ;UPDATE CURSOR (IF ALIVE)' (ALEXEC.MAC:129). Our stepWarp returns early while s.warp.warning > 0 (no velocity integration, no resolveWarpSpikeHit), and stepPlayer still runs every warp frame (src/core/sim.ts:748).",
@@ -114,7 +114,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 866,
+      "line": 867,
       "verbatim": "  if (height > 0 && warpClawDepth(s.warp.progress) <= height) {"
     },
     "claim": "MOVCUD's collision loop (ALWELG.MAC:1082-1103) runs only while CURSY < ILINDDY, and per lane requires the line to be alive ('LDA X,LINEY / IFNE ;ACTIVE LINE?'), to be the player's lane ('CPX CURSL1 / IFEQ ;SAME LINE AS CURSOR?', 1089-1090) and then 'CMP CURSY / IFCC' (1091-1092), i.e. LINEY < CURSY - the cursor's along-coordinate has passed the spike's tip. Mapping the ROM's along axis to our depth (depth = (0xF0 - along)/224), LINEY < CURSY is exactly clawDepth <= spikeHeight. Our check is `height > 0 && warpClawDepth(s.warp.progress) <= height` on currentLane only. Same predicate, same lane restriction, boundary differs only by strict-vs-inclusive on an exact float tie.",
@@ -295,7 +295,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 751,
+      "line": 752,
       "verbatim": "  if (s.enemies.length === 0 && s.spawn.nymphs.length === 0) {"
     },
     "claim": "ANALYZ decides to start the drop (ALWELG.MAC:3101-3117) when the cursor is alive and at the top, all nymphs are converted and all explosions are done ('LDA NYMCOU / ORA EXPCOU / IFEQ', 3103-3105), and no invader is still down the well: the loop tests 'LDA Y,INVAY / IFNE / CMP I,11 / BCS LINER ;EXIT IF LINER (NOT AT TOP)' (3108-3111) - only invaders with INVAY >= 0x11 abort the drop. An invader sitting AT the rim (INVAY <= 0x10 = ILINLIY) does not, so the ROM will warp out from under a still-living flipper or fuseball that has reached the top. Our gate is 'if (s.enemies.length === 0 && s.spawn.remaining === 0)' - any living enemy anywhere, including one at the rim, blocks the warp indefinitely.",

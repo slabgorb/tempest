@@ -859,10 +859,11 @@ export interface NymchaPick {
 }
 
 // LINEY (the ROM's per-line enemy reach): a lane whose deepest enemy is near the rim is a LONG
-// line, an empty/shallow one short/dead. LINEY is an INVAY value, inverted from our depth (0 far
-// -> 1 near rim), so the ROM's `CMP I,0CC` threshold maps to ~0.2 of our depth — any enemy past
-// it makes the line long.
-const LINE_LONG_DEPTH = 1 - 0xcc / 0xff // ~0.2
+// line, an empty/shallow one short/dead. LINEY is an INVAY along-byte; our depth is its inversion,
+// via the file's own along->depth mapping `(0xF0 - byte) / WARP_ALONG_SPAN` (see
+// initialSpikeHeightForLevel). So the ROM's `CMP I,0CC` (ALWELG.MAC:1376) threshold is 0xCC decoded
+// through that same mapping — any enemy deeper than this reads as a long line.
+const LINE_LONG_DEPTH = (0xf0 - 0xcc) / WARP_ALONG_SPAN // 0xCC under the file's INVAY->depth map (~0.161)
 
 function lineIsLong(enemies: readonly Enemy[], lane: number): boolean {
   let reach = 0
@@ -892,9 +893,14 @@ export function nymcha(level: number, enemies: readonly Enemy[], hatchLane: numb
 
   // 1. openings[t] = max(0, WFLMAX[t] - FLIPCO[t]) (:1273-1282).
   const openings = count.map((c, ix) => Math.max(0, typeMax(ix, level) - c))
-  // 2. reserve TWO openings of each live carrier tanker's cargo type (:1286-1303). Clamp at 0:
-  //    the ROM DECs raw, but the tables never over-subscribe a reachable board, so a byte wrap is
-  //    unreachable and clamping is the faithful reading.
+  // 2. reserve TWO openings of each live carrier tanker's cargo type (:1286-1303). DEVIATION: the
+  //    ROM does a raw byte `DEC` twice, which CAN underflow on a reachable board — e.g. wave 6
+  //    (WFLIMX=5) with 2 flipper-carrying tankers + 2 split flippers gives openings[flipper]
+  //    5-2=3 then -2-2 -> 0xFF, which the step-3 cap then rescues to `free` (a phantom opening).
+  //    We clamp at 0 instead (reserve everything). This is a conscious deviation, not byte-faithful,
+  //    but its impact is muted: a min-0 type (the only kind that ever over-subscribes here, since
+  //    flippers are the sub-33 cargo) never launches fresh anyway, so the phantom opening only ever
+  //    shifts openCount, never the spawned type. See tp1-8 Reviewer Item 5.
   for (const e of enemies) {
     if (e.kind === 'tanker') {
       const cix = CARGO_TYPE_IX[e.contains]
