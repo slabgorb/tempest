@@ -19,6 +19,7 @@ import type { GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { tubeForLevel, wrapLane } from '../../src/core/geometry'
+import { initialSpikeHeightForLevel } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
@@ -69,7 +70,7 @@ describe('advanceLevel — spike array resize (AC2)', () => {
     }
   })
 
-  it('starts every lane of the new spike array at 0 — no stale heights carried over', () => {
+  it('starts every lane of the new spike array at the wave SEED height — no stale carryover (RE-SEATED by tp1-7)', () => {
     const s = clearedAtLevel(7, 0) // 16-lane closed source level
     s.spikes = new Array(s.tube.laneCount).fill(0.5) // pretend the level was full of spikes
     s.spikes[0] = 0 // ...except the player's lane (0): a spike there now crashes the Claw
@@ -80,7 +81,12 @@ describe('advanceLevel — spike array resize (AC2)', () => {
 
     expect(out.level).toBe(8)
     expect(out.spikes).toHaveLength(15) // shrunk to the open V funnel's laneCount
-    expect(out.spikes.every((h) => h === 0)).toBe(true) // fresh fill(0), not truncated/copied
+    // The new array is a FRESH seed from TELIHI (W-037/tp1-7), not a truncation/copy of the
+    // stale 0.5 heights. Wave 8 is past the wave-4 pre-seed threshold, so "no carryover" now
+    // means "uniformly the wave's non-zero TELIHI height" — none of the stale 0.5 values survive.
+    const seed = initialSpikeHeightForLevel(8)
+    expect(seed).toBeGreaterThan(0)
+    for (const h of out.spikes) expect(h).toBeCloseTo(seed, 9)
   })
 })
 

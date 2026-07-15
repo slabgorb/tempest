@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 122,
+      "line": 118,
       "verbatim": "// Board depth (MAX_HIGH_SCORES) now lives in @arcade/shared/highscore — the"
     },
     "claim": "The 1981 board keeps exactly 8 ranked entries (NHISCO=8 sizes INITAL to 3*8=24 bytes and HSCORL/M/H to 8 slots throughout ALSCOR.MAC's HISCHK/INIINI). Our shared high-score module keeps 10, and its own doc-comment calls that \"the classic 10-deep arcade ladder\" — Tempest's classic ladder is 8-deep, not 10.",
@@ -63,7 +63,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 82,
+      "line": 83,
       "verbatim": "  const initials = stepNameEntry(s.entry.initials, key, MAX_INITIALS)"
     },
     "claim": "The ROM's initial-selection cursor (GINICO/GETINI, ALSCOR.MAC:781-789) cycles a value 0-26 where 0-25 map through the ASCVG table to 'A'-'Z' and 26 (CBLANK) is an explicit blank/space glyph — 27 selectable symbols per character slot, and unfilled/default initials are seeded as blank (`LDA I,CBLANK` in HISCHK, ALSCOR.MAC:629-631). Our `stepNameEntry` regex `/^[a-zA-Z]$/` accepts only the 26 letters; there is no blank/space keystroke, and an unfilled slot is simply absent from the string rather than a stored blank character.",
@@ -82,7 +82,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 53,
+      "line": 54,
       "verbatim": "const MAX_INITIALS = 3"
     },
     "claim": "The ROM reserves exactly 3 initial-bytes per ranked entry (3*NHISCO where NHISCO=8), and our entry buffer caps at MAX_INITIALS=3 — the classic 3-character arcade initials convention is preserved exactly."
@@ -132,7 +132,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 133,
+      "line": 129,
       "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
     },
     "claim": "BLIFIN is a 1-byte RAM variable (not a compile-time constant) that BOLOUT displays via 3-digit BCD output captioned \"OUTPUT 10K & 20K\" (ALSCOR.MAC:966-979) — i.e. its value is operator-set via the cabinet's game-play options, with no fixed default anywhere in ALSCOR.MAC/ALCOMN.MAC. `EXTRA_LIFE_INTERVAL = 10000` in rules.ts is a single, permanent, non-configurable value.",
@@ -150,7 +150,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 122,
+      "line": 118,
       "verbatim": "// Board depth (MAX_HIGH_SCORES) now lives in @arcade/shared/highscore — the"
     },
     "claim": "INIINI (ALSCOR.MAC:513-536) seeds all 8 initial-triples from SCOINI's ASCVG string (\"HEB PJM LDS TFD HPM RRR SED DJE\") and seeds every HSCORL/M/H byte to 1 (lines 546-550) whenever the EAROM reads as blank/corrupt — a freshly-initialized board is never actually empty, it has 8 placeholder rows. Our `load()` returns `[]` whenever localStorage has no entry, so a fresh browser board has zero rows until a real qualifying score is inserted.",
@@ -169,7 +169,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 124,
+      "line": 120,
       "verbatim": "export const SCORE_FLIPPER = 150"
     },
     "claim": "ALSCOR.MAC/ALEARO.MAC/ALCOMN.MAC contain no table of per-enemy-type point values and no fuseball-depth-band or spike-shortening point logic (grepped for FLIP/TANK/SPIK/PULS/FUSE and every plausible point literal — none). Even bonus-score computation is external: BONSCO is only declared `.GLOBL` and invoked (`JSR BONSCO` at BODSPL, ALSCOR.MAC:1250-1251) — ALSCOR.MAC receives a computed score and displays/accumulates/persists it; it does not decide per-kill values. Our SCORE_FLIPPER/SCORE_TANKER/SCORE_SPIKER/SCORE_PULSAR/SCORE_FUSEBALL_BASE+STEP/SCORE_SPIKE_SEGMENT constants (rules.ts:21-27) all live in the awarding side, which this pair's primary source does not cover.",

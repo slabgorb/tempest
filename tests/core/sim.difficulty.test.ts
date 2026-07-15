@@ -51,16 +51,20 @@ function rollSequence(level: number, seed: number, n: number): EnemyKind[] {
 }
 
 describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
-  it('keeps speeds increasing across the level-16 → 17+ cycle boundary', () => {
-    // AC#1: difficulty does not reset when geometry repeats. Level 20 reuses
-    // the level-4 geometry but must move faster than level 16 in every speed.
-    const p16 = levelParams(16)
-    const p20 = levelParams(20)
-    expect(p20.flipperSpeed).toBeGreaterThan(p16.flipperSpeed)
-    expect(p20.spikerSpeed).toBeGreaterThan(p16.spikerSpeed)
-    expect(p20.fuseballSpeed).toBeGreaterThan(p16.fuseballSpeed)
-    expect(p20.tankerSpeed).toBeGreaterThan(p16.tankerSpeed)
-    expect(p20.enemyCount).toBeGreaterThan(p16.enemyCount)
+  it('difficulty rises over the long run, following the ROM per-wave tables (RE-SEATED by tp1-7)', () => {
+    // This `it` used to assert every speed AND the enemy count rise MONOTONICALLY across the
+    // level-16 -> 17 geometry wrap (p20 > p16). The ROM refutes that outright:
+    //   • TINVIN (W-012) DIPS at wave 17 — invaders restart at -81, SLOWER than wave 16's -96.
+    //   • TNYMMX (W-011) drops the count too — 27 at wave 16, 23 at wave 20.
+    // So the per-wave curve is NOT a monotonic ramp; its exact shape is the ROM's, pinned in
+    // tp1-7.contour-tables.test.ts. What survives of story 3-4's AC#1 is (a) the LONG-RUN rise
+    // and (b) that the geometry wrap is not a difficulty RESET — the latter now carried by the
+    // enemy MIX (the hard-enemy escalation below), not a hand-tuned per-level speed curve.
+    expect(levelParams(33).flipperSpeed).toBeGreaterThan(levelParams(1).flipperSpeed)
+    expect(levelParams(33).enemyCount).toBeGreaterThan(levelParams(1).enemyCount)
+    // The wave-17 dip is REAL and intended (W-012). This is the assertion that replaces the
+    // refuted p20 > p16: a step DOWN, not up, right after the wrap.
+    expect(levelParams(17).flipperSpeed).toBeLessThan(levelParams(16).flipperSpeed)
   })
 
   // 'keeps spawn cadence tightening across the cycle boundary' stood here, pinning
@@ -72,13 +76,14 @@ describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
   // `pulseInterval` in tp1-5 — the ramp keeps losing numbers that were never the
   // ROM's to scale.)
 
-  it('clamps timing floors so no cadence hits zero at very high levels', () => {
-    // AC#2's survivor: with spawnInterval and pulseInterval both structural now,
-    // the ramp's remaining per-level cadences are the speeds — assert the ramp
-    // keeps them finite and ordered instead.
+  it('keeps speeds finite and RISING past the L33 tier — they are not capped there (RE-SEATED by tp1-7)', () => {
+    // The old assertion was `flipperSpeed(50) <= flipperSpeed(33)` — it assumed the L33 tier
+    // was the fast cap. TINVIN refutes it (W-012): the table keeps climbing after 33 (-108 at
+    // 33-39, -110 at 40-48, -120 at 49-64), so level 50 is strictly FASTER than level 33. The
+    // survivor of AC#2 is only that the speed stays finite and does not collapse.
     const p = levelParams(50)
     expect(p.flipperSpeed).toBeGreaterThan(0)
-    expect(p.flipperSpeed).toBeLessThanOrEqual(levelParams(33).flipperSpeed)
+    expect(p.flipperSpeed).toBeGreaterThan(levelParams(33).flipperSpeed)
   })
 })
 
@@ -91,16 +96,21 @@ describe('rollSpawnKind roster & introduction schedule (AC#3, AC#4)', () => {
     }
   })
 
-  it('preserves the authentic ROM early-level introduction schedule', () => {
-    // AC#4 (reconciled by story 6-13): cycle scaling must NOT leak hard enemies
-    // in before their *authentic* gate. Levels 1-4: flippers only. Level 5
-    // introduces tankers/spikers, but pulsars (L17+) and fuseballs (L11+) stay
-    // out. Source: docs/ux/2026-06-27-enemy-roster-rom-extract.md §H.
-    for (const level of [1, 2, 3, 4]) {
-      expect(rollDistribution(level, 11, 500)).toEqual(
-        new Map<EnemyKind, number>([['flipper', 500]]),
-      )
-    }
+  it('preserves the authentic ROM early-level introduction schedule (RE-SEATED by tp1-7)', () => {
+    // AC#4, corrected by tp1-7/W-035: the introduction is the WTANMX/WSPIMX max tables, not
+    // the enemy-roster doc this test used to cite (docs/ux/2026-06-27-enemy-roster-rom-extract.md
+    // §H) — which W-035 refutes. Tankers first appear on WAVE 3 and spikers on WAVE 4, not both
+    // at level 5. Pulsars (17+) and fuseballs (11+) still stay out. Only the INTRODUCTION waves
+    // move; the weighted mix and per-cycle hard scaling are untouched.
+    expect(rollDistribution(1, 11, 500)).toEqual(new Map<EnemyKind, number>([['flipper', 500]]))
+    expect(rollDistribution(2, 11, 500)).toEqual(new Map<EnemyKind, number>([['flipper', 500]]))
+
+    const d3 = rollDistribution(3, 11, 2000)
+    expect(d3.get('tanker') ?? 0, 'tanker enters at wave 3').toBeGreaterThan(0)
+    expect(d3.get('spiker') ?? 0, 'the spiker has not yet, at wave 3').toBe(0)
+
+    const d4 = rollDistribution(4, 11, 2000)
+    expect(d4.get('spiker') ?? 0, 'spiker enters at wave 4').toBeGreaterThan(0)
 
     const d5 = rollDistribution(5, 11, 2000)
     expect(d5.get('tanker') ?? 0).toBeGreaterThan(0)

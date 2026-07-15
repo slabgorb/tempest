@@ -21,7 +21,7 @@ import { initialState, GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
 import { tubeForLevel } from '../../src/core/geometry'
-import { START_LIVES, levelParams } from '../../src/core/rules'
+import { START_LIVES, levelParams, initialSpikeHeightForLevel } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const DT = 1 / 60
@@ -143,7 +143,12 @@ describe('framing — start-level select', () => {
     expect(out.level).toBe(4)
     expect(out.tube).toEqual(tubeForLevel(4))
     expect(out.spikes).toHaveLength(tubeForLevel(4).laneCount)
-    expect(out.spikes.every((h) => h === 0)).toBe(true)
+    // RE-SEATED by tp1-7 (W-037): starting at wave 4 SEEDS the well with the TELIHI pre-spikes.
+    // INIENE runs at every wave init — advanced start included — so this is no longer a clean
+    // fill(0); every lane opens at the wave's pre-seed height.
+    const spikeSeed = initialSpikeHeightForLevel(4)
+    expect(spikeSeed).toBeGreaterThan(0)
+    for (const h of out.spikes) expect(h).toBeCloseTo(spikeSeed, 9)
     expect(out.player.alive).toBe(true)
     expect(out.player.lane).toBe(0)
     expect(out.player.superzapper).toBe('full')

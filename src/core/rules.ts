@@ -59,16 +59,12 @@ export const SIM_STEP = 9 / 256   // seconds per sim step == one ROM frame == 1 
 // "N along-units per FRAME" and converts as (N * ROM_FPS) / WARP_ALONG_SPAN.
 export const WARP_ALONG_SPAN = 0xf0 - 0x10  // 224 ROM along-units
 
-// The ROM's flipper climb bytes, in along-units per FRAME. The ROM ramps the byte
-// linearly from L1 to L33+, then holds. These are ROM data, not rates — they only
-// become depth/sec when multiplied by ROM_FPS.
-//
-// Declared up here with the clock because the PULSAR shares the L1 byte: spd_pulsar
-// is hardcoded to the same value. Both constants below derive from this one name, so
-// the "pulsar == L1 flipper" invariant is structural and cannot be broken by fixing
-// one and forgetting the other.
-const FLIPPER_ALONG_PER_FRAME_L1 = 1.375   // x 60 gave the notorious 82.5 "along/s"
-const FLIPPER_ALONG_PER_FRAME_L33 = 3.375  // x ROM_FPS = exactly 96 along/s
+// The ROM's L1 flipper climb byte, in along-units per FRAME. The PULSAR shares it
+// (spd_pulsar is hardcoded to the same value), so it stays a named constant even though
+// the per-wave flipper speed now comes from the TINVIN table (tp1-7) rather than a linear
+// L1→L33 ramp: the "pulsar == L1 flipper" invariant is structural. The full climb curve is
+// TINVIN (which DIPS at wave 17 and keeps climbing past 33), not a straight line.
+const FLIPPER_ALONG_PER_FRAME_L1 = 1.375   // x 60 gave the notorious 82.5 "along/s"; = -44/32 raw
 const PULSAR_ALONG_PER_FRAME = FLIPPER_ALONG_PER_FRAME_L1
 
 export const SPIN_SENSITIVITY = 0.15
@@ -224,9 +220,10 @@ export const WARP_STARFIELD_GATE = (0x50 - 0x10) / WARP_ALONG_SPAN  // 64/224 �
 // eye fly-in are the SAME post-descent phase, so the two constants unify to this one.
 export const WARP_FLYIN_FRAMES = Math.ceil(WARP_ALONG_SPAN / 0x18)  // ceil(224/24) = 10
 // --- Enemy energy bolts (Story 6-5), authentic rev-3 -------------------------
-// Max concurrent enemy bolts on screen (ROM n_enemy_bullets = 4). A hard cap;
-// it is also what makes the per-live-bolt fire odds self-limiting.
-export const MAX_ENEMY_BULLETS = 4
+// The live concurrent-bolt cap is PER WAVE — `enemyBoltCapForLevel` (TCHAMX, tp1-7), read
+// at the fire gate in sim.ts — NOT a flat 4. NICHARG=4 (ALCOMN.MAC:813) was only the ROM's
+// physical charge-array size; the old flat MAX_ENEMY_BULLETS conflated it with the live cap
+// (WCHAMX+1 = 2 at wave 1), doubling the arcade's early bolt pressure. W-019 / DA-002.
 // An enemy must be at least this far up the well ("along >= 0x30") before it may
 // fire — freshly spawned enemies near the far end stay silent.
 export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
@@ -237,9 +234,12 @@ export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
 // were equal, and they were, by coincidence, until the tanker's split moved to the ROM's
 // $20. They are separate rules: when a carrier bursts, and when an invader stops firing.)
 export const ENEMY_FIRE_MAX_DEPTH = 0.9   // at/after this an invader is grabbing/splitting, not shooting
-// A bolt's depth/sec beyond its level's flipper speed ("flipper-relative +0xc0"),
-// so a bolt always OUTRUNS a flipper. L1 ≈ 0.18 + 0.72 = 0.9 (ROM ~-202/s).
-export const ENEMY_BOLT_SPEED_OFFSET = 0.72
+// A bolt's depth/sec beyond its level's invader speed. TCHARIN (ALWELG.MAC:600-601) is a
+// SINGLE TB record, byte -64, for every wave: WCHARL = WINVIL - 64, and TIMES8 scales both
+// identically, so the bolt is ALWAYS exactly |−64|/32 = 2.0 along-units/frame faster than the
+// invader that fired it (W-020). At the real clock that offset is 0.254 depth/s — the invented
+// 0.72 was 2.83x too fast. The +2.0 is wave-independent, so this stays one constant, not a table.
+export const ENEMY_BOLT_SPEED_OFFSET = ((Math.abs(-64) / 32) * ROM_FPS) / WARP_ALONG_SPAN
 
 // WHO may fire (the can-shoot bit, gate L028a 0x40). User decision 2026-06-27:
 // match the literal rev-3 code — Flippers, Tankers and Spikers always; Pulsars
@@ -395,7 +395,7 @@ const TWFUSC: ReadonlyArray<
  * the very bug this story exists to remove. (Found in review, round 1.)
  */
 export function wfuschForLevel(level: number): number {
-  const wave = level >= 99 ? 99 : level   // CONTOUR's fold — see above
+  const wave = contourWave(level)   // CONTOUR's fold — extracted once, tp1-7 (see contourWave)
   for (const r of TWFUSC) {
     if (wave < r.start || wave > r.end) continue
     switch (r.type) {
@@ -518,23 +518,197 @@ export const FUSE_RANGE_FLOOR_DEPTH = (0xf0 - 0x80) / WARP_ALONG_SPAN  // = 0.5
 // `CPY I,17.` on the 0-based CURWAV: the last DISPLAYED wave that is "early".
 export const FUSE_EARLY_WAVE_MAX = 17
 
-// Authentic flipper climb speed (story 6-9, REBASED by tp1-1). The ROM steps the
-// flipper's climb byte from 1.375 along/frame at L1 to 3.375 at L33+ (then flat),
-// ramping linearly between. A rate of `alongPerFrame` per ROM FRAME is
-// (alongPerFrame * ROM_FPS) / WARP_ALONG_SPAN in our depth/sec.
+// ─── THE SKILL CONTOUR: CONTOUR/WTABLE (tp1-7) ───────────────────────────────
 //
-// L1  → 39.1/224 = 0.175 depth/s (~5.7 s up the tube)
-// L33 → 96.0/224 = 3/7 = 0.429 depth/s
-//
-// Story 6-9 wrote `* 60` here and got 0.368 depth/s / a 2.7 s traverse, and it did so
-// in the name of fidelity. The value it REPLACED — an "invented approximation" of
-// 0.18 depth/s — was very nearly right. Tankers climb at flipper speed; fuseballs 2x.
-export function flipperSpeedForLevel(level: number): number {
-  const t = Math.max(0, Math.min(1, (level - 1) / 32)) // 0 at L1, 1 at L33+, clamped
-  const alongPerFrame =
-    FLIPPER_ALONG_PER_FRAME_L1 + (FLIPPER_ALONG_PER_FRAME_L33 - FLIPPER_ALONG_PER_FRAME_L1) * t
-  return (alongPerFrame * ROM_FPS) / WARP_ALONG_SPAN
+// The ROM sets every per-wave difficulty parameter by walking WTABLE and dispatching on a
+// one-byte TYPE CODE (ALWELG.MAC:398-470 CONTOUR, :762 DOTYPE). We port that machinery ONCE
+// and read eight tables through it — enemy count, invader speed, spiker speed, enemy-bolt
+// cap, enemy-bolt speed, tanker cargo, the introduction maxes, and the pre-seeded spikes.
+// The hand-tuned curves each replaces are DELETED (tp1-7 AC-2), not left as fallbacks.
+
+// CONTOUR rewrites the wave BEFORE the walk (ALWELG.MAC:415-423): for CURWAV >= 98 (displayed
+// wave >= 99) it substitutes a RANDOM wave in 65..96, so the ROM can never fall off its own
+// table. Our s.level is uncapped (sim.ts increments it forever; MAX_SELECT_LEVEL bounds only
+// the SELECT screen), so a naive walk returns the end-of-table 0 above wave 99 — catastrophic
+// here (0 enemies, a 0/1 bolt cap, a frozen speed). We fold deterministically to 99, the last
+// row of every table. For the single-record deep tables that is byte-identical to the ROM's
+// random band; for the multi-record ones (TNYMMX/TINVIN) it lands on the hardest wave rather
+// than the RNG the port cannot reproduce (tp1-7 deviations). This is the shared helper the
+// tp1-26 epic note asks for — wfuschForLevel routes through it, and WPULTIM/WPULPOT will.
+export function contourWave(level: number): number {
+  return level >= 99 ? 99 : level
 }
+
+// A CONTOUR record, keyed by the ROM's type code (ALWELG.MAC:408-414):
+//   T1 — one byte for the whole range · TZ — one byte per wave · TA — base + delta*offset
+//   TR — alternate two bytes by wave parity (DOTR, :858-865)
+// TB ("add byte to WINVIL") is modelled as T1 for the byte and the WINVIL add is done by the
+// consumer; TZANDF (fold the wave mod 16) is handled in initialSpikeHeightForLevel.
+type ContourRecord =
+  | { readonly t: 'T1'; readonly start: number; readonly end: number; readonly v: number }
+  | { readonly t: 'TZ'; readonly start: number; readonly end: number; readonly vs: readonly number[] }
+  | { readonly t: 'TA'; readonly start: number; readonly end: number; readonly base: number; readonly delta: number }
+  | { readonly t: 'TR'; readonly start: number; readonly end: number; readonly even: number; readonly odd: number }
+
+// CONTOUR's walk: find the record covering the (folded) wave and decode it. Returns the
+// end-of-table 0 (TE) only for a wave BELOW a table's first record — a real answer ("none"/
+// "clean"), never a walk-off, because the fold keeps deep waves on the last record.
+function contourValue(records: readonly ContourRecord[], level: number): number {
+  const wave = contourWave(level)
+  for (const r of records) {
+    if (wave < r.start || wave > r.end) continue
+    switch (r.t) {
+      case 'T1': return r.v
+      case 'TZ': return r.vs[wave - r.start]
+      case 'TA': return r.base + (wave - r.start) * r.delta
+      case 'TR': return (wave - r.start) % 2 === 1 ? r.odd : r.even
+      default: return assertNever(r, 'CONTOUR record type')
+    }
+  }
+  return 0 // TE — end of table
+}
+
+// ── 1. TNYMMX (ALWELG.MAC:697-703) — NWNYMC, the wave's enemy budget. NON-MONOTONIC:
+// it DROPS at wave 7 (22→20) and wave 12 (27→24). A straight line cannot express it (W-011).
+const TNYMMX: readonly ContourRecord[] = [
+  { t: 'TZ', start: 1, end: 16, vs: [10, 12, 15, 17, 20, 22, 20, 24, 27, 29, 27, 24, 26, 28, 30, 27] },
+  { t: 'TA', start: 17, end: 26, base: 20, delta: 1 },
+  { t: 'T1', start: 27, end: 39, v: 27 },
+  { t: 'TA', start: 40, end: 48, base: 29, delta: 1 },
+  { t: 'TA', start: 49, end: 64, base: 31, delta: 1 },
+  { t: 'TA', start: 65, end: 80, base: 35, delta: 1 },
+  { t: 'TA', start: 81, end: 99, base: 43, delta: 1 },
+]
+export function enemyCountForLevel(level: number): number {
+  return contourValue(TNYMMX, level)
+}
+
+// ── 2. TINVIN (ALWELG.MAC:591-599) — WINVIL, the base invader speed (raw byte, negative).
+// TIMES8 (:560-578) scales |WINVIL| into 8.8 fixed point, so along-units/frame = |WINVIL|/32.
+// DIPS at wave 17 (-96 → -81) and keeps CLIMBING past 33; it is NOT a straight line (W-012).
+const TINVIN: readonly ContourRecord[] = [
+  { t: 'TA', start: 1, end: 8, base: -44, delta: -5 },
+  { t: 'TZ', start: 9, end: 16, vs: [-81, -84, -84, -84, -88, -92, -96, -96] },
+  { t: 'TA', start: 17, end: 25, base: -81, delta: -3 },
+  { t: 'TA', start: 26, end: 32, base: -99, delta: -3 },
+  { t: 'TA', start: 33, end: 39, base: -108, delta: -3 },
+  { t: 'TA', start: 40, end: 48, base: -110, delta: -1 },
+  { t: 'TA', start: 49, end: 64, base: -120, delta: -1 },
+  { t: 'TR', start: 65, end: 99, even: -160, odd: -191 },
+]
+function winvilForLevel(level: number): number {
+  return contourValue(TINVIN, level)
+}
+// A raw WINVIL byte → depth/sec: |raw|/32 along-units/frame, then × ROM_FPS / WARP_ALONG_SPAN.
+function invaderSpeedFromRaw(raw: number): number {
+  return ((Math.abs(raw) / 32) * ROM_FPS) / WARP_ALONG_SPAN
+}
+// The flipper (and tanker, and — doubled — fuseball) climb speed IS WINVIL. wave 1 = -44 →
+// 1.375 along/frame (the shared PULSAR L1 byte); wave 33 = -108 → 3.375.
+export function flipperSpeedForLevel(level: number): number {
+  return invaderSpeedFromRaw(winvilForLevel(level))
+}
+
+// ── 3. TSPIIN (ALWELG.MAC:602-605) — the spiker's speed slot is WINVIL + this byte (type TB).
+// The byte is 0 for waves 1-20, so the spiker IS the flipper there; -48/-40 make it FASTER in
+// the late game (W-014). Modelled as the byte (T1); the WINVIL add is here in the consumer.
+const TSPIIN: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 20, v: 0 },
+  { t: 'T1', start: 21, end: 32, v: -48 },
+  { t: 'T1', start: 33, end: 48, v: -40 },
+  { t: 'T1', start: 49, end: 99, v: -48 },
+]
+export function spikerSpeedForLevel(level: number): number {
+  return invaderSpeedFromRaw(winvilForLevel(level) + contourValue(TSPIIN, level))
+}
+
+// ── 4. TCHAMX (ALWELG.MAC:586-588) — WCHAMX, "MAX # ENEMY SHOTS -1". FIREIC searches slots
+// WCHAMX..0 (the ';ADD 1'), so the live concurrent cap is WCHAMX+1: 2 at wave 1, NON-MONOTONIC
+// (up to 4 at wave 5, back to 3 at wave 6). W-019 / DA-002.
+const TCHAMX: readonly ContourRecord[] = [
+  { t: 'TZ', start: 1, end: 9, vs: [1, 1, 1, 2, 3, 2, 2, 3, 3] },
+  { t: 'T1', start: 10, end: 64, v: 2 },
+  { t: 'T1', start: 65, end: 99, v: 3 },
+]
+export function enemyBoltCapForLevel(level: number): number {
+  return contourValue(TCHAMX, level) + 1
+}
+
+// ── 8. TELIHI (ALWELG.MAC:696) — NWTELI, the initial height of every enemy line, a TZANDF
+// table indexed by (wave-1) mod 16 (the trailing 4 bytes are dead — the index never reaches
+// them). Byte 0 = "LINE VACANT" (ALWELG.MAC:2209) → no spike; a non-zero byte is the spike TIP
+// in along-coords, so height = ($F0 - byte)/224. From wave 4 every lane opens spiked (W-037).
+const TELIHI: readonly number[] = [
+  0, 0, 0, 0xe0, 0xd8, 0xd4, 0xd0, 0xc8, 0xc0, 0xb8, 0xb0, 0xa8, 0xa0, 0xa0, 0xa0, 0xa8,
+]
+export function initialSpikeHeightForLevel(level: number): number {
+  const byte = TELIHI[(contourWave(level) - 1) % 16]
+  return byte === 0 ? 0 : (0xf0 - byte) / WARP_ALONG_SPAN
+}
+
+// ── 6. WWTAC2 / WWTAC3 (ALWELG.MAC:614-620) — tanker cargo slots 2 & 3. Slots 0 & 1 are
+// hard-set to flipper on EVERY wave (CONTOUR, :551-553), so all four are flippers until wave
+// 33; slot 2 turns fuseball at 33 and pulsar at 41 (W-033). ZCARFL/ZCARFU/ZCARPU = 1/3/2 in the
+// ROM (ALCOMN.MAC:861-864); here they are indices into CARGO_BY_CODE.
+const ZCARFL = 0
+const ZCARFU = 1
+const ZCARPU = 2
+const CARGO_BY_CODE: readonly TankerCargo[] = ['flipper', 'fuseball', 'pulsar']
+const WWTAC2: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 32, v: ZCARFL },
+  { t: 'T1', start: 33, end: 40, v: ZCARFU },
+  { t: 'T1', start: 41, end: 99, v: ZCARPU },
+]
+const WWTAC3: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 48, v: ZCARFL },
+  { t: 'T1', start: 49, end: 99, v: ZCARFU },
+]
+function tankerCargoSlots(level: number): readonly TankerCargo[] {
+  return ['flipper', 'flipper', CARGO_BY_CODE[contourValue(WWTAC2, level)], CARGO_BY_CODE[contourValue(WWTAC3, level)]]
+}
+
+// ── 7. The introduction MAXes (ALWELG.MAC:628-676). tp1-7 reads only the INTRODUCTION wave —
+// the first wave a type's max is non-zero (WFLIMX gives flippers wave 1) — to gate the spawn
+// roll. Tankers first appear on WAVE 3, spikers on WAVE 4 (W-035). The per-wave COUNT
+// enforcement and the min tables, and WSPIMX's mid-game gaps, are the population solver, tp1-8.
+const WTANMX: readonly ContourRecord[] = [
+  { t: 'TZ', start: 1, end: 5, vs: [0, 0, 1, 0, 1] },
+  { t: 'T1', start: 6, end: 16, v: 2 },
+  { t: 'T1', start: 17, end: 26, v: 1 },
+  { t: 'T1', start: 27, end: 32, v: 1 },
+  { t: 'T1', start: 33, end: 44, v: 2 },
+  { t: 'T1', start: 45, end: 99, v: 3 },
+]
+const WSPIMX: readonly ContourRecord[] = [
+  { t: 'TZ', start: 1, end: 6, vs: [0, 0, 0, 2, 3, 4] },
+  { t: 'T1', start: 7, end: 10, v: 4 },
+  { t: 'T1', start: 11, end: 16, v: 3 },
+  { t: 'T1', start: 20, end: 25, v: 2 },
+  { t: 'TZ', start: 26, end: 32, vs: [1, 2, 2, 2, 1, 1, 2] },
+  { t: 'T1', start: 53, end: 39, v: 1 }, // ALWELG.MAC:633 `.BYTE T1,35,39.,1` — the `35` is UN-dotted, so under ALWELG's hex radix it is 0x35 = 53: a DEAD [53,39] range → waves 35-39 spiker-max 0, like every other gap here. WSPIMI:625 DOTS it (`35.` = dec 35, min 1), so the assembled ROM is self-contradictory (min 1 > max 0) — a 1981 typo tp1-8's solver resolves. NOT decimal 35.
+  { t: 'T1', start: 43, end: 99, v: 1 },
+]
+const WFUSMX: readonly ContourRecord[] = [
+  { t: 'T1', start: 11, end: 16, v: 1 },
+  { t: 'T1', start: 22, end: 25, v: 1 },
+  { t: 'T1', start: 27, end: 32, v: 1 },
+  { t: 'T1', start: 33, end: 39, v: 4 },
+  { t: 'T1', start: 40, end: 99, v: 3 },
+]
+const WPULMX: readonly ContourRecord[] = [
+  { t: 'TZ', start: 17, end: 32, vs: [5, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 2] },
+  { t: 'T1', start: 33, end: 99, v: 3 },
+]
+// The introduction wave = the first wave the max table is non-zero. Monotonic: once introduced
+// a type stays in the weighted roll (the per-wave gaps belong to tp1-8's solver).
+function firstNonZeroWave(records: readonly ContourRecord[]): number {
+  for (let w = 1; w <= 99; w++) if (contourValue(records, w) > 0) return w
+  return 1
+}
+const TANKER_INTRO_WAVE = firstNonZeroWave(WTANMX)     // 3
+const SPIKER_INTRO_WAVE = firstNonZeroWave(WSPIMX)     // 4
+const FUSEBALL_INTRO_WAVE = firstNonZeroWave(WFUSMX)   // 11
+const PULSAR_INTRO_WAVE = firstNonZeroWave(WPULMX)     // 17
 
 // The CAM's two wave parameters, which VSLOPB loads into an invader's loop counter
 // (WTABLE, ALWELG.MAC:728-751). Story 6-14's `flipPatternForLevel` used to sit here
@@ -559,17 +733,19 @@ export function wttfraForLevel(level: number): number {
 export const PUCHDE_FRAMES = 20
 
 export function levelParams(level: number): LevelParams {
-  const ramp = 1 + (level - 1) * 0.15
   const flipperSpeed = flipperSpeedForLevel(level)
   return {
-    enemyCount: 6 + (level - 1) * 2,
+    // TNYMMX (W-011): the per-wave enemy budget, non-monotonic. Was 6 + 2*(level-1).
+    enemyCount: enemyCountForLevel(level),
     flipperSpeed,
     // WFLICAM (NEWFLI, ALWELG.MAC:1428-1433): the wave's flipper program. This is
     // the whole of W-006 — wave 1 gets NOJUMP, so its flippers never flip.
     flipperCam: flipperCamForWave(level),
     // No spawnInterval: the metronome was W-003's divergence and tp1-6 deleted it.
     // Release pacing is ININYM's 16-frame stagger plus slot back-pressure (below).
-    spikerSpeed: 0.22 * ramp,
+    // TSPIIN (W-014): the spiker moves at EXACTLY the flipper speed for waves 1-20, then
+    // faster (WINVIL + a -48/-40 offset). Was the ad-hoc `0.22 * ramp`.
+    spikerSpeed: spikerSpeedForLevel(level),
     // No pulseInterval: the pulse is not a per-pulsar timer any more, and it does not
     // ramp with the level. It is ONE global counter with a fixed 40-frame period
     // (PULSE_STEP / PULSE_SON_*), ticked in sim.ts's stepPulseClock (W-026).
@@ -643,41 +819,34 @@ function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): 
 // roster hardens — difficulty does not reset when the geometry table wraps.
 export const SPAWN_CYCLE_HARD_SCALE = 0.5
 
-// Authentic Atari rev-3 enemy *introduction* schedule (story 6-13 — stakeholder
-// decision: follow the ROM, do not re-tune the canonical game). Which enemy types
-// unlock at which level. Source of truth, citing rev-3 ROM line numbers:
-// docs/ux/2026-06-27-enemy-roster-rom-extract.md §H "Mix per level" (line 426),
-// corroborated by docs/ux/2026-06-27-tempest-arcade-feel-reference.md line 242:
-//   flippers L1+ · tankers L5+ · spikers L5+ · fuseballs L11+ · pulsars L17+.
-// (The ROM thins the spiker weight above L16 then restores 1 at the L33+ steady
-// state; we gate spikers monotonically at L5+ — the L5-16 window sits on a
-// doc-flagged suspected `$35` table bug. See story 6-13 delivery findings.)
-// The per-cycle `hard` ramp below is a separate difficulty axis (story 3-4), not
-// part of the ROM schedule; it is intentionally retained.
+// Authentic Atari rev-3 enemy *introduction* schedule. The introduction wave of each type is
+// the first wave its MAX table (WTANMX/WSPIMX/WFUSMX/WPULMX above) is non-zero — tanker WAVE 3,
+// spiker WAVE 4, fuseball 11, pulsar 17 (W-035). This DELETES the old hardcoded `level >= 5`
+// gates, which cited docs/ux/2026-06-27-enemy-roster-rom-extract.md §H — a doc W-035 refutes
+// (it claimed tankers/spikers both L5+). The introduction is monotonic (once a type appears it
+// stays in the roll); the per-wave availability GAPS (WSPIMX blanks spikers on 17-19/33-34/40-42)
+// and count enforcement are the population solver, story tp1-8. The per-cycle `hard` ramp is a
+// separate difficulty axis (story 3-4), not part of the ROM schedule; it is intentionally kept.
 export function rollSpawnKind(level: number, rng: Rng): EnemyKind {
   // cycle 0 for levels 1–16, 1 for 17–32, … (tubeForLevel wraps with period 16).
   const cycle = Math.floor((level - 1) / 16)
   const hard = 1 + cycle * SPAWN_CYCLE_HARD_SCALE
   const table: ReadonlyArray<readonly [EnemyKind, number]> = [
     ['flipper', 10],
-    ['tanker', level >= 5 ? 4 * hard : 0],
-    ['spiker', level >= 5 ? 3 * hard : 0],
-    ['pulsar', level >= 17 ? 3 * hard : 0],
-    ['fuseball', level >= 11 ? 3 * hard : 0],
+    ['tanker', level >= TANKER_INTRO_WAVE ? 4 * hard : 0],
+    ['spiker', level >= SPIKER_INTRO_WAVE ? 3 * hard : 0],
+    ['pulsar', level >= PULSAR_INTRO_WAVE ? 3 * hard : 0],
+    ['fuseball', level >= FUSEBALL_INTRO_WAVE ? 3 * hard : 0],
   ]
   return weightedPick(table, rng)
 }
 
-// Cargo a tanker splits into must respect the same introduction schedule as the
-// roster (story 6-13 follow-up): a tanker cannot carry an enemy type that has not
-// yet entered the game. Gates mirror rollSpawnKind above — fuseball cargo L11+,
-// pulsar cargo L17+ — so a split can never manufacture a pulsar/fuseball before
-// it would otherwise appear. Below those levels a tanker carries flippers only.
+// Tanker cargo is the WTACAR 4-slot table (W-033), not a roster-aligned weight. NEWTAN
+// (ALWELG.MAC:1445-1474) draws a RANDOM slot 0-3 and takes its type. Slots 0 & 1 are always
+// flipper (CONTOUR, :551-553); slots 2 & 3 are WWTAC2/WWTAC3 — so a tanker carries ONLY
+// flippers until wave 33, a fuseball becomes possible at 33, a pulsar only at 41. Far LATER
+// than the roster intro (fuseball 11 / pulsar 17), so a split still never manufactures a type
+// before it is in the roster. (The old L11/L17 cargo gates manufactured them 22/24 waves early.)
 export function rollTankerCargo(level: number, rng: Rng): TankerCargo {
-  const table: ReadonlyArray<readonly [TankerCargo, number]> = [
-    ['flipper', 10],
-    ['fuseball', level >= 11 ? 4 : 0],
-    ['pulsar', level >= 17 ? 4 : 0],
-  ]
-  return weightedPick(table, rng)
+  return tankerCargoSlots(level)[nextInt(rng, 4)] // RANDOM AND 3
 }

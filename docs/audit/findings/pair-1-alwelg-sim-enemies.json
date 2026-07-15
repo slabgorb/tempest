@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 951,
+      "line": 959,
       "verbatim": "  stepBullets(s, dt)"
     },
     "claim": "PLAY (ALWELG:869-878) runs MOVCUR, FIREPC, PROSUZ, MOVNYM, MOVINV, MOVCHA, FIREIC, COLLIS, PROEXP, ANALYZ. Our stepPlaying (sim.ts:630-644) runs stepPlayer, stepFiring, stepZap, stepBullets, stepEnemies, stepEnemyFire, stepEnemyBullets, resolve*. The first three slots match exactly (cursor, player fire, superzapper). After that: (a) we move player charges (stepBullets, line 633) BEFORE enemies; the arcade moves ALL charges (player and enemy, one MOVCHA loop) AFTER MOVINV, so an invader is at its new position when the bullet advances through it; (b) the arcade fires enemy charges (FIREIC) AFTER MOVCHA, so a newly launched enemy bolt sits still for its birth frame; we call stepEnemyFire then stepEnemyBullets, so our new bolt already moves one step on the frame it is born; (c) the arcade has no spawn step here at all — MOVNYM occupies that slot (see W-002).",
@@ -193,7 +193,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 567,
+      "line": 569,
       "verbatim": "    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl"
     },
     "claim": "JKITST (1980-1993) tests INVAC1 for IFPL — the INVMOT ($80) bit clear, i.e. the invader is on its lines and NOT jumping — before it will compare INVAL1/INVAL2 against CURSL1/CURSL2 and kill the cursor. A jumping invader passing over the player's lane does not kill. Our resolvePlayerHits excludes flippers with `e.flipping` (sim.ts:390) for exactly this reason.",
@@ -217,7 +217,8 @@
     "reasoning": "A straight-line count makes early waves too short and late waves too long. The table is 16 bytes; there is no reason to approximate it. [REFUTATION] Re-opened ALWELG.MAC:697, verbatim byte-for-byte match to the citation. Decoded the type code: SPARAD/DOTYPE dispatch table (777-825) confirms TZ=2 is 'ITMIZE — itemized byte per level in range', so TNYMMX's 16 bytes after the range header (1,16.) are individually waves 1-16: 10,12,15,17,20,22,20,24,27,29,27,24,26,28,30,27 — counted all 16, matches exactly, including both claimed non-monotonic drops (wave6->7: 22->20; wave11->12: 27->24). Confirmed the WTABLE entry '.WORD TNYMMX,NWNYMC' (748) and traced NWNYMC -> NYMCOU at wave init (INIENE, 303-304: 'INITIALIZE FOR NEW WAVE (NYMPH COUNT...)'), with NYMCOU decremented per nymph and gating wave-clear checks throughout (1191, 1791, 2236, 3082-3103) — this is indeed the wave's total enemy spawn budget, not a simultaneous-cap. On our side, confirmed rules.ts:183 exactly ('enemyCount: 6 + (level - 1) * 2') and that levelParams.enemyCount feeds spawnForLevel's 'remaining' (rules.ts:195-198), which sim.ts decrements per spawn (line 137) and checks against 0 for wave-clear (sim.ts:538) — the same semantic role as NYMCOU, so this is an apples-to-apples comparison. All arithmetic in the claim checks out.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-012",
@@ -237,7 +238,8 @@
     "reasoning": "The ramp over waves 1-8 is -5 per wave — nearly four times steeper than our linear slope of 2/32 per wave. Our mid-game (waves 5-16) is therefore markedly slower than the arcade's, which is where most players spend their time. Replacing flipperSpeedForLevel with the TINVIN table is a table transcription, not a re-tune. [REFUTATION] Re-opened ALWELG.MAC:591-599 (TINVIN), verbatim match at line 592. Decoded DOTA (834-847, arithmetic ramp: base + range*delta) and DOTR (858-865, alternates on wave parity) precisely. Hand-verified every single value the claim derives: wave1=-44 (range0), wave8=-44+7*(-5)=-79 (TA ramp); waves9-16 itemized -81,-84,-84,-84,-88,-92,-96,-96 (exact source match); wave17=-81 (a genuine step DOWN in magnitude from wave16's -96, i.e. a real slowdown at the wave-17 boundary); wave26-32=-99 base; wave33=-108; wave40-48=-110; wave49-64=-120; wave65-99 alternates -160/-191 per DOTR (confirmed the alternation mechanism in source, not a ramp). Verified the TIMES8 scaling (560-578) and its application to WINVIL (530-535, run once after the CONTOUR backward walk) produces a 16-bit value = raw_byte*8, so along-units/frame = raw_byte/32 — recomputed independently: -44/32=1.375, -79/32=2.469, -96/32=3.000, -81/32=2.531, -108/32=3.375, all matching the claim to 3 decimal places. Notably 1.375 and 3.375 are the EXACT L1/L33 endpoints already hardcoded in our own rules.ts (FLIPPER_ALONG_PER_FRAME_L1/L33), so our code agrees with the ROM at the two endpoints and diverges only in the shape between them. Recomputed our own flipperSpeedForLevel at wave 8 and 16 independently: t=7/32 -> 1.8125 along/frame (27% under ROM's 2.469); t=15/32 -> 2.3125 (23% under ROM's 3.000) — both match the claim's percentages exactly. This is a purely along-units/frame comparison (no fps mixed in on either side), so there is no unit trap; the divergence is genuinely about curve SHAPE (steep+dipping vs. linear), a comparison that survives regardless of absolute frame rate.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-013",
@@ -275,7 +277,8 @@
     "reasoning": "The spiker draws its spike at its own climb rate, so its speed sets how fast spikes grow — the primary threat model of the warp. Corrected for the 28.444 fps rebase (see FR-013 in pair-11-framerate-adjudication.json): the DIVERGENCE verdict and the fix (pin the spiker to the flipper's speed, drop the ad-hoc ramp) both stand, but the DIRECTION reverses. The original consequence — 'at 0.22 vs 0.368 depth/s our spikers take 67% longer to lay the same spike' — was an artefact of the 60 Hz base and is backwards: at 0.22 vs 0.175 depth/s our spikers lay a spike ~21% FASTER than the arcade's, and pinning them to the rebased flipper speed will SLOW them, not speed them up. Anyone applying the old reasoning without the rebase would tune the spiker in the wrong direction. [REFUTATION] Re-opened ALWELG.MAC:602-605 (TSPIIN), verbatim match. Decoded DOTB (829-832: param_byte + WINVIL) and confirmed the CONTOUR loop genuinely walks WTABLE BACKWARDS (398-467: INDEX1 initialized to WTABEND-WTABLE-1, then SBC #4 each pass down to 0xFF) — so with TSPIIN preceding TINVIN in forward table order (752 vs 754), the backward walk processes TINVIN (which sets plain WINVIL) BEFORE TSPIIN reads it, exactly as the claim states. For waves1-20 TSPIIN's param is 0, so spiker_raw = 0 + WINVIL_raw = flipper's own raw value exactly, and since both then get the identical TIMES8 fixup pass (520-535) applied independently, the FINAL scaled speeds are also identical — 'the spiker's speed IS the flipper's speed' is confirmed exact, not approximate. Recomputed the rebased depth/s figure independently: 1.375 along/frame * 28.444 fps / 224 along-span = 0.1746 =~ 0.175 depth/s, matching the claim. On our side confirmed spikerSpeed (rules.ts:188, 0.22*ramp) is used directly as a depth/s climb rate in spiker.ts:12, the same physical quantity as the ROM's spiker slot -- apples to apples. 0.22 vs 0.175 = +25.7% =~ +26%, matches the claim precisely. This finding's own reasoning field already performs and shows the FR-013 fps rebase correction (28.444 not 60), reversing an assumed prior 60Hz-based direction claim and explicitly stating the corrected direction (FASTER, not slower) — exactly the self-correction behavior the audit rules call for. No unit, radix or dead-code issues found anywhere in the chain.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-015",
@@ -288,7 +291,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 576,
+      "line": 752,
       "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
     },
     "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
@@ -363,7 +366,8 @@
     "reasoning": "On level 1 the arcade permits two enemy bolts in the air; we permit four. Because ENEMY_FIRE_CHANCE is indexed by the live-bolt count, our extra headroom also raises the effective fire RATE (a 3rd and 4th bolt can be drawn where the arcade would find no slot). Early levels are meaningfully more dangerous in our build. [REFUTATION] Re-opened ALWELG.MAC:586 (TCHAMX), verbatim match, and FIREIC (2690-2736). Confirmed the TZ itemized decode for waves1-9: 1,1,1,2,3,2,2,3,3 (9 values for a 9-wave range), then T1,10.,64.,2 and T1,65.,99.,3 (587-588) — exact match to source. Traced FIREIC's charge-slot search loop precisely: 'LDY WCHAMX; BEGIN; LDA Y,CHARY+NPCHARG; IFEQ...; DEY; MIEND' iterates Y = WCHAMX down to 0 inclusive, i.e. WCHAMX+1 total slots checked, confirming the ';ADD 1' comment and the claim's live-cap formula. Computed the per-wave cap directly from the raw WCHAMX values: waves1-3=1+1=2, wave4=2+1=3, wave5=3+1=4, waves6-7=2+1=3, waves8-9=3+1=4, waves10-64=2+1=3, waves65-99=3+1=4 — matches the claim's enumeration exactly, including the claimed non-monotonic (up-then-down-then-up) shape. Confirmed NICHARG=4 (ALCOMN.MAC:813) is a separate constant (physical charge-array allocation, NCHARG=NPCHARG+NICHARG at 814) distinct from the dynamic WCHAMX+1 cap used by FIREIC — the claim correctly distinguishes 'physical slot count' from 'live cap'. On our side confirmed MAX_ENEMY_BULLETS=4 (rules.ts:62) and sim.ts:225 ('if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break // hard cap') applied flatly at every level, plus confirmed enemyFireChance is indexed by s.enemyBullets.length (sim.ts:229), so the claimed knock-on effect on effective fire rate is real and directly traceable in the code. No issues found.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-020",
@@ -383,7 +387,8 @@
     "reasoning": "Bolt speed is the whole dodge window, and ours is more than twice the arcade's. Corrected for the 28.444 fps rebase (see FR-010 in pair-11-framerate-adjudication.json): the CLASS stands, but the fix value this finding originally prescribed — 0.536 — is itself 2.0 * 60/224, the same invented base, and applying it as written would bake the 2.11x error permanently into the code and then 'confirm' it against this audit. The correct constant is 0.254 depth/s (= 2.0 * ROM_FPS / 224); once the flipper speed is also rebased (FR-008) the L1 bolt lands on the ROM's 0.4286 depth/s exactly, and the offset stays correct at every level because it is additive in both models. The rebase must land BEFORE this fix. [REFUTATION] Re-opened ALWELG.MAC. TB is decoded correctly: CONTOUR's DOTB (829-832) is literally 'LDA NY,TEMP3 / CLC / ADC WINVIL / RTS' — byte + WINVIL, exactly as claimed. TCHARIN (600-601) is a single TB record spanning waves 1-99 with byte -64 (=0xC0 signed, matching our code's own comment '+0xc0'), so WCHARL_raw = WINVIL_raw - 64 on every wave, before either is run through TIMES8 (560-578, verified by hand: three ASL/ROL pairs = x8, 16-bit result with high byte = along-units integer, low byte = /256 fraction). Traced the actual consumer: MOVCHA's enemy-charge branch (2555-2568, 'TOWARD PLAYER') adds WCHARL to CHARYL and WCHARIN to CHARY every frame — this is genuinely the governing bolt-movement code, not dead or overridden. Since both WCHARL and WINVIL get the identical x8 scale, the constant -64 raw delta becomes exactly 64*8/256 = 2.0 along-units/frame regardless of wave — verified WINVIL(wave1)=-44 via TINVIN's TA record (592), giving WCHARL_raw(wave1)=-108, scaled = -3.375 along/frame, vs WINVIL scaled = -1.375 along/frame; difference = 2.0 exactly, matching the claim's '64+44)/32=3.375' arithmetic. Attacked on unit grounds: the claim explicitly rejects its own prior 60 Hz-based fix (0.536 = 2.0*60/224) in favor of 0.254 = 2.0*(256/9)/224, correctly using the adjudicated 28.444 fps ground truth — this survives. Our code's ENEMY_BOLT_SPEED_OFFSET=0.72 (rules.ts:72) is neither 0.254 nor 0.536, so it is wrong under any frame-rate reading. Holds.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-021",
@@ -396,7 +401,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 232,
+      "line": 229,
       "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
     },
     "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
@@ -604,7 +609,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 320,
+      "line": 321,
       "verbatim": "    makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),"
     },
     "claim": "KILINV computes the first child's line as INVAL1 - 1 (2331-2333) and the second's as that value + 2 (2352-2355), both masked to 0F — so the two children land on the lanes either side of the dead carrier and nothing is left on its own lane. Our splitTanker emits children on wrapLane(lane-1) and wrapLane(lane+1).",
@@ -644,7 +649,8 @@
     "reasoning": "Our tankers manufacture fuseballs 22 levels early and pulsars 24 levels early. Combined with W-035 (tankers appearing at wave 3) this materially changes the enemy mix of the entire first third of the game. The fix is to replace rollTankerCargo's gates with the WTACAR table. [REFUTATION] Re-opened NEWTAN (ALWELG.MAC:1445-1474): draws RANDOM AND 3 into Y, walks WTACAR[Y] (LDX Y,WTACAR at 1463) looking for an open slot, confirming WTACAR is indeed a 4-slot table read by index. Confirmed WTACAR is `.BLKB 4` (ALCOMN.MAC:776) and ZCARNO/ZCARFL/ZCARPU/ZCARFU = 0/1/2/3 (ALCOMN.MAC:861-864). Traced how each of the 4 slots is populated: CONTOUR itself (ALWELG.MAC:551-553) hardcodes WTACAR+0 and WTACAR+1 to ZCARFL on every single call — these two slots are NOT in the per-level WTABLE dispatch list at all (checked WTABLE, lines 728-751ish; only WTACAR+2 and WTACAR+3 appear, at 745-746, pointing at WWTAC2/WWTAC3). WWTAC2 (614-617) and WWTAC3 (618-620) transcribed and match the finding exactly: slot 2 = ZCARFL(1-32)/ZCARFU(33-40)/ZCARPU(41-99); slot 3 = ZCARFL(1-48)/ZCARFU(49-99). So for waves 1-32 all four slots are literally ZCARFL — a tanker can only ever produce flipper cargo — fuseball cargo first becomes possible at wave 33 (slot 2), and pulsar cargo first becomes possible at wave 41 (slot 2 only; slot 3 never reaches ZCARPU in this table). Cross-checked our rollTankerCargo (rules.ts:263-270) exactly as cited: fuseball gated at level>=11, pulsar at level>=17, both weight 4 vs flipper's 10, with no wave-dependent slot structure at all. The claim's numbers (11 vs 33, 17 vs 41) and mechanism (WTACAR 4-slot table vs our flat weighted table) are both verified correct.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-034",
@@ -657,7 +663,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 657,
+      "line": 830,
       "verbatim": "export function rollSpawnKind(level: number, rng: Rng): EnemyKind {"
     },
     "claim": "NYMCHA (1266-1412) decides what a hatching nymph becomes, in this order: (1) compute per-type 'openings' = WFLMAX[type] - FLIPCO[type] (the live count of that type) for all 5 types; (2) subtract 2 openings of the carried type for EVERY live tanker, so cargo is reserved in advance (1286-1303); (3) clamp openings to the total free invader slots; (4) if exactly one type has openings, take it; (5) otherwise satisfy any type whose live count is below its WFLMIN first (1351-1364); (6) then attempt a 'smart launch' — if both a spiker and a tanker slot are free, look at the enemy line the nymph is standing on and launch a SPIKER on a short/dead line or a TANKER on a long one (1366-1385); (7) failing all that, draw RANDO2 AND 3, add 1 — a random type that EXCLUDES flippers (1386-1389) — and walk from there to the first needy type. Our rollSpawnKind is a single weighted pick from a fixed table (flipper 10, tanker 4, spiker 3, pulsar 3, fuseball 3) with level gates and a per-cycle 'hard' multiplier.",
@@ -684,7 +690,8 @@
     "reasoning": "Off by two waves for the tanker and one for the spiker, and the non-monotonic zero at wave 4 (tankers vanish again) is not expressible in our weight model at all. Note the tables also blank out later: WSPIMX has no record for waves 17-19, 33-34 or 40-42, so spikers disappear entirely on those waves. [REFUTATION] Directly inspected the raw .BYTE data at the cited lines: WSPIMI:621 = TZ,1,4,0,0,0,1 (waves1-4 min = 0,0,0,1); WSPIMX:628 = TZ,1,6,0,0,0,2,3,4 (waves1-6 max = 0,0,0,2,3,4); WTANMI:645 = TZ,1,4,0,0,1,0; WTANMX:651 = TZ,1,5,0,0,1,0,1 -- byte-for-byte exactly what the finding states. Decoded the TZ/T1/TE/TZANDF/TA/TB/TR type codes from their real definitions at ALWELG.MAC:408-414 (not guessed) to confirm TZ means 'one byte per wave in the declared range' -- so these are literal per-wave min/max counts, not some other unit. Confirmed via CONTOUR (:397-440, LDA CURWAV -> STA TEMP2) that these tables index on the actual game wave/level counter, and confirmed our level counter starts at 1 with no off-by-one (state.ts:138, level:1) so the wave-vs-level comparison is apples-to-apples. The claimed gaps in WSPIMX (17-19, 33-34, 40-42 falling through to 0) are real -- verified no .BYTE line covers those ranges. rules.ts:250 verbatim matches ('tanker', level >= 5 ? ...). One thing worth flagging in corrections: our own code carries a prior, documented 'stakeholder decision' (rules.ts:233-241, citing docs/ux/2026-06-27-enemy-roster-rom-extract.md) asserting tankers/spikers both start at L5+ per an earlier ROM read. That earlier internal doc and this finding's direct read of ALWELG.MAC disagree; since the raw .BYTE data is unambiguous and the primary source per this audit's rules, the finding's numbers stand -- the earlier internal doc looks to be the one that was wrong (or read a different table/revision). [CORRECTION] Flag for the user: this directly contradicts an existing internal doc (docs/ux/2026-06-27-enemy-roster-rom-extract.md) that the codebase already cites as its ROM source for the L5+ gates. That doc should be re-checked, not just rules.ts.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-036",
@@ -697,8 +704,8 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 665,
-      "verbatim": "    ['pulsar', level >= 17 ? 3 * hard : 0],"
+      "line": 838,
+      "verbatim": "    ['pulsar', level >= PULSAR_INTRO_WAVE ? 3 * hard : 0],"
     },
     "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Our gates are `level >= 17` for pulsars and `level >= 11` for fuseballs (rules.ts:252-253).",
     "reasoning": "Both introduction waves are exactly right. (The tables also have GAPS we do not model — no fuseballs on waves 17-21 or 26, and the pulsar max is 5 on wave 17 alone before settling at 2-3 — but the introduction wave itself is correct.)"
@@ -721,7 +728,8 @@
     "reasoning": "This is a whole missing layer of the level design: from wave 4 onward the well is pre-seeded with a floor of spikes that the player must shoot down before the warp, and every wave's spiker work is ADDITIVE on top of it. Our waves 4-16 are visibly emptier than the arcade's, and our warp is correspondingly safer. [REFUTATION] TELIHI at ALWELG.MAC:696 matches verbatim. Confirmed .WORD TELIHI,NWTELI (line 749) and NWTELI's use in INIENE (LDA NWTELI at line 305, then BEGIN/STA X,LINEY/DEX/MIEND writing it into every LINEY[X] for X=NLINES-1 downto 0) -- so one table value really is stamped across every lane at wave start, exactly as claimed. NLINES=16 confirmed in the shipped ALCOMN.MAC:810 (not the unshipped ALVROM values of 15/11, which are unrelated vertex counts, not lane counts). Decoded TZANDF's handler (DOTZAN, ALWELG.MAC:791-799): it computes reduced_wave = ((wave-1) AND 0xF)+1 before falling into the itemized-byte lookup, which resolves to array index (reduced_wave - 1); for wave 4 this lands on index 3 = $E0, for wave 13 on index 12 = $A0 -- reproducing the finding's own worked numbers exactly. Confirmed the depth-conversion constants used (ILINDDY=$F0, ILINLIY=$10, both at ALCOMN.MAC:819-820, so divisor 224 = $F0-$10) are real named ROM constants, not an invented unit -- and they independently match our own code's WARP_ALONG_SPAN=0xf0-0x10=224 (rules.ts:44). Our side (sim.ts:558, unconditional fill(0) on every level) is correctly cited as the reset that erases this layer entirely. Solid. [CORRECTION] Note the array padding: TELIHI actually carries 20 raw bytes after its start/end header, but the AND-0xF indexing only ever reaches the first 16 (indices 0-15); the trailing 4 bytes (0A0,9C,9A,98) are dead data. Doesn't change the finding's conclusion.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "W-038",
@@ -809,7 +817,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 680,
+      "line": 684,
       "verbatim": "    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')"
     },
     "claim": "KILENE's EXIKIL (3562-3566) takes the first live invader it finds, CLEARS the INVCAR bits in its INVAC2, and then explodes it — the carrier bit is stripped precisely so that the kill does not split it. So the arcade's zap DOES destroy tankers; it just denies you the cargo. Our first-zap cadence and our kill-count both filter tankers out (`e.kind !== 'tanker'`, sim.ts:476 and 513), so a tanker survives a full superzap.",
@@ -829,7 +837,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 169,
+      "line": 165,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "With CSUSTA=3 and CSUINT=1 (3490-3492), TIMAX resolves to 0, 3+8*2 = 19, 3+1*2 = 5, 0, 0, indexed by SUZCNT. So the first zap runs 19 frames and the second 5. KILENE (3542-3546) only kills when SUZTIM >= CSUSTA (3) AND (SUZTIM AND CSUINT) == 0 — i.e. on every SECOND frame from frame 4 — giving at most 8 kills across the first window (which is exactly what the '8*' in TIMAX is sizing). It also takes the first live invader scanning DOWN from slot WINVMX (3548), which is slot order, not nearest-the-rim. Our ZAP_WINDOW_FIRST is 13 frames with one kill on EVERY active frame (runZapFrame, sim.ts:473-480), targeting the enemy nearest the rim. Our ZAP_WINDOW_SECOND = 5 is correct.",
@@ -849,7 +857,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 83,
+      "line": 79,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "NPCHARG = 8 player charge slots (NICHARG = 4 more for enemy shots). FIREPC (2661-2681) scans slots NPCHARG-1..0 for a vacancy and simply does nothing if all eight are busy. Our MAX_BULLETS = 8, enforced the same way in stepFiring (sim.ts:96).",
@@ -887,7 +895,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 428,
+      "line": 430,
       "verbatim": "const HIT_DEPTH = 0.06"
     },
     "claim": "COLCHK compares |charge Y - invader Y| against ENSIZE indexed by the invader's TYPE (2963-2964). ENSIZE for the fuseball is set literally to (PCVELO+3)/2 = 6 (545-546). For flippers, tankers and pulsars it is computed by TIMES8 (570-577) as ((255 - hi) + 13) >> 1 where hi is the high byte of speed*8 — which evaluates to 7 at waves 1-16 and 8 at waves 33+. In our depth units (224 along-units = depth 1.0) that is 0.031-0.036 for a flipper and 0.027 for a fuseball. Our HIT_DEPTH is 0.06 (13.4 units, ~1.9x too generous) and our FUSEBALL_HIT_DEPTH is 0.09 (20 units, ~3.3x too generous). Our comment at sim.ts:288-291 asserts the ROM's fuseball tolerance is WIDER than the default; the source shows it is NARROWER (6 vs 7).",
@@ -907,7 +915,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 495,
+      "line": 497,
       "verbatim": "      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)"
     },
     "claim": "LIFECT (2589-2626) runs from MOVCHA on every frame a player charge is at or past a spike tip: it SLOWS the charge (PCVELO - 4 = 5 units/frame, 2542-2545), sets LINEY to the charge's CURRENT Y — cutting the spike down to exactly where the bullet is — increments the charge's CHARCO counter, awards 1 point (2609-2615), and deactivates the charge once CHARCO reaches 2 (2618-2624). So one shot eats ~2 frames' worth (~10 units, ~0.045 depth) of spike and scores ~2 points, and the spike visibly recedes ahead of the bullet. Ours removes a flat SPIKE_SHORTEN = 0.08 depth, kills the bullet instantly, and awards SCORE_SPIKE_SEGMENT = 3.",

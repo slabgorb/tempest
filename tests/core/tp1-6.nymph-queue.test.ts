@@ -87,8 +87,8 @@ describe('tp1-6 — the wave budget enters as a staggered nymph queue (W-002)', 
     }
 
     // ININYM (315-340): nymph i is seeded at ((i & $F)<<4)|lane — bands of 16
-    // frames, one nymph per band FOR THE FIRST SIXTEEN (level 1's budget of 6
-    // never wraps, so here the sorted bands are strict), never 0 (the all-zero
+    // frames, one nymph per band FOR THE FIRST SIXTEEN (level 1's TNYMMX budget of
+    // 10 never wraps, so here the sorted bands are strict), never 0 (the all-zero
     // assembled byte is bumped to $0F). The wrap itself is pinned below.
     const pys = s.spawn.nymphs.map((n) => n.py).sort((a, b) => a - b)
     for (let i = 0; i < pys.length; i++) {
