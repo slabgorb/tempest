@@ -61,10 +61,6 @@ function rotPoints(pts: readonly V[], a: number): V[] {
   return pts.map((p) => rotPoint(p, a))
 }
 
-function rotStroke(stroke: GlyphStroke, a: number): GlyphStroke {
-  return { points: stroke.points.map((p) => rotPoint(p, a)), closed: stroke.closed, color: stroke.color }
-}
-
 /** Translate a point set so its centroid sits on the origin. */
 function center(pts: readonly V[]): V[] {
   const n = pts.length
@@ -133,20 +129,53 @@ const GENTNK_VERTS: readonly [number, number][] = [
   [-0x0c, 0], [0, -0x0c], [-0x20, 0], [0, -0x20], [0, -0x0c], [0x0c, 0], [0, -0x20], [0x20, 0], [0x0c, 0],
 ]
 
+// The body's ROM→glyph scale (9 / the ±0x20 outer ring). The cargo emblems below share it
+// so they stay proportional to the body, exactly as the ROM authors them around GENTNK.
+const GENTNK_SCALE = 9 / maxExtent(GENTNK_VERTS)
+
+// TANKP — pulsar-cargo emblem, ALVROM.MAC:624-632 (V-007). ONE open TURQOI(cyan) chain: a
+// W/chevron, beam-off move to (-5,-2) then draw (-3,6)(0,-6)(3,6)(5,-2). Taller than wide,
+// not the eyeballed 4-point cyan zigzag.
+const TANKP_EMBLEM: readonly [number, number][] = [[-5, -2], [-3, 6], [0, -6], [3, 6], [5, -2]]
+
+// TANKF — fuse-cargo emblem, ALVROM.MAC:634-646 (V-007). A FOUR-colour plus: CSTAT BLUE
+// left arm, RED top, GREEN bottom, YELLOW right, each 0x0C from centre. Each arm is its own
+// stroke (CSTAT changes the colour). NOT the eyeballed single yellow cross.
+interface EmblemArm {
+  readonly color: GlyphColor
+  readonly a: readonly [number, number]
+  readonly b: readonly [number, number]
+}
+const TANKF_ARMS: readonly EmblemArm[] = [
+  { color: 'blue', a: [0, 0], b: [-0x0c, 0] }, //   CSTAT BLUE   — left
+  { color: 'red', a: [0, 0x0c], b: [0, 0] }, //     CSTAT RED    — top (draws down to origin)
+  { color: 'green', a: [0, 0], b: [0, -0x0c] }, //  CSTAT GREEN  — bottom
+  { color: 'yellow', a: [0, 0], b: [0x0c, 0] }, //  CSTAT YELLOW — right
+]
+
 export function tankerGlyph(level: number, cargo: TankerCargo): Glyph {
   const body: GlyphStroke = {
     points: scaleVerts(GENTNK_VERTS, 9), // normalise the ±0x20 outer ring to the module's ~±9
     closed: false, // GENTNK is an open laced chain (RTSL, no closing vector)
     color: asGlyphColor(paletteColor(level, 2)),
   }
-  // Flipper-cargo tanker carries no emblem (ROM l.4798); pulsar (l.4628) and
-  // fuzzball (l.4711) cargo each prepend a distinct emblem showing the split.
+  // Flipper-cargo tanker carries no emblem (ROM TANKR, l.4798); pulsar (TANKP) and fuseball
+  // (TANKF) cargo each PREPEND a distinct emblem showing the split (V-007).
   if (cargo === 'flipper') return [body]
-  const emblem: GlyphStroke =
-    cargo === 'pulsar'
-      ? { points: [{ x: -3, y: 0 }, { x: -1, y: -2 }, { x: 1, y: 2 }, { x: 3, y: 0 }], closed: false, color: 'cyan' }
-      : { points: [{ x: 0, y: -3 }, { x: 0, y: 3 }, { x: -3, y: 0 }, { x: 3, y: 0 }], closed: false, color: 'yellow' }
-  return [emblem, body]
+  if (cargo === 'pulsar') {
+    const chevron: GlyphStroke = {
+      points: scaleVerts(TANKP_EMBLEM, 9, GENTNK_SCALE), // share the body's scale
+      closed: false,
+      color: 'cyan', // CSTAT TURQOI
+    }
+    return [chevron, body]
+  }
+  const arms: GlyphStroke[] = TANKF_ARMS.map((arm) => ({
+    points: scaleVerts([arm.a, arm.b], 9, GENTNK_SCALE),
+    closed: false,
+    color: arm.color,
+  }))
+  return [...arms, body]
 }
 
 // ==========================================================================
@@ -240,40 +269,53 @@ export function fuseballGlyph(frame: number): Glyph {
 }
 
 // ==========================================================================
-// E. Pulsar — horizontal zig-zag bar, 5 jaggedness variants + cyan/white strobe.
+// E. Pulsar — horizontal zig-zag bar: the ROM's FIVE distinct authored chains.
 // ==========================================================================
-// Sharpest authentic zig-zag (`_pv_offset_9`, graphic 9); later variants reuse
-// the same x-stride and flatten the y-amplitude toward the flat variant.
-const PULSAR_XD: readonly number[] = [2, 1, 1, 1, 1, 2]
-const PULSAR_YD: readonly [number, number][] = [
-  [0, -3], [0, 6], [0, -6], [0, 6], [0, -6], [0, 3],
+// PULS0-4, ALDISP.MAC:2001-2035 (V-005). Five GENUINELY DISTINCT chains drawn with
+// `VEC dx,dy[,b]` DELTA vectors — NOT one table amplitude-scaled. A leading `VEC 1,0,0`
+// (PULS0-3) is a beam-off positioning MOVE (draws no lit segment); PULS4 has none. Their
+// drawn topologies differ: PULS4/3/2 are six-segment zig-zags (amplitude 6/4/2), PULS1 is
+// a THREE-segment zig-zag, PULS0 a single FLAT 6-unit vector. Ordered here variant 0 =
+// PULS4 (sharpest) .. variant 4 = PULS0 (flat) so render.ts's dormant `pulsarBar(4)` and
+// the pulsing selector both stay wired.
+interface PulseChain {
+  readonly start: readonly [number, number] // pen position after the leading beam-off move
+  readonly draws: readonly [number, number][] // lit VEC deltas
+}
+const PULSAR_CHAINS: readonly PulseChain[] = [
+  { start: [0, 0], draws: [[2, -3], [1, 6], [1, -6], [1, 6], [1, -6], [2, 3]] }, // PULS4 (sharpest)
+  { start: [1, 0], draws: [[1, -2], [1, 4], [1, -4], [1, 4], [1, -4], [1, 2]] }, // PULS3 (amp 4)
+  { start: [1, 0], draws: [[1, -1], [1, 2], [1, -2], [1, 2], [1, -2], [1, 1]] }, // PULS2 (amp 2)
+  { start: [1, 0], draws: [[2, -1], [2, 2], [2, -1]] }, //                          PULS1 (3-segment)
+  { start: [1, 0], draws: [[6, 0]] }, //                                            PULS0 (flat)
 ]
-const PULSAR_AMP: readonly number[] = [1, 0.6, 0.35, 0.15, 0] // variant 0 sharpest .. 4 flat
 
 function clampVariant(v: number): number {
   return Math.max(0, Math.min(4, Math.round(v)))
 }
 
 export function pulsarBar(variant: number): Glyph {
-  const amp = PULSAR_AMP[clampVariant(variant)]
-  const pts: V[] = [{ x: 0, y: 0 }]
-  let x = 0
-  let y = 0
-  for (let i = 0; i < PULSAR_XD.length; i++) {
-    x += PULSAR_XD[i]
-    y += PULSAR_YD[i][1] * amp
+  const chain = PULSAR_CHAINS[clampVariant(variant)]
+  const pts: V[] = [{ x: chain.start[0], y: chain.start[1] }]
+  let x = chain.start[0]
+  let y = chain.start[1]
+  for (const [dx, dy] of chain.draws) {
+    x += dx
+    y += dy
     pts.push({ x, y })
   }
   return [{ points: center(pts), closed: false, color: 'cyan' }]
 }
 
-// `(pulsing + 0x40) >> 4` (8-bit) selects a graphic via ?dp_t1; map to a 0..4
-// variant index (0 = sharpest / graphic 9, 4 = flat / graphic 13). Clamped.
-const PULSAR_DP_T1: readonly number[] = [0x0d, 0x0c, 0x0b, 0x0a, 0x09, 0x09]
-
+// PULPIC (ALDISP.MAC:868-893): idx = (PULSON+64)>>4, then `CMP I,5 / IFCS / LDA I,0`
+// forces idx>=5 back to 0 BEFORE indexing PULTAB [CPULS0,CPULS1,CPULS2,CPULS3,CPULS4,
+// CPULS4]. So idx 0→PULS0 (flat), idx 4→PULS4 (sharp), idx>=5→PULS0 (flat, the turnaround
+// snap). Our variant is 4-PULS# (0=sharp..4=flat), so idx>=5 must fall to FLAT (variant 4),
+// NOT invert to sharpest as the old ?dp_t1 table did (V-005).
 export function pulsarVariant(pulsing: number): number {
-  const idx = Math.min(((pulsing + 0x40) & 0xff) >> 4, PULSAR_DP_T1.length - 1)
-  return PULSAR_DP_T1[idx] - 0x09
+  const idx = ((pulsing + 0x40) & 0xff) >> 4
+  if (idx >= 5) return 4 // PULTAB clamp-to-0 → PULS0 → our flat variant
+  return 4 - idx // PULTAB[idx] = PULS{idx}; our variant numbering is its mirror
 }
 
 // PULPIC (ALDISP.MAC:861-867) does not hard-code hues — it SELECTS a COLRAM slot:
@@ -295,39 +337,64 @@ export function starColor(level: number, planeIndex: number): PaletteColor {
 }
 
 // ==========================================================================
-// F. Enemy bolt — white pinwheel (4 hooks) + red central cross, 4 spin frames.
+// F. Enemy bolt — the ROM's ESHOT1-4: four white diagonal ticks + four red dots.
 // ==========================================================================
-const BOLT_SIZE = 10
-
-function enemyBoltBase(): GlyphStroke[] {
-  const strokes: GlyphStroke[] = []
-  // White pinwheel: a hook off each of four corners.
-  for (let k = 0; k < 4; k++) {
-    const a = k * (Math.PI / 2)
-    const corner: V = { x: Math.cos(a) * BOLT_SIZE, y: Math.sin(a) * BOLT_SIZE }
-    const hook: V = {
-      x: corner.x + Math.cos(a + Math.PI / 2) * BOLT_SIZE * 0.6,
-      y: corner.y + Math.sin(a + Math.PI / 2) * BOLT_SIZE * 0.6,
-    }
-    strokes.push({ points: [corner, hook], closed: false, color: 'white' })
-  }
-  // Red central 4-dot cross.
-  for (let k = 0; k < 4; k++) {
-    const a = k * (Math.PI / 2)
-    strokes.push({
-      points: [{ x: Math.cos(a) * BOLT_SIZE * 0.45, y: Math.sin(a) * BOLT_SIZE * 0.45 }],
-      closed: false,
-      color: 'red',
-    })
-  }
-  return strokes
+// ESHOT1-4, ALVROM.MAC:700-787 (V-009, CM=1). Four hand-authored shimmer frames, each
+// four short WHITE outward ticks (SCVEC move+draw pairs) and four RED dots (VCTR 0,0
+// zero-length lit points). ESHOT1's ticks are centred on the diagonals; ESHOT2/3/4 rotate
+// the idea (distinct tables, like FUSE0-3, NOT rotations of one). The ROM picks the frame
+// off the global counter QFRAME (ALDISP.MAC:910-914), not the bullet depth — render.ts
+// drives it off the shell clock. RADIX: a trailing `.` forces decimal, else hex (e.g.
+// ESHOT2 `SCVEC -18.,12` = (-18, 0x12=18)).
+interface BoltFrame {
+  readonly ticks: readonly (readonly [readonly [number, number], readonly [number, number]])[]
+  readonly dots: readonly (readonly [number, number])[]
 }
+const ESHOT_FRAMES: readonly BoltFrame[] = [
+  { // ESHOT1 (MESHO1), ALVROM.MAC:700-721 — ticks centred on the diagonals
+    ticks: [[[-11, 11], [-17, 17]], [[-17, -11], [-11, -17]], [[17, -17], [11, -11]], [[11, 17], [17, 11]]],
+    dots: [[6, 6], [-6, 6], [-6, -6], [6, -6]],
+  },
+  { // ESHOT2, ALVROM.MAC:726-746
+    ticks: [[[-18, 18], [-18, 4]], [[-8, -14], [-8, -22]], [[18, -12], [18, -4]], [[8, 14], [8, 22]]],
+    dots: [[-3, 7], [-7, 3], [3, -7], [7, 3]],
+  },
+  { // ESHOT3, ALVROM.MAC:747-766
+    ticks: [[[-17, 3], [-23, -3]], [[-3, -23], [3, -17]], [[17, -3], [23, 3]], [[3, 23], [-3, 23]]],
+    dots: [[0, 8], [-8, 0], [0, -8], [8, 0]],
+  },
+  { // ESHOT4, ALVROM.MAC:768-787
+    ticks: [[[-22, -8], [-14, -8]], [[4, -18], [12, -18]], [[14, 8], [22, 8]], [[-4, 18], [-12, 18]]],
+    dots: [[-7, 3], [-3, -7], [7, 3], [3, 7]],
+  },
+]
+// One shared scale across all four frames (global half-extent → the module's ~12) so the
+// shot does not pulse in size between shimmer frames. Built once, immutable.
+const ESHOT_SCALE =
+  12 /
+  Math.max(
+    ...ESHOT_FRAMES.flatMap((f) => [
+      ...f.ticks.flatMap((t) => t.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)])),
+      ...f.dots.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]),
+    ]),
+  )
+const ESHOT_GLYPHS: readonly Glyph[] = ESHOT_FRAMES.map((frame) => [
+  // WHITE outward ticks (ICHCOL=WHITE, ALCOMN.MAC:361)
+  ...frame.ticks.map(
+    (t): GlyphStroke => ({
+      points: t.map(([x, y]) => ({ x: x * ESHOT_SCALE, y: y * ESHOT_SCALE })),
+      closed: false,
+      color: 'white',
+    }),
+  ),
+  // RED dots (CSTAT RED, ALVROM.MAC:712)
+  ...frame.dots.map(
+    (d): GlyphStroke => ({ points: [{ x: d[0] * ESHOT_SCALE, y: d[1] * ESHOT_SCALE }], closed: false, color: 'red' }),
+  ),
+])
 
 export function enemyBoltGlyph(frame: number): Glyph {
-  // 4 spin frames. Rotate by 22.5deg/frame so the 4-fold-symmetric pinwheel
-  // reads as four distinct frames (a 90deg step would alias onto itself).
-  const a = (frame & 3) * (Math.PI / 8)
-  return enemyBoltBase().map((s) => rotStroke(s, a))
+  return ESHOT_GLYPHS[frame & 3] // 4 authored ESHOT frames (ROM: QFRAME AND 3), wraps on 4
 }
 
 // ==========================================================================

@@ -8,10 +8,11 @@ import {
   SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
   SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
-  rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
+  nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   WARP_FLYIN_FRAMES, startWaveBonus,
-  MAX_ENEMY_BULLETS, ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
+  enemyBoltCapForLevel, initialSpikeHeightForLevel,
+  ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
@@ -173,8 +174,9 @@ export function makeEnemy<K extends EnemyKind>(
  *     other. We track the committed-lane set directly instead of the ROM's
  *     NEOFLI/OLOFLI bit double-buffer.
  *
- * The invader's KIND rolls at hatch time (the ROM's NYMCHA — the per-type
- * population solver — is story tp1-8; until it lands, rollSpawnKind stands in).
+ * The invader's KIND is decided at hatch time by NYMCHA (rules.ts, tp1-8) — the ROM's
+ * per-type min/max population solver reading the live board — which may also DECLINE
+ * (no type may launch), in which case the nymph goes back in the queue like a full board.
  */
 function stepNymphs(s: GameState): void {
   s.qframe += 1
@@ -197,13 +199,15 @@ function stepNymphs(s: GameState): void {
     if (!frozen && !latched) {
       n.py -= 1
       if (n.py === 0) {
-        // CONYMP -> ACTINV: take a free slot or go back in the queue.
-        if (s.enemies.length + hatchedThisFrame <= WINVMX) {
+        // CONYMP -> NYMCHA -> ACTINV: the population solver picks a type from the live board,
+        // or DECLINES (null) when no type may launch — TEMP0=0, and the nymph goes back in the
+        // queue exactly as a slot-full board does. A free slot is the precondition either way.
+        const pick =
+          s.enemies.length + hatchedThisFrame <= WINVMX ? nymcha(s.level, s.enemies, n.lane, s.rng) : null
+        if (pick) {
           hatchedThisFrame += 1
           hatched.add(n)
-          const kind = rollSpawnKind(s.level, s.rng)
-          const cargo: TankerCargo = kind === 'tanker' ? rollTankerCargo(s.level, s.rng) : 'flipper'
-          s.enemies.push(makeEnemy(kind, n.lane, 0, params, cargo))
+          s.enemies.push(makeEnemy(pick.kind, n.lane, 0, params, pick.cargo))
         } else {
           n.py += 1
           latched = true
@@ -348,8 +352,8 @@ function enemyBoltSpeed(level: number): number {
 // cooldown; then, for each enemy that may shoot, is far enough up the well, is off
 // cooldown, and wins the self-limiting RNG roll (against the live-bolt count),
 // spawns a bolt at the enemy and emits the enemy-fire SFX event (6-6 hook). Hard-
-// capped at MAX_ENEMY_BULLETS. Draws from the SEPARATE fireRng so the decision
-// never perturbs the movement RNG (and keeps existing seeds reproducible).
+// capped at the WAVE'S bolt cap (TCHAMX, WCHAMX+1 — 2 at wave 1, not a flat 4). Draws from
+// the SEPARATE fireRng so the decision never perturbs the movement RNG (reproducible seeds).
 function stepEnemyFire(s: GameState, dt: number): void {
   for (const e of s.enemies) {
     if (e.fireCooldown !== undefined && e.fireCooldown > 0) {
@@ -358,8 +362,9 @@ function stepEnemyFire(s: GameState, dt: number): void {
   }
   if (!s.player.alive) return
   const holdoffSeconds = enemyFireHoldoffSeconds(s.level)
+  const boltCap = enemyBoltCapForLevel(s.level) // TCHAMX per-wave cap (W-019/DA-002)
   for (const e of s.enemies) {
-    if (s.enemyBullets.length >= MAX_ENEMY_BULLETS) break // hard cap
+    if (s.enemyBullets.length >= boltCap) break // per-wave hard cap
     if (!enemyCanShoot(e.kind, s.level)) continue
     if (e.depth < ENEMY_FIRE_MIN_DEPTH || e.depth >= ENEMY_FIRE_MAX_DEPTH) continue
     if ((e.fireCooldown ?? 0) > 0) continue
@@ -636,7 +641,9 @@ function startGameAtLevel(s: GameState, level: number): void {
   // New life/new game: the screen-Z translate SNAPS to the well's target — the
   // ROM's CNWLF2 branch, "AT CENTER IMMEDIATELY" (INIWLS, ALDISP.MAC:2484-2491).
   s.camera = { screenZ: s.tube.screenZ, slidePerFrame: 0 }
-  s.spikes = new Array(s.tube.laneCount).fill(0)
+  // INIENE pre-seeds every enemy line at NWTELI (TELIHI): from wave 4 the well OPENS spiked,
+  // on the advanced-start path too, not only advanceLevel (W-037). Wave 1-3 seed to 0.
+  s.spikes = new Array(s.tube.laneCount).fill(initialSpikeHeightForLevel(level))
   s.warp.progress = 0
   s.warp.velocity = 0
   s.warp.warning = 0
@@ -771,7 +778,9 @@ function loadNextWave(s: GameState): void {
   // ZADEST, a fixed eighth of the gap per frame ("MOVE UP SLOWLY", INIWLS
   // ALDISP.MAC:2492-2505), applied every frame by ALWELG.MAC:75-84 (stepCamera).
   s.camera.slidePerFrame = (s.tube.screenZ - s.camera.screenZ) / 8
-  s.spikes = new Array(s.tube.laneCount).fill(0)
+  // INIENE pre-seeds the NEW wave's enemy lines at NWTELI (TELIHI, W-037). s.level is already
+  // incremented above, so this is the arriving wave's pre-spikes (0 for waves 1-3).
+  s.spikes = new Array(s.tube.laneCount).fill(initialSpikeHeightForLevel(s.level))
   s.player.lane = wrapLane(s.tube, s.player.lane)
   startLevel(s)
 }
@@ -811,7 +820,9 @@ function beginFlyIn(s: GameState): void {
 // the eventual successful dive off this wave (beginFlyIn), still owed.
 function replayWave(s: GameState): void {
   s.tube = tubeForLevel(s.level) // same wave; re-seat the geometry defensively
-  s.spikes = new Array(s.tube.laneCount).fill(0) // INIENE clears the well of spikes
+  // INIENE re-seeds the SAME wave's enemy lines at NWTELI (TELIHI, W-037) — the killing spike
+  // is gone, replaced by the wave's fresh pre-seed (0 for waves 1-3, matching the replay tests).
+  s.spikes = new Array(s.tube.laneCount).fill(initialSpikeHeightForLevel(s.level))
   s.enemies = []
   s.player.lane = RESPAWN_LANE
   startLevel(s) // re-arm the spawn budget + Superzapper for the replayed wave

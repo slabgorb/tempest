@@ -355,9 +355,16 @@ describe('pulsarBar (Story 6-8: 5 jaggedness variants, sharp -> flat)', () => {
     expect(matchUpToScale(segDeltasOpen(v0[0].points), PULSAR_SHARPEST_ROM_DELTAS)).toBe(true)
   })
 
-  it('amplitude shrinks monotonically across the 5 variants', () => {
+  it('amplitude does not grow from the sharp end to the flat end (sharp → flat ordering)', () => {
+    // tp1-35 RE-SEAT: this once asserted STRICT monotonic amplitude, which encoded the
+    // "one table amplitude-scaled five ways" bug. The ROM's five chains (PULS0-4,
+    // ALDISP.MAC:2001-2035) differ in TOPOLOGY, not just amplitude — PULS1 (3-segment)
+    // and PULS2 (6-segment) share a peak-to-peak amplitude of 2, so strict `<` is false
+    // there. Weakened to non-increasing: variant 0 (sharpest) ≥ … ≥ variant 4 (flat),
+    // which holds under BOTH the current table and tp1-35's distinct chains. The real
+    // per-topology contract is pinned in tp1-35.shapes.test.ts (segment multiset).
     const amps = [0, 1, 2, 3, 4].map((v) => peakToPeakY(allPoints(pulsarBar(v))))
-    for (let i = 1; i < amps.length; i++) expect(amps[i]).toBeLessThan(amps[i - 1])
+    for (let i = 1; i < amps.length; i++) expect(amps[i]).toBeLessThanOrEqual(amps[i - 1])
   })
 
   it('variant 4 is a flat line (zero amplitude)', () => {

@@ -41,8 +41,10 @@
 //
 // **The tanker sub-stroke — which recolours?** BODY only. tankerGlyph (glyphs.ts
 //   :100-115) is a purple X-diamond BODY (closed) + an optional CARGO EMBLEM (open)
-//   that SIGNALS the split: cyan for pulsar cargo (ROM l.4628), yellow for fuseball
-//   (l.4711), none for flipper (l.4798). The body resolves through slot 2 (TANKERS);
+//   that SIGNALS the split: turquoise(cyan) chevron for pulsar cargo (TANKP,
+//   ALVROM.MAC:624), the four-colour blue/red/green/yellow mark for fuseball (TANKF,
+//   ALVROM.MAC:634, re-seated by tp1-35 from the old lone yellow), none for flipper
+//   (TANKR, l.4798). The body resolves through slot 2 (TANKERS);
 //   the emblem KEEPS its cargo colour at every level. This is why it is NOT a blanket
 //   glyph override — strokeGlyph's `override` recolours EVERY sub-stroke and would
 //   erase the emblem's meaning.
@@ -183,9 +185,22 @@ describe('AC2 — tanker: BODY resolves through slot 2, cargo EMBLEM keeps its m
     }
   })
 
-  it('the FUSEBALL-cargo emblem stays YELLOW at every level (it is NOT recoloured)', () => {
+  it('the FUSEBALL-cargo emblem is the ROM 4-colour mark {blue,red,green,yellow} at every level (NOT recoloured)', () => {
+    // tp1-35 RE-SEAT: V-007 shows TANKF is a FOUR-colour plus (CSTAT BLUE/RED/GREEN/
+    // YELLOW, ALVROM.MAC:634-646), not the single yellow cross this once pinned. The
+    // INTENT is unchanged — the emblem SIGNALS the split and is level-INVARIANT — so
+    // it is re-seated onto the emblem's colour SET (all strokes but the body), which
+    // must stay the same four colours at every bank. RED until tp1-35's Dev lands the
+    // 4-colour emblem; the old lone 'yellow' assertion is replaced, not deleted.
+    const emblemColors = (g: readonly GlyphStroke[]) =>
+      [...new Set(g.slice(0, g.length - 1).map((s) => s.color))].sort()
     for (const level of BANK_LEVEL) {
-      expect(emblemOf(tankerGlyph(level, 'fuseball'))?.color, `fuseball-cargo emblem @ ${level}`).toBe('yellow')
+      expect(emblemColors(tankerGlyph(level, 'fuseball')), `fuseball-cargo emblem @ ${level}`).toEqual([
+        'blue',
+        'green',
+        'red',
+        'yellow',
+      ])
     }
   })
 

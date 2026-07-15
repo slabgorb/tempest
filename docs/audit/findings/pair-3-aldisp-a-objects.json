@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 83,
+      "line": 79,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "The ROM sizes CHARY/CHARL1 (NCHARG=NPCHARG+NICHARG slots) so exactly the first 8 charge slots are the player's (DSPCHG: `CPX I,NPCHAR` picks PTCURS for indices below that boundary). Our MAX_BULLETS gate (sim.ts:96, `if (s.bullets.length >= MAX_BULLETS) return`) caps the player at the same 8 simultaneous shots.",
@@ -34,7 +34,8 @@
     "reasoning": "A second confirmed hard cap, and it is the one that makes the whole enemy-fire rate feel authentically sparse rather than a bullet-hell. CORRECTION (coverage review): this finding was originally filed as a false CONFIRMED — NICHARG is only the array's physical slot count, not the live per-wave cap — and has been reclassed to DIVERGENCE. See W-019 (pair-1-alwelg-sim-enemies.json), which states the correct per-wave WCHAMX+1 cap. [REFUTATION] Re-opened ALCOMN.MAC:813 (NICHARG=4, confirmed verbatim) and ALWELG.MAC. WTABLE (line 732) pairs TCHAMX with WCHAMX ('MAX # ENEMY SHOTS -1'); TCHAMX (line 586: '.BYTE TZ,1,9,1,1,1,2,3,2,2,3,3 ;ADD 1') is a TZ-type (per-wave byte) table giving WCHAMX=1 for wave 1 (waves 1-3 all =1, ramping to 2-3 by wave 5+). CONTOUR (lines 397-469) decodes TZ as one byte per wave in range and stores it directly via the WTABLE pointer -- no additional scaling. FIREIC (ALWELG.MAC:2687-2729) confirms the governing search: 'LDY WCHAMX' then a DEY/MIEND loop checking indices WCHAMX..0 inclusive (WCHAMX+1 slots) for a vacancy in CHARY+NPCHARG -- slots beyond WCHAMX are never even inspected, so the practical concurrent cap truly is WCHAMX+1 = 2 at wave 1, not 4. EASY/HARD (lines 473-518) DEC/INC WCHAMX further, capped at 3 (cap 4) on HARD -- so NICHARG=4 is only ever the ceiling, matched exactly by the array size, never the wave-1 floor. Checked our side: rules.ts:62 MAX_ENEMY_BULLETS=4 (comment 'ROM n_enemy_bullets = 4', itself evidence the same conflation happened on our side) and sim.ts:225 enforces it as a flat break condition for every wave/level, with no per-level scaling function anywhere in rules.ts or sim.ts. No unit or dead-module issue (ALWELG/ALCOMN both linked per ALEXEC.MAP). Holds.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "DA-003",
@@ -339,7 +340,8 @@
     "reasoning": "The authentic pinwheel spin is a globally-synchronized flicker independent of each bolt's travel; ours instead ties the spin rate to travel speed (which varies by level via ENEMY_BOLT_SPEED_OFFSET) and desyncs simultaneous bolts from one another. Corrected for the 28.444 fps rebase (see FR-001 in pair-11-framerate-adjudication.json): the divergence is unchanged, but the target cadence is ~7.1 Hz, not the ~15 Hz stated here — a fix that reproduces QFRAME's cadence must step at ROM_FPS/4, so the 60 Hz reading would have made the pinwheel spin twice as fast as the arcade's. [REFUTATION] Re-opened ALDISP.MAC:910 verbatim ('LDA QFRAME ;ENEMY SHOT') in context (896-915, DSPCHG): `ASL; AND I,6; ADC I,PTESHO` -- since ASL doubles QFRAME then masks to bits 1-2, the picture index has period 4 in QFRAME, i.e. cycles once every 4 increments of QFRAME. Confirmed QFRAME is incremented exactly once per real game frame at ALEXEC.MAC:252 (`INC QFRAME`), inside NONSTA, itself called once per FRTIMR>=9-gated MAINLN pass (28.444fps per the audit's established ground truth) -- so the cycle rate is 28.444/4 = 7.11Hz, matching the claim, and is a single GLOBAL counter shared by every enemy bolt on screen (confirmed no invader/bolt-specific offset is added before the table lookup). Checked our side: render.ts:297 derives the frame purely from `Math.floor(b.depth * 8)`, per-bolt and depth/speed-dependent, with the file's own comment (289-292) admitting frame+rotation 'derive from depth so the spin stays deterministic with the sim' -- i.e. a deliberate design choice that is nonetheless a real divergence from the ROM's shared, time-driven cadence. The finding's self-correction from a 60Hz-implied ~15Hz to the correct ~7.1Hz is arithmetically right.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-35"
   },
   {
     "id": "DA-019",
@@ -352,7 +354,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 402,
+      "line": 407,
       "verbatim": "  if (deadBolts.size > 0) s.enemyBullets = s.enemyBullets.filter((_, i) => !deadBolts.has(i))"
     },
     "claim": "TEXTYP's very first bang-type entry (line 977) explicitly covers BOTH a charge destroying an invader AND two charges colliding with each other — both get the EXPL1-4 16-spoke burst. Our `resolveEnemyBulletHits` (sim.ts:245-262) detects a player bullet meeting an enemy bolt in the same lane/depth and silently filters both out of their arrays — no event is emitted, so the only visual is the incidental small particle spark from fx.ts's generic \"a bullet vanished\" diff-detection, never the big `EnemyBurst`.",

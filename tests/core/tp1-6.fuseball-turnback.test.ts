@@ -174,7 +174,11 @@ describe('tp1-6 — a patrolling fuse at $20 cannot grab; only the rim kills (JF
     s.tube = tubeForLevel(12)
     s.player.lane = 4
     s.bullets = []
-    s.enemies = [makeEnemy('fuseball', 4, depth, levelParams(12))]
+    // jitterTimer high so the fuse does NOT do its lateral roll this frame: this test pins
+    // the GRAB (a rim fuse on the player's lane kills), not the jitter, so the fuse must stay
+    // on lane 4. (Without this it can roll off-lane on a passing LEFRIT coin — authentic, but
+    // it makes the grab test depend on the seeded RNG, which tp1-7's TNYMMX budget shifted.)
+    s.enemies = [{ ...makeEnemy('fuseball', 4, depth, levelParams(12)), jitterTimer: 999 }]
     s.spawn = { nymphs: [nymph(0, 30000)] }
     return s
   }

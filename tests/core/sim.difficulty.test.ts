@@ -13,54 +13,30 @@
 // boundary: core stays pure and reproducible).
 
 import { describe, it, expect } from 'vitest'
-import { levelParams, rollSpawnKind } from '../../src/core/rules'
-import { createRng } from '@arcade/shared/rng'
-import type { EnemyKind } from '../../src/core/state'
+import { levelParams } from '../../src/core/rules'
 
-const ALL_KINDS: EnemyKind[] = ['flipper', 'tanker', 'spiker', 'pulsar', 'fuseball']
-
-// Count how many of `n` seeded rolls land on each kind at a given level.
-function rollDistribution(level: number, seed: number, n: number): Map<EnemyKind, number> {
-  const r = createRng(seed) // mutable cursor: rollSpawnKind advances it in place
-  const counts = new Map<EnemyKind, number>()
-  for (let i = 0; i < n; i++) {
-    const kind = rollSpawnKind(level, r)
-    counts.set(kind, (counts.get(kind) ?? 0) + 1)
-  }
-  return counts
-}
-
-// Fraction of `n` seeded rolls that produce a non-flipper ("hard") enemy.
-function hardFraction(level: number, seed: number, n: number): number {
-  const r = createRng(seed)
-  let hard = 0
-  for (let i = 0; i < n; i++) {
-    if (rollSpawnKind(level, r) !== 'flipper') hard++
-  }
-  return hard / n
-}
-
-// Ordered list of kinds for a seeded roll sequence (for determinism checks).
-function rollSequence(level: number, seed: number, n: number): EnemyKind[] {
-  const r = createRng(seed)
-  const kinds: EnemyKind[] = []
-  for (let i = 0; i < n; i++) {
-    kinds.push(rollSpawnKind(level, r))
-  }
-  return kinds
-}
+// The three rollSpawnKind-DIRECT suites (roster/introduction, per-cycle escalation, and roll
+// determinism) are REMOVED by tp1-8: NYMCHA replaces the weighted roll, and the per-cycle
+// SPAWN_CYCLE_HARD_SCALE escalation those tests exercised is deleted (the ROM has no per-cycle
+// axis — its per-wave min/max tables ARE the difficulty ramp). The introduction schedule and the
+// per-wave composition are now covered per-wave by tests/core/tp1-8.nymcha.test.ts. The
+// levelParams SPEED/COUNT ramp below is unaffected and stays.
 
 describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
-  it('keeps speeds increasing across the level-16 → 17+ cycle boundary', () => {
-    // AC#1: difficulty does not reset when geometry repeats. Level 20 reuses
-    // the level-4 geometry but must move faster than level 16 in every speed.
-    const p16 = levelParams(16)
-    const p20 = levelParams(20)
-    expect(p20.flipperSpeed).toBeGreaterThan(p16.flipperSpeed)
-    expect(p20.spikerSpeed).toBeGreaterThan(p16.spikerSpeed)
-    expect(p20.fuseballSpeed).toBeGreaterThan(p16.fuseballSpeed)
-    expect(p20.tankerSpeed).toBeGreaterThan(p16.tankerSpeed)
-    expect(p20.enemyCount).toBeGreaterThan(p16.enemyCount)
+  it('difficulty rises over the long run, following the ROM per-wave tables (RE-SEATED by tp1-7)', () => {
+    // This `it` used to assert every speed AND the enemy count rise MONOTONICALLY across the
+    // level-16 -> 17 geometry wrap (p20 > p16). The ROM refutes that outright:
+    //   • TINVIN (W-012) DIPS at wave 17 — invaders restart at -81, SLOWER than wave 16's -96.
+    //   • TNYMMX (W-011) drops the count too — 27 at wave 16, 23 at wave 20.
+    // So the per-wave curve is NOT a monotonic ramp; its exact shape is the ROM's, pinned in
+    // tp1-7.contour-tables.test.ts. What survives of story 3-4's AC#1 is (a) the LONG-RUN rise
+    // and (b) that the geometry wrap is not a difficulty RESET — the latter now carried by the
+    // enemy MIX (the hard-enemy escalation below), not a hand-tuned per-level speed curve.
+    expect(levelParams(33).flipperSpeed).toBeGreaterThan(levelParams(1).flipperSpeed)
+    expect(levelParams(33).enemyCount).toBeGreaterThan(levelParams(1).enemyCount)
+    // The wave-17 dip is REAL and intended (W-012). This is the assertion that replaces the
+    // refuted p20 > p16: a step DOWN, not up, right after the wrap.
+    expect(levelParams(17).flipperSpeed).toBeLessThan(levelParams(16).flipperSpeed)
   })
 
   // 'keeps spawn cadence tightening across the cycle boundary' stood here, pinning
@@ -72,78 +48,13 @@ describe('levelParams ramps past the geometry cycle (AC#1, AC#2)', () => {
   // `pulseInterval` in tp1-5 — the ramp keeps losing numbers that were never the
   // ROM's to scale.)
 
-  it('clamps timing floors so no cadence hits zero at very high levels', () => {
-    // AC#2's survivor: with spawnInterval and pulseInterval both structural now,
-    // the ramp's remaining per-level cadences are the speeds — assert the ramp
-    // keeps them finite and ordered instead.
+  it('keeps speeds finite and RISING past the L33 tier — they are not capped there (RE-SEATED by tp1-7)', () => {
+    // The old assertion was `flipperSpeed(50) <= flipperSpeed(33)` — it assumed the L33 tier
+    // was the fast cap. TINVIN refutes it (W-012): the table keeps climbing after 33 (-108 at
+    // 33-39, -110 at 40-48, -120 at 49-64), so level 50 is strictly FASTER than level 33. The
+    // survivor of AC#2 is only that the speed stays finite and does not collapse.
     const p = levelParams(50)
     expect(p.flipperSpeed).toBeGreaterThan(0)
-    expect(p.flipperSpeed).toBeLessThanOrEqual(levelParams(33).flipperSpeed)
-  })
-})
-
-describe('rollSpawnKind roster & introduction schedule (AC#3, AC#4)', () => {
-  it('opens the full five-enemy roster by level 18', () => {
-    // AC#3: deep into the second cycle every kind must be reachable.
-    const dist = rollDistribution(18, 7, 4000)
-    for (const kind of ALL_KINDS) {
-      expect(dist.get(kind) ?? 0).toBeGreaterThan(0)
-    }
-  })
-
-  it('preserves the authentic ROM early-level introduction schedule', () => {
-    // AC#4 (reconciled by story 6-13): cycle scaling must NOT leak hard enemies
-    // in before their *authentic* gate. Levels 1-4: flippers only. Level 5
-    // introduces tankers/spikers, but pulsars (L17+) and fuseballs (L11+) stay
-    // out. Source: docs/ux/2026-06-27-enemy-roster-rom-extract.md §H.
-    for (const level of [1, 2, 3, 4]) {
-      expect(rollDistribution(level, 11, 500)).toEqual(
-        new Map<EnemyKind, number>([['flipper', 500]]),
-      )
-    }
-
-    const d5 = rollDistribution(5, 11, 2000)
-    expect(d5.get('tanker') ?? 0).toBeGreaterThan(0)
-    expect(d5.get('spiker') ?? 0).toBeGreaterThan(0)
-    expect(d5.get('pulsar') ?? 0).toBe(0)
-    expect(d5.get('fuseball') ?? 0).toBe(0)
-  })
-})
-
-describe('rollSpawnKind escalates the enemy mix on later cycles (AC core: new behavior)', () => {
-  // Levels 5, 21, 37 share the same in-cycle position ((level-1) mod 16 === 4)
-  // and ascending cycles (0, 1, 2). NOTE (story 6-13): under the authentic ROM
-  // introduction schedule they no longer differ by cycle ALONE — L5 only has
-  // tankers/spikers, while L21/L37 (≥17) also have pulsars+fuseballs. So the
-  // rising hard-enemy proportion reflects both the opening roster and the
-  // retained cycle scaling; the assertion that later levels are harder still
-  // holds. (Whether to keep cycle scaling vs the ROM's fixed L33+ steady-state
-  // weights is a flagged follow-up decision — see story 6-13 delivery findings.)
-  const SEED = 4242
-  const N = 6000
-
-  it('spawns a higher proportion of hard enemies on the second cycle than the first', () => {
-    const firstCycle = hardFraction(5, SEED, N)
-    const secondCycle = hardFraction(21, SEED, N)
-    expect(secondCycle).toBeGreaterThan(firstCycle)
-  })
-
-  it('keeps escalating the hard-enemy proportion into the third cycle', () => {
-    const firstCycle = hardFraction(5, SEED, N)
-    const secondCycle = hardFraction(21, SEED, N)
-    const thirdCycle = hardFraction(37, SEED, N)
-    expect(thirdCycle).toBeGreaterThan(firstCycle)
-    expect(thirdCycle).toBeGreaterThanOrEqual(secondCycle)
-  })
-})
-
-describe('rollSpawnKind stays deterministic across the cycle (AC#5)', () => {
-  it('produces identical kind sequences for identical seed, level and rng state', () => {
-    // Core purity: same seed + same level => byte-identical roll sequence.
-    const a = rollSequence(21, 999, 1000)
-    const b = rollSequence(21, 999, 1000)
-    expect(a).toEqual(b)
-    // Sanity: the sequence is not trivially one-kinded at a deep level.
-    expect(new Set(a).size).toBeGreaterThan(1)
+    expect(p.flipperSpeed).toBeGreaterThan(levelParams(33).flipperSpeed)
   })
 })

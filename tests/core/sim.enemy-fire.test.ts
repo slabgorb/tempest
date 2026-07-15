@@ -16,7 +16,7 @@ import { GameState } from '../../src/core/state'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { levelParams } from '../../src/core/rules'
+import { levelParams, enemyBoltCapForLevel } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const DT = 1 / 60
@@ -124,24 +124,28 @@ describe('enemy-fire SFX hook (AC8)', () => {
 })
 
 describe('concurrent enemy bolts are capped (AC3, self-limiting)', () => {
-  it('never exceeds 4 in flight, and saturates to the cap under pressure', () => {
-    // 11 eager tankers (player parked on lane 15). They start low enough that none
-    // reach the split depth (0.9) within the window, so all stay eligible shooters.
+  it("never exceeds the WAVE'S cap, and saturates to it under pressure (RE-SEATED by tp1-7)", () => {
+    // 11 eager tankers (player parked on lane 15). They start low enough that none reach the
+    // split depth (0.9) within the window, so all stay eligible shooters.
+    //
+    // NOTE: fireBoard's first arg is the SEED, not the level — this board is WAVE 1. It used
+    // to assert the flat MAX_ENEMY_BULLETS cap of 4; tp1-7 (W-019/DA-002) makes the live cap
+    // per-wave = WCHAMX+1, which is TWO at wave 1 — half the bolt pressure we used to ship.
     const enemies: GameState['enemies'] = []
     for (let lane = 0; lane <= 10; lane++) {
       enemies.push(makeEnemy('tanker', lane, 0.35, levelParams(1), 'flipper'))
     }
     let s = fireBoard(5, enemies, 15)
+    const cap = enemyBoltCapForLevel(1)
+    expect(cap, 'wave 1 cap is WCHAMX+1 = 2').toBe(2)
 
-    let max = 0
     let peak = 0
     for (let i = 0; i < 220; i++) {
       s = stepGame(s, NEUTRAL, DT)
-      max = Math.max(max, s.enemyBullets.length)
       peak = Math.max(peak, s.enemyBullets.length)
     }
-    expect(max, 'concurrent enemy bolts must never exceed the n_enemy_bullets cap').toBeLessThanOrEqual(4)
-    expect(peak, 'under heavy pressure the in-flight count should reach the cap').toBe(4)
+    expect(peak, 'concurrent enemy bolts must never exceed the wave-1 cap').toBeLessThanOrEqual(cap)
+    expect(peak, 'under heavy pressure the in-flight count should reach the wave-1 cap of 2').toBe(cap)
   })
 })
 

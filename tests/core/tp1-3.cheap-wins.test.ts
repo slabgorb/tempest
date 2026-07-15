@@ -301,6 +301,19 @@ describe('AC7 / W-022 — the fuseball\'s vulnerability is INVERTED (COLCHK, ALW
     throw new Error('no seed produced a lane slide — FUSEBALL_MOVE_PROB may have changed')
   }
 
+  // The mirror of rollOnce: retry seeds until one does NOT slide (the move-prob roll fails) —
+  // the "landed and parked" case. Robust to RNG state: tp1-7's TNYMMX budget draws a different
+  // number of nymph lanes at init, shifting the seeded jitter coin, so a fixed magic seed is
+  // fragile. At level 1 the roll is LEFRIT (a ±1 coin, NOT "step toward the player"), so a
+  // fuse can slide off its lane even when the player shares it — the settle is what we search.
+  function settleOnce(start: Fuseball, playerLane: number): Fuseball {
+    for (let seed = 1; seed < 200; seed++) {
+      const out = jitterOnce(start, playerLane, seed)
+      if (out.lane === start.lane) return out // it did NOT slide — parked
+    }
+    throw new Error('no seed produced a non-slide — FUSEBALL_MOVE_PROB may have changed')
+  }
+
   it('becomes VULNERABLE the moment it rolls to a new lane', () => {
     const rolled = rollOnce(fuse({ vulnerable: false }), 12)
     expect(rolled.lane).not.toBe(8) // it rolled...
@@ -318,10 +331,11 @@ describe('AC7 / W-022 — the fuseball\'s vulnerability is INVERTED (COLCHK, ALW
   })
 
   it('becomes INVINCIBLE once it settles on a lane (";MAKE IT INVINCIBLE", ALWELG.MAC:1928)', () => {
-    // A jitter tick that does NOT slide = the fuse landed and is parked on a line.
-    // Pin it where it already is (player on its own lane ⇒ the step toward the player
-    // is 0 ⇒ no slide can occur, whatever the RNG rolls).
-    const settled = jitterOnce(fuse({ vulnerable: true }), 8, 1)
+    // A jitter tick that does NOT slide = the fuse landed and is parked on a line. We SEARCH
+    // for a seed whose move-prob roll fails (settleOnce) rather than trusting a magic seed —
+    // at level 1 the roll is LEFRIT, a ±1 coin, so a fuse can slide off its lane whatever the
+    // player does; the SETTLE (no slide → parked → invincible) is what this pins.
+    const settled = settleOnce(fuse({ vulnerable: true }), 8)
     expect(settled.lane).toBe(8) // it did not roll...
     expect(settled.vulnerable).toBe(false) // ...so it is parked, and bulletproof
   })

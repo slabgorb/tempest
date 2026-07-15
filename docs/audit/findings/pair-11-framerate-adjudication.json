@@ -67,7 +67,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 207,
+      "line": 203,
       "verbatim": "export const WARP_AVOID_SPIKES_SECONDS = 0.5"
     },
     "claim": "'SECOND\t=20.\t\t\t;FRAMES/SECOND' (ALCOMN.MAC:87, redeclared identically at ALEXEC.MAC:312) sits under the header ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85) and is used in exactly one role: as the reload unit for countdown timers. Every use is a pause load - 'LDA I,4*SECOND\t\t;LONGER PAUSE' (ALEXEC.MAC:330), 2*SECOND (333, 402), 1*SECOND (355), 0*SECOND (387), 'LDA I,SECOND\t\t;RESTART FRACTIONAL SECONDS TIMER' (ALWELG.MAC:219) - plus QUASEC = SECOND/4 (ALCOMN.MAC:88), used once, at 'LDA I,6*QUASEC\t\t;WARNING DELAY' (ALWELG.MAC:3164). It appears NOWHERE in MAINLN, ALHARD's IRQ, or any speed table: it never gates the loop and cannot set the frame rate. It is the author's ASSUMED frames-per-second for authoring pause durations, and it is inconsistent with his own ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581) and with the machine (FR-001). The one place it reaches our code is WARP_AVOID_SPIKES_SECONDS: 6*QUASEC = 30 frames, which at the real 28.44 fps is 1.055 s - not the 1.5 s WD-009 derived from SECOND=20, and not the 0.5 s we ship (which is 30/60).",
@@ -195,7 +195,8 @@
     "reasoning": "W-020's CLASS is right (our offset is wrong and the '+0xc0 flipper-relative' comment is unfounded) but its prescribed constant would bake the 60 Hz error permanently into the fix. Anyone applying W-020 as written lands 2.11x fast and will then 'confirm' it against this audit. The correct constant is 0.254 depth/s. This is the general shape of the danger: the rebase must land BEFORE the numeric fixes, or each fix re-introduces it. [REFUTATION] Re-opened ALWELG.MAC:600-601 'TCHARIN: .BYTE TB,1,99.,-64.' — a single record spanning all waves, so the offset is genuinely level-invariant as claimed. Decoded TB via the DOTB handler (ALWELG.MAC:829-832): 'LDA NY,TEMP3; CLC; ADC WINVIL; RTS' — adds byte3 (-64) to the CURRENT WINVIL. Confirmed via the WTABLE processing order (ALWELG.MAC:426-469, INDEX1 walks from WTABEND back toward WTABLE, i.e. table entries are processed in REVERSE listing order) that TINVIN (listed after TCHARIN at line 754) is processed BEFORE TCHARIN (listed at line 753), so WINVIL already holds the wave's base flipper value when DOTB runs for TCHARIN — meaning the enemy-shot raw value is (wave's WINVIL raw byte) + (-64), and after the shared TIMES8 scaling (ALWELG.MAC:525-529, 'JSR TIMES8 ;ENEMY SHOT') the OFFSET between bolt speed and flipper speed collapses to exactly 64*8/256=2.0 along/frame regardless of wave, because ×8 is linear and distributes over the sum. This exactly matches the claim's mechanism and arithmetic. At ROM_FPS: 2.0*(256/9)/224=0.254 depth/s. Confirmed rules.ts:72 ENEMY_BOLT_SPEED_OFFSET=0.72, and sim.ts:207 'levelParams(level).flipperSpeed + ENEMY_BOLT_SPEED_OFFSET' shows the offset is genuinely used as an additive term over flipper speed, matching the semantics of the ROM's DOTB computation. W-020's alternate value 2.0*60/224=0.5357 also checks out arithmetically as '60-based'. Holds exactly.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "FR-011",
@@ -257,7 +258,8 @@
     "reasoning": "This is the class of error the brief warned about: a divergence misjudged in the OTHER direction. W-014's verdict (DIVERGENCE - wrong curve, and the spiker should be pinned to the flipper's speed rather than carry its own) still stands and its FIX is still right, but its stated consequence - 'at 0.22 vs 0.368 depth/s our spikers take 67% longer to lay the same spike' - is backwards: at the correct base our spikers lay spikes FASTER than the arcade's, and pinning them to the (rebased) flipper speed will SLOW them, not speed them up. Any reader who applies W-014's reasoning without the rebase will tune the spiker in the wrong direction. [REFUTATION] Fully hand-traced the mechanism. ALWELG.MAC:602 TSPIIN's TB record (param=0) dispatches to DOTB (line 829: 'LDA NY,TEMP3 / CLC / ADC WINVIL' — adds the param byte to WINVIL[0]) and stores the result at the WTABLE-declared destination WINVIL+ZABTRA (line 752's '.WORD TSPIIN,WINVIL+ZABTRA'; ZABTRA=3='TRALER' per ALCOMN.MAC:848, the spiker/trailer slot per JSTRAI at ALWELG.MAC:2205). Critically verified the WTABLE loop's iteration ORDER is reverse (CONTOUR at ALWELG.MAC:424-469, INDEX1 starts at the last entry and decrements): TINVIN (writes WINVIL[0], the flipper's raw contour byte, -44 for wave1 per ALWELG.MAC:591-592's TA record) is processed BEFORE TSPIIN in this reverse pass, so by the time TSPIIN's DOTB runs, WINVIL[0] already holds the flipper's -44. With param=0, spiker inherits flipper's raw value exactly for waves 1-20. Then hand-decoded TIMES8 (ALWELG.MAC:560-578): raw -44 (0xFFD4 sign-extended) times 8 = -352 = 0xFEA0, giving fixed-point magnitude 2 + 160/256 = 1.375 along-units/frame — this EXACT value (1.375) is independently present in our own code as FLIPPER_ALONG_PER_FRAME_L1 (rules.ts:148), corroborating the ROM-side derivation. Converted at the true 28.444fps: 1.375*28.444/224 = 0.1746 depth/s (WARP_ALONG_SPAN=224 confirmed rules.ts:44, same along-unit coordinate system used by INVAY/ILINDDY=0xF0). Our shipped spikerSpeed at level 1 = 0.22*1 = 0.22 (rules.ts:188, ramp=1 at level1 per line 179). 0.22/0.1746 = 1.26 → 26% faster, exactly as claimed. Also confirms the OLD 60-based comparison (0.368 = 1.375*60/224, matching flipperSpeedForLevel(1) which still literally uses '*60') would have made W-014's original '40% slower' claim internally consistent — showing precisely how the direction flips under the rebase. No refutation found on macro, order, or unit grounds. [CORRECTION] None.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-7"
   },
   {
     "id": "FR-014",
@@ -270,7 +272,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 169,
+      "line": 165,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "TIMAX ('TIMAX:\t.BYTE 0,CSUSTA+<8*<CSUINT+1>>,CSUSTA+<1*<CSUINT+1>>,0,0', ALWELG.MAC:3539) resolves with CSUSTA=3, CSUINT=1 to {0, 19, 5, 0, 0}: the first zap window is 19 GAME frames = 19/28.44 = 0.668 s and the second is 5 frames = 0.176 s. We ship ZAP_WINDOW_FIRST = 13 and ZAP_WINDOW_SECOND = 5, ticked at 60/s (FR-012), so our windows last 0.217 s and 0.083 s - the first is 3.1x short in wall time, the second 2.1x.",
