@@ -80,7 +80,6 @@ function bbox(pts: readonly Pt[]): { w: number; h: number } {
   const ys = pts.map((p) => p.y)
   return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
 }
-const rot = (p: Pt, a: number): Pt => ({ x: p.x * Math.cos(a) - p.y * Math.sin(a), y: p.x * Math.sin(a) + p.y * Math.cos(a) })
 
 // ---------------------------------------------------------------------------
 // Authentic ROM vertex data (verbatim ALVROM.MAC, hex → decimal)
@@ -171,24 +170,21 @@ describe('AC-2 spikerGlyph — the ROM SPIRA1-4 GREEN 21-point authored spirals 
     }
   })
 
-  it('winds strictly outward — SPIRA1\'s monotonically-growing radii (frame 0)', () => {
-    // Frame 0 must carry SPIRA1's actual 21 radii, not just "some 21 points".
+  it('carries SPIRA1\'s actual 21 outward-winding radii on frame 0 (not just "some 21 points")', () => {
+    // The frame-0 radius SET must equal SPIRA1's (radius 1.4→21), so a faithful
+    // transcription — not any 21 points — is what passes. Scale/rotation/Y-flip invariant.
     const r = normalisedRadiiSorted(allPoints(spikerGlyph(0)))
     expect(radiiMatch(r, SPIRA1_RADII), 'frame-0 radius set does not match SPIRA1').toBe(true)
   })
 
-  it('the 4 frames are separately AUTHORED, not one curve rigidly rotated 90°/frame', () => {
-    // The eyeballed spiker is `rotPoints(SPIKER_BASE, frame*90°)`: frame 1 is frame 0
-    // rotated exactly 90°, vertex-for-vertex. SPIRA2 is re-drawn, so no such exact
-    // rotation exists. (Y-convention cancels — both frames share it.)
-    const f0 = allPoints(spikerGlyph(0))
-    const f1 = allPoints(spikerGlyph(1))
-    expect(f0.length).toBe(f1.length)
-    const isPureRotation = [Math.PI / 2, -Math.PI / 2, Math.PI].some((a) =>
-      f0.every((p, i) => Math.hypot(rot(p, a).x - f1[i].x, rot(p, a).y - f1[i].y) < 1e-3 * Math.max(1, radius(p))),
-    )
-    expect(isPureRotation, 'frame 1 is a rigid rotation of frame 0 — the spiral was not re-authored').toBe(false)
-  })
+  // NOTE: an earlier RED test asserted "the 4 frames are NOT one curve rotated 90°/frame".
+  // That premise came from finding V-008 ("re-authored, not rotated") and is REFUTED by the
+  // primary source: SPIRA2 === rot90(SPIRA1), SPIRA3 === rot180, SPIRA4 === rot270, vertex-for-
+  // vertex (ALVROM.MAC:549-619). The ROM's four spiral tables ARE exact rotations of one 21-pt
+  // spiral, so the faithful port rotates SPIRA1 by (frame&3)·90° — exactly the mechanism the old
+  // eyeballed spiker used. The real divergence tp1-17 fixes is 12→21 points and the authored
+  // curve, NOT the rotation. The test was removed rather than made to pass by an unfaithful
+  // perturbation of the frames. See Design Deviations → Dev and Delivery Findings.
 
   it('yields 4 distinct frames and wraps on `frame & 3`', () => {
     const frames = [0, 1, 2, 3].map((f) => fingerprint(spikerGlyph(f)))

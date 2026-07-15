@@ -86,6 +86,20 @@ function fromDeltas(deltas: readonly [number, number][], ampY = 1): V[] {
   return pts
 }
 
+/** The largest |x| or |y| across a vertex list — its half-extent from the origin. */
+function maxExtent(verts: readonly (readonly [number, number])[]): number {
+  return Math.max(...verts.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]))
+}
+
+/** Uniformly scale raw ROM object-unit vertices into the module's glyph-local space
+ *  (render.ts applies the final per-object scale). `k` overrides the derived factor
+ *  so several related tables (e.g. the fuseball's four frames) share ONE scale and
+ *  do not pulse in size. Shape is preserved exactly — only the units change. */
+function scaleVerts(verts: readonly (readonly [number, number])[], target: number, k?: number): V[] {
+  const s = k ?? target / maxExtent(verts)
+  return verts.map(([x, y]) => ({ x: x * s, y: y * s }))
+}
+
 // ==========================================================================
 // A. Flipper — RED 8-segment closed bowtie/butterfly (_pv_t3, ROM l.14355).
 // ==========================================================================
@@ -106,13 +120,23 @@ export function flipperGlyph(level: number): Glyph {
 // ==========================================================================
 // B. Tanker — elongated PURPLE X-diamond body + cargo emblem (draw_tanker).
 // ==========================================================================
+// GENTNK — the ROM tanker body, ALVROM.MAC:651-668 (V-006). Seventeen SCVEC
+// ABSOLUTE vertices (hex object units; CM=2 is a uniform scale we normalise away),
+// entered from TANKR's beam-off move to (0x20,0) — so the drawn polyline starts
+// there. An OUTER diamond {(±0x20,0),(0,±0x20)} laced through an INNER diamond
+// {(±0x0c,0),(0,±0x0c)}: Theurer's square, laced double diamond, not our old
+// elongated 9×6 single diamond. Colour is COLRAM slot 2 (TANCOL=PURPLE, bank 0);
+// only the BODY recolours per bank — the cargo emblem keeps its signalling hue (V-019).
+const GENTNK_VERTS: readonly [number, number][] = [
+  [0x20, 0], // TANKR beam-off entry; the first lit vector draws from here
+  [0, 0x20], [0, 0x0c], [0x20, 0], [0x0c, 0], [0, 0x0c], [-0x0c, 0], [0, 0x20], [-0x20, 0],
+  [-0x0c, 0], [0, -0x0c], [-0x20, 0], [0, -0x20], [0, -0x0c], [0x0c, 0], [0, -0x20], [0x20, 0], [0x0c, 0],
+]
+
 export function tankerGlyph(level: number, cargo: TankerCargo): Glyph {
-  // Body: GENTNK is COLRAM slot 2 (TANKERS; TANCOL=PURPLE, purple only in bank 0),
-  // an elongated (taller than wide) X-diamond. Only the BODY recolours per bank —
-  // the cargo emblem below keeps its cargo-signalling hue (V-019: not a blanket override).
   const body: GlyphStroke = {
-    points: [{ x: 0, y: -9 }, { x: 6, y: 0 }, { x: 0, y: 9 }, { x: -6, y: 0 }],
-    closed: true,
+    points: scaleVerts(GENTNK_VERTS, 9), // normalise the ±0x20 outer ring to the module's ~±9
+    closed: false, // GENTNK is an open laced chain (RTSL, no closing vector)
     color: asGlyphColor(paletteColor(level, 2)),
   }
   // Flipper-cargo tanker carries no emblem (ROM l.4798); pulsar (l.4628) and
@@ -126,17 +150,23 @@ export function tankerGlyph(level: number, cargo: TankerCargo): Glyph {
 }
 
 // ==========================================================================
-// C. Spiker — outward pinwheel/spiral, 4 spin frames on `frame & 3`.
+// C. Spiker (Theurer's "traler") — the ROM's authored 21-point GREEN spiral.
 // ==========================================================================
-const SPIKER_BASE: readonly V[] = Array.from({ length: 12 }, (_, i) => {
-  const r = 2 + i * 0.7 // radius grows outward (the spiral winds out)
-  const a = i * (Math.PI / 3)
-  return { x: r * Math.cos(a), y: r * Math.sin(a) }
-})
+// SPIRA1, ALVROM.MAC:524-544 (V-008): 21 SCVEC ABSOLUTE vertices winding strictly
+// outward (radius 1.4→21). The ROM stores four tables SPIRA1-4, but they are EXACT
+// 90° rotations of this one — verified vertex-for-vertex against ALVROM.MAC:549-619
+// (SPIRA2 === rot90(SPIRA1), etc.) — so rotating SPIRA1 by (frame&3)·90° reproduces
+// all four frames byte-for-byte. (This corrects V-008's "re-authored, not rotated":
+// the frames ARE rotations; the real divergence tp1-17 fixes is 12→21 points and the
+// authored curve, not the rotation mechanism.) Colour GREEN (ALCOMN TRACOL=GREEN).
+const SPIRA1: readonly V[] = scaleVerts([
+  [1, -1], [0, -2], [-2, -2], [-4, 0], [-4, 4], [0, 6], [5, 5], [8, 0], [7, -7], [0, -0x0a], [-8, -8],
+  [-0x0c, 0], [-9, 9], [0, 0x0e], [0x0b, 0x0b], [0x10, 0], [0x0c, -0x0c], [0, -0x12], [-0x0e, -0x0e], [-0x14, 0], [-0x0f, 0x0f],
+], 9)
 
 export function spikerGlyph(frame: number): Glyph {
-  const a = (frame & 3) * (Math.PI / 2) // ROM cycles 4 frames, each +90deg
-  return [{ points: rotPoints(SPIKER_BASE, a), closed: false, color: 'green' }]
+  const a = (frame & 3) * (Math.PI / 2) // four frames, each SPIRA1 turned +90°
+  return [{ points: rotPoints(SPIRA1, a), closed: false, color: 'green' }]
 }
 
 // ==========================================================================
@@ -155,24 +185,58 @@ export function spikeGlyph(spikeHeight: number): Glyph {
 }
 
 // ==========================================================================
-// D. Fuseball — chaotic multi-colour ball-of-legs, legs redrawn each frame.
+// D. Fuseball — the ROM's FUSE0-3, five-colour authored scribbles.
 // ==========================================================================
-const FUSE_COLORS: readonly GlyphColor[] = ['red', 'yellow', 'cyan']
-const FUSE_LEGS = 9
+// FUSE0-3, ALVROM.MAC:954-1095 (V-014). Four separately hand-authored writhe frames
+// (NOT rotations of one another), each a scribble of FIVE colour groups drawn in a
+// fixed CSTAT order — red, yellow, green, purple, turquoise(→cyan). Each group is an
+// open polyline of absolute SCVEC vertices (hex object units, CM=2 folded into the
+// shared scale). Our old shape was a 9-leg procedural starburst in only red/yellow/
+// cyan — GREEN and PURPLE never appeared.
+interface FuseGroup {
+  readonly color: GlyphColor
+  readonly verts: readonly [number, number][]
+}
+const FUSE_FRAMES: readonly (readonly FuseGroup[])[] = [
+  [ // FUSE0 — ALVROM.MAC:954-989
+    { color: 'red', verts: [[-4, 6], [1, 0x0c], [-5, 0x0e], [1, 0x12], [-1, 0x18]] },
+    { color: 'yellow', verts: [[8, 0x17], [0x0a, 0x14], [0x0c, 0x10], [6, 0x0c], [8, 8], [0, 0]] },
+    { color: 'green', verts: [[0x0a, 2], [8, -6], [0x0e, -6], [8, -0x0c], [0x0c, -0x13], [0x10, -0x13]] },
+    { color: 'purple', verts: [[-4, -0x1a], [-4, -0x14], [-0x0a, -0x14], [-7, -0x0d], [-9, -6], [-3, -8], [0, 0]] },
+    { color: 'cyan', verts: [[-8, -2], [-0x0a, 3], [-0x0e, -1], [-0x10, 4], [-0x1c, -4]] },
+  ],
+  [ // FUSE1 — ALVROM.MAC:990-1025
+    { color: 'red', verts: [[-1, 8], [-5, 8], [-5, 0x0a], [-0x0a, 9], [-7, 0x10], [-0x0c, 0x10], [-0x0e, 0x0c]] },
+    { color: 'yellow', verts: [[0x14, 0x10], [0x0e, 0x12], [9, 0x0d], [0x0a, 7], [6, 8], [0, 0]] },
+    { color: 'green', verts: [[1, -1], [9, 0], [0x0b, -5], [0x10, -6], [0x0e, -0x0a], [0x14, -0x0b]] },
+    { color: 'purple', verts: [[-8, -0x16], [-8, -0x12], [-4, -0x0c], [-8, -0x0c], [-6, -6], [0, 0]] },
+    { color: 'cyan', verts: [[-8, 0], [-0x0c, -4], [-0x10, -2], [-0x18, -6]] },
+  ],
+  [ // FUSE2 — ALVROM.MAC:1026-1061
+    { color: 'red', verts: [[0, 7], [3, 9], [1, 0x0d], [6, 0x10], [4, 0x14], [8, 0x1c]] },
+    { color: 'yellow', verts: [[0x18, 0x0e], [0x12, 0x0e], [0x10, 6], [0x0a, 2], [8, 6], [0, 0]] },
+    { color: 'green', verts: [[4, -4], [8, -4], [9, -8], [0x10, -9], [0x11, -0x10], [0x18, -0x10]] },
+    { color: 'purple', verts: [[-0x0c, -0x18], [-8, -0x14], [-0x0c, -0x0c], [-5, -0x0a], [0, 0]] },
+    { color: 'cyan', verts: [[-4, 2], [-8, 0], [-0x0a, 2], [-0x12, 0], [-0x16, -6]] },
+  ],
+  [ // FUSE3 — ALVROM.MAC:1062-1095
+    { color: 'red', verts: [[-4, 4], [-3, 0x0a], [-6, 0x0e], [-0x0c, 0x0e], [-0x0c, 0x12]] },
+    { color: 'yellow', verts: [[0x10, 0x10], [0x0a, 0x0e], [0x0d, 0x0b], [8, 8], [0x0a, 4], [0, 0]] },
+    { color: 'green', verts: [[8, -3], [9, -7], [0x0e, -4], [0x12, -4], [0x14, -0x0e]] },
+    { color: 'purple', verts: [[0, -0x18], [-4, -0x14], [0, -0x10], [-4, -0x0c], [2, -8], [0, 0]] },
+    { color: 'cyan', verts: [[-9, -4], [-0x0a, -1], [-0x0e, -1], [-0x0f, -7], [-0x15, -9]] },
+  ],
+]
+
+// One shared scale across all four frames (the global half-extent → the module's ~9)
+// so the fuseball does not pulse in size between writhe frames. Built once, immutable.
+const FUSE_SCALE = 9 / Math.max(...FUSE_FRAMES.flatMap((f) => f.map((g) => maxExtent(g.verts))))
+const FUSE_GLYPHS: readonly Glyph[] = FUSE_FRAMES.map((frame) =>
+  frame.map((g) => ({ points: scaleVerts(g.verts, 9, FUSE_SCALE), closed: false, color: g.color })),
+)
 
 export function fuseballGlyph(frame: number): Glyph {
-  const f = frame & 3 // 4 writhe frames
-  const legs: GlyphStroke[] = []
-  for (let i = 0; i < FUSE_LEGS; i++) {
-    const base = i * ((Math.PI * 2) / FUSE_LEGS)
-    const ang = base + 0.6 * Math.sin(i * 1.7 + f * 1.9) // legs writhe per frame
-    const len = 6 + 3 * Math.cos(i * 0.9 + f * 1.3)
-    const tip: V = { x: Math.cos(ang) * len, y: Math.sin(ang) * len }
-    const midAng = ang + 0.3 * Math.sin(i + f)
-    const mid: V = { x: Math.cos(midAng) * len * 0.5, y: Math.sin(midAng) * len * 0.5 }
-    legs.push({ points: [{ x: 0, y: 0 }, mid, tip], closed: false, color: FUSE_COLORS[i % FUSE_COLORS.length] })
-  }
-  return legs
+  return FUSE_GLYPHS[frame & 3] // 4 authored writhe frames
 }
 
 // ==========================================================================
@@ -301,19 +365,28 @@ export function playerClawGlyph(roll: number): Glyph {
 }
 
 // ==========================================================================
-// H. Player bullet — two concentric dotted octagon rings.
+// H. Player charge — the ROM's DIARA2, 17 dots in two rings.
 // ==========================================================================
-function octagon(radius: number): V[] {
-  return Array.from({ length: 8 }, (_, k) => {
-    const a = k * (Math.PI / 4)
-    return { x: radius * Math.cos(a), y: radius * Math.sin(a) }
-  })
-}
+// DIARA2, ALVROM.MAC:383-403 (V-010 / DA-004). Seventeen SCDOT dots (each a beam-off
+// move + a zero-length lit point — NOT a stroked outline): an INNER 9-dot ring
+// (CSTAT PSHCTR, the ammo tint) and an OUTER 8-dot ring (CSTAT YELLOW, fixed). The
+// outer ring is deliberately IRREGULAR — its +x/+y cardinals sit at 0x0f but its
+// -x/-y cardinals at only 0x0b. Only the INNER ring is ammo-tinted (DA-004), so the
+// tint arrives as data here rather than a render-wide override that recolours both.
+const DIARA2_INNER: readonly [number, number][] = [
+  [0, 0], [7, 0], [5, 5], [0, 7], [-5, 5], [-7, 0], [-5, -5], [0, -7], [5, -5],
+]
+const DIARA2_OUTER: readonly [number, number][] = [
+  [0x0f, 0], [0x0b, 0x0b], [0, 0x0f], [-0x0b, 0x0b], [-0x0b, 0], [-0x0b, -0x0b], [0, -0x0b], [0x0b, -0x0b],
+]
+// Both rings share ONE scale (outer 0x0f → the module's ~6 bullet size).
+const DIARA2_SCALE = 6 / 0x0f
 
-export function playerBulletGlyph(): Glyph {
+export function playerBulletGlyph(tint: GlyphColor): Glyph {
+  const dot = (p: V, color: GlyphColor): GlyphStroke => ({ points: [p], closed: false, color })
   return [
-    { points: octagon(3), closed: true, color: 'white' },
-    { points: octagon(6), closed: true, color: 'white' },
+    ...scaleVerts(DIARA2_INNER, 6, DIARA2_SCALE).map((p) => dot(p, tint)), // inner: ammo tint (DA-004)
+    ...scaleVerts(DIARA2_OUTER, 6, DIARA2_SCALE).map((p) => dot(p, 'yellow')), // outer: fixed yellow
   ]
 }
 

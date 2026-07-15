@@ -72,7 +72,8 @@
     "reasoning": "Two compounded differences: (1) the authentic bullet is a sparkle of independent points, not a pair of solid rings, and (2) only the inner cluster is ammo-reactive in the ROM — the outer ring is a fixed yellow anchor so the ammo tint reads as a color CHANGE against a stable reference, which our all-or-nothing recolor loses. [REFUTATION] Re-opened ALVROM.MAC:379-403 (DIARA2). Decoded SCDOT (line 89-92: SCVEC ...A,...B,0 then VCTR 0,0,CB) -- confirmed it is beam-off move + zero-length dot, never a connecting stroke; DIARA2 is built entirely from 17 SCDOT calls, no VCTR/stroke segments. Inner cluster is exactly 9 dots (center 0,0 plus 8 at radius ~7, lines 385-393) under 'CSTAT PSHCTR' (line 384); outer is 8 dots at radius 11-15 (lines 395-402) under 'CSTAT YELLOW' (line 394, a literal color constant, not a color-RAM index). Cross-checked PSHCTR=8 (ALVROM.MAC:149, ALCOMN.MAC:383) is a color-RAM slot dynamically rewritten by DSPCHG (ALDISP.MAC:920-930, 'STY COLPOR+PSHCTR ;SET UP COLOR FOR CENTER OF PLAYER SOT', driven by CHACOU ammo count) -- confirming only the inner cluster is ammo-reactive while YELLOW is a fixed absolute color never touched by that logic. Checked our side: glyphs.ts:280-285 playerBulletGlyph returns two `closed:true` octagons (radius 3, 6); render.ts strokeGlyph (lines 72-98) draws closed-point strokes as connected line loops, not individual dots, and `override` (line 83) recolors every sub-stroke when provided; drawBullets (render.ts:276-285) passes the ammo tint as that override for both octagons uniformly. All citations check out verbatim. Holds on both sub-claims.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-17"
   },
   {
     "id": "DA-005",
@@ -331,7 +332,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 355,
+      "line": 356,
       "verbatim": "    strokeGlyph(ctx, enemyBoltGlyph(Math.floor(b.depth * 8)), p.x, p.y, scale, b.depth * Math.PI * 4, 12)"
     },
     "claim": "DSPCHG picks the enemy-shot picture from `QFRAME` (ALDISP.MAC:910-914: `ASL`, `AND I,6`, add to PTESHO) — the global per-GAME-frame counter, advanced once per FRTIMR-gated MAINLN pass — so every enemy bolt on screen cycles through its 4 pictures in lockstep, one full cycle every 4 game frames. At the ROM's 28.44 fps (FR-001) that is 28.44/4 ≈ 7.1 Hz, not the ~15 Hz a 60 Hz reading gives — and it is independent of the bolt's position or speed. Our `drawEnemyBullets` instead derives the frame from `Math.floor(b.depth * 8)` (masked to 4 via `frame & 3` inside `enemyBoltGlyph`) — a SPATIAL, not temporal, driver: a single bolt only passes through the cycle across its own depth 0→1 flight (twice, since depth*8 spans 0-8), and two simultaneous bolts at different depths show different, uncorrelated frames instead of the ROM's shared phase.",

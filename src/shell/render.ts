@@ -329,8 +329,9 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
 // (Story 6-8), with a short motion streak behind for the sense of travel.
 function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   // Story 10-8: the whole volley shares one CHACOU tint set by how many charges
-  // are in flight this frame (the count is constant across these bullets). Only
-  // the bullet body (glyph) is recoloured; the travel streak keeps its hue.
+  // are in flight this frame (the count is constant across these bullets). Per DA-004
+  // the tint lands on the INNER ring only — pass it INTO the glyph, never as a
+  // strokeGlyph override (which would also recolour the fixed-yellow outer ring).
   const tint = playerBulletColor(s.bullets.length)
   for (const b of s.bullets) {
     const p = project(s.tube, b.lane, b.depth)
@@ -340,7 +341,7 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.shadowBlur = 14
     ctx.lineWidth = 2.5
     ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(p.x, p.y); ctx.stroke()
-    strokeGlyph(ctx, playerBulletGlyph(), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14, tint)
+    strokeGlyph(ctx, playerBulletGlyph(tint), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14)
   }
 }
 
