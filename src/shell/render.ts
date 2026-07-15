@@ -2,7 +2,7 @@
 import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import { withGlow, glowPolyline } from '@arcade/shared/glow'
-import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube, warpEyeDest } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
@@ -15,7 +15,7 @@ import {
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
-import { WARP_STARFIELD_GATE, ROM_FPS } from '../core/rules'
+import { WARP_STARFIELD_GATE, ROM_FPS, EYE_FLYIN_START } from '../core/rules'
 
 // The Superzapper strobe ramp (Story 10-15): eight hues the well flashes through
 // while a zap is active, indexed by the core's flash counter. The per-level WELL
@@ -987,8 +987,18 @@ export function render(
   // stationary Claw (the spike growing up to meet the Claw, WD-012). drawWarp keeps
   // the Claw on the base near ring (identical to the diving near ring), so it does
   // not move. Non-warp frames pass the well through unchanged.
+  // tp1-37 (WD-018): during the post-descent eye FLY-IN (flyIn > 0) the new well is NOT
+  // static — the eye walks in from EYE_FLYIN_START to EYLDES (-H), so drive warpDiveTube
+  // from the eye's fraction of that span: the new well starts FLAT (progress 1, continuous
+  // with the descent's flattened bottom — no hard cut) and un-flattens to the normal well
+  // (progress 0) as the eye lands. The descent itself uses s.warp.progress directly.
+  const flyingIn = (s.warp.flyIn ?? 0) > 0
+  const dest = warpEyeDest(s.tube)
+  const warpProgress = flyingIn
+    ? (dest - (s.warp.eyeY ?? EYE_FLYIN_START)) / (dest - EYE_FLYIN_START)
+    : Math.min(1, s.warp.progress)
   const scene =
-    s.mode === 'warp' ? { ...s, tube: warpDiveTube(s.tube, Math.min(1, s.warp.progress)) } : s
+    s.mode === 'warp' ? { ...s, tube: warpDiveTube(s.tube, warpProgress) } : s
   pctx.translate(0, s.camera.screenZ)
   drawTube(pctx, scene, wellHex, currentLane(scene.tube, scene.player.lane))
   drawSpikes(pctx, scene)

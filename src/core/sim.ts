@@ -1,7 +1,7 @@
 // src/core/sim.ts
 import { GameState, Enemy, EnemyKind, Nymph, Tanker, TankerCargo } from './state'
 import { Input } from './input'
-import { Tube, wrapLane, currentLane, tubeForLevel } from './geometry'
+import { Tube, wrapLane, currentLane, tubeForLevel, warpEyeDest } from './geometry'
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
@@ -10,7 +10,7 @@ import {
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
-  WARP_FLYIN_FRAMES, startWaveBonus,
+  EYE_FLYIN_START, EYE_FLYIN_STEP, startWaveBonus,
   enemyBoltCapForLevel, initialSpikeHeightForLevel,
   ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
@@ -785,17 +785,20 @@ function loadNextWave(s: GameState): void {
   startLevel(s)
 }
 
-// The descent bottomed out (tp1-10, WD-018): ENDWAV increments the wave and loads
-// the new well, then NEWAV2 flies the eye INTO it over WARP_FLYIN_FRAMES before play
-// resumes. The wave is already incremented here (matching CURWAV bumping BEFORE the
-// fly-in), so throughout the fly-in the NEW geometry is loaded but mode stays 'warp'
-// (play deferred). The fly-in countdown lives in stepWarp.
+// The descent bottomed out (tp1-10/tp1-37, WD-018): ENDWAV increments the wave and
+// loads the new well, then NEWAV2 flies the eye INTO it before play resumes. The wave
+// is already incremented here (matching CURWAV bumping BEFORE the fly-in), so throughout
+// the fly-in the NEW geometry is loaded but mode stays 'warp' (play deferred). The eye
+// is parked far back (EYE_FLYIN_START = 0xFA00 = -1536, INEWAV ALWELG.MAC:29-33) and the
+// fly-in runs the per-well count needed to walk it to EYLDES = -H at +0x18/frame:
+// ceil((dest - start)/step). stepWarp advances the eye and ends the fly-in at EYLDES.
 function beginFlyIn(s: GameState): void {
   loadNextWave(s)
   s.warp.progress = 0
   s.warp.velocity = 0
   s.warp.warning = 0
-  s.warp.flyIn = WARP_FLYIN_FRAMES
+  s.warp.eyeY = EYE_FLYIN_START
+  s.warp.flyIn = Math.ceil((warpEyeDest(s.tube) - EYE_FLYIN_START) / EYE_FLYIN_STEP)
   // tp1-13 (S-015): ENDWAV pays the advanced-start skill-step bonus HERE — together with
   // INC CURWAV (loadNextWave) at end-of-wave, BEFORE the NEWAV2 fly-in. This unifies with
   // tp1-13's advanceLevel: the wave increment and the bonus payment are one ENDWAV beat,
@@ -883,21 +886,25 @@ function resolveWarpSpikeHit(s: GameState): boolean {
 // the Claw mid-dive (death + life loss); otherwise on arrival (progress ≥ 1) the
 // level advances.
 function stepWarp(s: GameState, dt: number): void {
-  // tp1-10 (WD-018): the post-descent EYE FLY-IN. The wave is already incremented and
-  // the new well loaded (beginFlyIn); the eye walks into it over WARP_FLYIN_FRAMES
-  // (NEWAV2, ALWELG.MAC:56-121) before play resumes. Checked FIRST so the descent
-  // logic (accel, descent-start edge, spike crash) never re-runs during the fly-in.
+  // tp1-37 (WD-018): the post-descent EYE FLY-IN. The wave is already incremented and
+  // the new well loaded (beginFlyIn); NEWAV2 (ALWELG.MAC:56-121) walks the eye into it
+  // at +0x18/frame toward the per-well EYLDES = -H, clamping there. Checked FIRST so the
+  // descent logic (accel, descent-start edge, spike crash) never re-runs during the fly-in.
   if ((s.warp.flyIn ?? 0) > 0) {
+    const dest = warpEyeDest(s.tube)
+    // EYL += 0x18 with the 16-bit carry into EYH, clamped at EYLDES (ALWELG.MAC:85-108).
+    s.warp.eyeY = Math.min(dest, (s.warp.eyeY ?? EYE_FLYIN_START) + EYE_FLYIN_STEP)
     s.warp.flyIn = (s.warp.flyIn ?? 0) - 1
-    if ((s.warp.flyIn ?? 0) <= 0) {
+    if (s.warp.eyeY >= dest) {
+      s.warp.eyeY = dest
       s.warp.flyIn = 0
       s.warp.progress = 0
       s.warp.velocity = 0
-      // NEWAV2 reached EYLDES → CPLAY (ALWELG.MAC:109): the fly-in — and the whole dive —
-      // is over, so stop the sustained thrust drone here. warp-end spans exactly descent-
-      // start → arrival: the T3 space loop (started by warp-space at the bottom) stops as
-      // play resumes. audio-dispatch stops BOTH loops on warp-end, so this is the single
-      // handover point out of the dive for the successful (non-crash) path (tp1-13 S-014).
+      // NEWAV2 reached EYLDES → CPLAY (ALWELG.MAC:105-109): the fly-in — and the whole
+      // dive — is over, so stop the sustained thrust drone here. warp-end spans exactly
+      // descent-start → arrival: the T3 space loop (started by warp-space at the bottom)
+      // stops as play resumes. audio-dispatch stops BOTH loops on warp-end, so this is the
+      // single handover point out of the dive for the non-crash path (tp1-13 S-014).
       s.events.push({ type: 'warp-end' })
       s.mode = 'playing'
     }
@@ -932,8 +939,8 @@ function stepWarp(s: GameState, dt: number): void {
     // (ALWELG.MAC:1032-1037) — so emit warp-space, NOT warp-end: the dive is not over,
     // it is entering its crash-proof SPACE / eye-fly-in phase. beginFlyIn runs ENDWAV
     // (INC CURWAV + the advanced-start bonus) and loads the new well, then the eye flies
-    // in over WARP_FLYIN_FRAMES with mode still 'warp'. warp-end fires at the fly-in's
-    // end (the flyIn branch above), so the loop spans descent-start → arrival exactly.
+    // in over the per-well fly-in count with mode still 'warp'. warp-end fires at the
+    // fly-in's end (the flyIn branch above), so the loop spans descent-start → arrival exactly.
     s.events.push({ type: 'warp-space' })
     beginFlyIn(s)
   }
