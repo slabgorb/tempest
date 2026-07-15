@@ -8,7 +8,7 @@ import {
   SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
   SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
-  rollSpawnKind, rollTankerCargo, MAX_SELECT_LEVEL,
+  nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   WARP_FLYIN_FRAMES, startWaveBonus,
   enemyBoltCapForLevel, initialSpikeHeightForLevel,
@@ -174,8 +174,9 @@ export function makeEnemy<K extends EnemyKind>(
  *     other. We track the committed-lane set directly instead of the ROM's
  *     NEOFLI/OLOFLI bit double-buffer.
  *
- * The invader's KIND rolls at hatch time (the ROM's NYMCHA — the per-type
- * population solver — is story tp1-8; until it lands, rollSpawnKind stands in).
+ * The invader's KIND is decided at hatch time by NYMCHA (rules.ts, tp1-8) — the ROM's
+ * per-type min/max population solver reading the live board — which may also DECLINE
+ * (no type may launch), in which case the nymph goes back in the queue like a full board.
  */
 function stepNymphs(s: GameState): void {
   s.qframe += 1
@@ -198,13 +199,15 @@ function stepNymphs(s: GameState): void {
     if (!frozen && !latched) {
       n.py -= 1
       if (n.py === 0) {
-        // CONYMP -> ACTINV: take a free slot or go back in the queue.
-        if (s.enemies.length + hatchedThisFrame <= WINVMX) {
+        // CONYMP -> NYMCHA -> ACTINV: the population solver picks a type from the live board,
+        // or DECLINES (null) when no type may launch — TEMP0=0, and the nymph goes back in the
+        // queue exactly as a slot-full board does. A free slot is the precondition either way.
+        const pick =
+          s.enemies.length + hatchedThisFrame <= WINVMX ? nymcha(s.level, s.enemies, n.lane, s.rng) : null
+        if (pick) {
           hatchedThisFrame += 1
           hatched.add(n)
-          const kind = rollSpawnKind(s.level, s.rng)
-          const cargo: TankerCargo = kind === 'tanker' ? rollTankerCargo(s.level, s.rng) : 'flipper'
-          s.enemies.push(makeEnemy(kind, n.lane, 0, params, cargo))
+          s.enemies.push(makeEnemy(pick.kind, n.lane, 0, params, pick.cargo))
         } else {
           n.py += 1
           latched = true
