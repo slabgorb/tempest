@@ -140,28 +140,65 @@ describe('tp1-8 — AC-1: the per-wave MIN is GUARANTEED, never a lucky roll', (
   })
 })
 
-// ── AC-2: cargo is RESERVED under the type max before the tanker splits ─────────
-describe('tp1-8 — AC-2: a live tanker RESERVES two of its cargo type\'s slots', () => {
-  it('wave 10: liveFlippers + 2*tankers <= flipper max (5) — the split always fits', () => {
-    // On waves < 33 every tanker cargo slot is a flipper (WWTAC*), so a tanker splits
-    // into 2 flippers. NYMCHA's `DEC OPFLIP[cargo]` twice per tanker holds flippers to
-    // (max - 2*tankers), so when the tankers split the 2*tankers flippers stay under
-    // WFLIMX and no split is dropped (KILINV -> ACTINV needs the room). Today's roll
-    // reserves nothing: one tanker on a full board already breaks this.
-    // The reservation is per-cargo-TYPE headroom: NYMCHA never launches cargo-type
-    // invaders into the (max - 2*tankers) it holds back, so when the tankers split the
-    // 2*tankers new flippers land WITHIN WFLIMX and no split violates the flipper max.
-    // (It is headroom under the TYPE max, not a global slot lock — the honest bound the
-    // ROM's `DEC OPFLIP[cargo]` twice actually provides; see the TEA assessment.)
-    let sawTanker = false
+// ── AC-1: spawning is MIN-DRIVEN — a min-0 type never hatches FRESH ─────────────
+describe('tp1-8 — AC-1: a min-0 type never hatches fresh (NYMCHA is min-driven)', () => {
+  // Every NYMCHA launch path is gated on the type's min != 0 (the single-type check
+  // :1338, the WFLMIN starvation pass :1355, and the random fallback :1392) — the only
+  // exception is the smart launch, which emits ONLY spiker or tanker. WFLIMI gives the
+  // flipper min as 1 on waves 1-4, then 0. So past wave 4 flippers never hatch fresh;
+  // they arrive ONLY from tanker splits (WTACAR cargo). This is a load-bearing property:
+  // it is WHY the cargo reservation below matters, and today's weighted roll (flipper
+  // weight 10) violates it on every deep wave.
+  it('wave 20: a settle (no kills, no splits) hatches ZERO flippers — WFLIMI min 0', () => {
     for (const seed of SEEDS) {
-      const s = settle(10, seed)
-      const t = count(s, 'tanker')
-      const f = count(s, 'flipper')
-      sawTanker = sawTanker || t > 0
-      expect(f + 2 * t, `wave 10 seed ${seed}: ${f} flippers + 2x${t} tankers must fit WFLIMX=5`).toBeLessThanOrEqual(5)
+      expect(count(settle(20, seed), 'flipper'), `wave 20 seed ${seed}: no fresh flipper`).toBe(0)
     }
-    expect(sawTanker, 'FIXTURE GUARD: tankers must actually spawn on wave 10').toBe(true)
+  })
+
+  it('FIXTURE GUARD: wave 1 DOES hatch flippers (WFLIMI min 1) — the rule is min-driven, not "never"', () => {
+    expect(SEEDS.some((sd) => count(settle(1, sd), 'flipper') > 0), 'wave 1 flippers must appear').toBe(true)
+  })
+})
+
+// ── AC-2: cargo is RESERVED under the type max before the tanker splits ─────────
+describe('tp1-8 — AC-2: a live carrier tanker RESERVES two of its cargo type\'s slots', () => {
+  // The reservation only BITES on a cargo type that ALSO spawns fresh (min > 0) — else
+  // there is nothing to hold back (by the min-driven rule above, on waves < 33 the cargo
+  // is flipper, min 0, so no fresh flippers compete and the reservation is moot). Wave 33
+  // is the first wave a tanker can carry a FRESH-spawning type: WWTAC2 slot 2 = fuseball,
+  // and WFUSMI/WFUSMX give the fuseball min 1 / max 4 there. NYMCHA's `DEC OPFLIP[fuse]`
+  // twice per fuse-carrying tanker (:1298-1299) holds fresh fuseballs to WFUSMX - 2 = 2,
+  // reserving the room the tanker's split will need. Today's roll reserves nothing.
+
+  /** Fill wave 33 from a board pre-seeded with ONE fuseball-carrying tanker on lane 0. */
+  function fillWithFuseTanker(seed: number): GameState {
+    const p = levelParams(33)
+    const tanker = makeEnemy('tanker', 0, 0.05, p, 'fuseball') // low + fire-suppressed: stays alive to reserve
+    tanker.fireCooldown = 1e9
+    let s = clearedAt(33, seed)
+    s.enemies = [tanker]
+    s.spawn = { nymphs: Array.from({ length: s.tube.laneCount - 1 }, (_, i) => nymph(i + 1)) }
+    for (let i = 0; i < 12; i++) s = stepGame(s, NEUTRAL, FRAME)
+    return s
+  }
+
+  it('a live fuseball tanker holds fresh fuseballs to WFUSMX(4) - 2 reserved = 2', () => {
+    let tested = 0
+    for (const seed of SEEDS) {
+      const s = fillWithFuseTanker(seed)
+      // Only meaningful while the RESERVING tanker is still live and still carrying fuseball.
+      if (!s.enemies.some((e) => e.kind === 'tanker' && e.contains === 'fuseball')) continue
+      tested++
+      expect(count(s, 'fuseball'), `seed ${seed}: fresh fuseballs must stay <= WFUSMX-2 = 2`).toBeLessThanOrEqual(2)
+    }
+    expect(tested, 'FIXTURE GUARD: some seed kept the reserving tanker alive through the fill').toBeGreaterThan(15)
+  })
+
+  it('CONTRAST: with NO reserving tanker, fresh fuseballs reach past 2 toward WFUSMX = 4', () => {
+    // Proves the cap above is the RESERVATION, not just a low fuseball rate: unreserved, the
+    // fuseball population climbs above the reserved ceiling of 2.
+    const maxFuse = Math.max(...SEEDS.map((sd) => count(settle(33, sd), 'fuseball')))
+    expect(maxFuse, 'unreserved fuseballs must exceed the reserved cap of 2').toBeGreaterThan(2)
   })
 })
 

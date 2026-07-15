@@ -114,12 +114,16 @@ describe('spawn mix through the sim (story 6-13)', () => {
     expect(spawnedKinds(2, 1)).toEqual(new Set(['flipper']))
   })
 
-  it('wave 4 spawns tankers and spikers through the sim, still no fuseball/pulsar (RE-SEATED by tp1-7)', () => {
-    // Tanker enters wave 3, spiker wave 4 (WTANMX/WSPIMX); fuseballs (11) and pulsars (17) stay
-    // out. Cargo below wave 33 is flippers only, so tanker splits add no new kinds here.
+  it('wave 4 spawns spikers and flippers but NO tanker — WTANMX blanks the tanker on wave 4 (RE-SEATED by tp1-8)', () => {
+    // RE-SEATED by tp1-8: WTANMX itemises the tanker max as 0,0,1,0,1 for waves 1-5 — a tanker
+    // enters on wave 3 and VANISHES again on wave 4 (the non-monotonic gap NYMCHA enforces per
+    // wave, which tp1-7's monotonic introduction could not express). Spikers enter on wave 4
+    // (WSPIMX = 2); flippers are still required (WFLIMI min 1 through wave 4). Fuseballs (11) and
+    // pulsars (17) stay out, and there is no tanker to split, so no cargo children either.
     const kinds = spawnedKinds(4, 1)
-    expect(kinds.has('tanker')).toBe(true)
-    expect(kinds.has('spiker')).toBe(true)
+    expect(kinds.has('spiker'), 'spikers enter on wave 4 (WSPIMX = 2)').toBe(true)
+    expect(kinds.has('flipper'), 'flippers still required through wave 4 (WFLIMI min 1)').toBe(true)
+    expect(kinds.has('tanker'), 'WTANMX wave 4 = 0: the tanker vanishes again on wave 4').toBe(false)
     expect(kinds.has('fuseball')).toBe(false)
     expect(kinds.has('pulsar')).toBe(false)
   })
