@@ -242,7 +242,10 @@ describe.skipIf(!sourceAvailable)('tp1-8 — AC-7: every WSPIMI/WSPIMX record st
 })
 
 describe.skipIf(!sourceAvailable)('tp1-8 — NYMCHA is the algorithm the port must reproduce (AC-1/2/3/6)', () => {
-  const nymcha = routine(/^NYMCHA:/)
+  // skipIf skips the it()s but still runs this describe body at COLLECTION time,
+  // so guard the read the same way line 48 guards `alwelg` — else CI (no source
+  // dir) throws here and reddens the deploy while the local preflight stays green.
+  const nymcha = sourceAvailable ? routine(/^NYMCHA:/) : ''
 
   it('step 1: openings[t] = WFLMAX[t] - FLIPCO[t], clamped at 0 (a type at its max has none)', () => {
     // LDA X,WFLMAX / SEC / SBC X,FLIPCO / IFCS (no borrow: max>=count) / STA X,OPFLIP.
