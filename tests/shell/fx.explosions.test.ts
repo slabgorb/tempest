@@ -45,14 +45,8 @@ const FRAME = 1 / 60
 const ENEMY_SPOKES = 16
 const ENEMY_SCALE_STEPS = [1, 2, 4, 8] // doubling each frame
 const ENEMY_BRIGHTNESS_TIERS = [7, 14] // two-tier ramp, dim then bright
-const MIN_JAGGED_POINTS = 8 // a "jagged star", not a smooth ring
 
-// Canonical white / red / yellow for the ROTCOL splat cycle.
-const SPLAT_WHITE = '#ffffff'
-const SPLAT_RED = '#ff0000'
-const SPLAT_YELLOW = '#ffff00'
-
-// Existing death-flash colour (must survive — AC4).
+// Existing death-flash colour (must survive — AC4, and DA-007's bolt/pulse death).
 const DEATH_RED = '#ff5a3c'
 
 function dedupeConsecutive<T>(arr: readonly T[]): T[] {
@@ -73,6 +67,18 @@ const enemyDeath = (lane: number, depth: number): GameEvent => ({
   enemyType: 'flipper',
   lane,
   depth,
+})
+
+// tp1-18 RE-SEAT (DA-007): player deaths now route by CAUSE. A charge/bolt death
+// shows the splat; an invader-grab death diverts to the SPARK1 cross. These tests
+// exercise the splat, so drive it through the realistic charge/bolt death event
+// rather than the bare alive-diff (a legacy seam the sim never uses alone). The
+// splat's SHAPE and COLOUR are pinned in tp1-18.shapes.test.ts (splatGlyph) and
+// its TIMING/cause-routing in tp1-18.fx-splat.test.ts; here we keep only the
+// still-true fx contract (a splat spawns, is placed, grows-then-shrinks).
+const playerDeath = (cause: 'grab' | 'pulse' | 'spike' | 'bolt' = 'bolt'): GameEvent => ({
+  type: 'player-death',
+  cause,
 })
 
 // Narrowing type-guard over the `kind` discriminant — keeps the suite fully typed
@@ -168,18 +174,18 @@ describe('fx enemy-death explosion — 16-spoke star (Story 10-5 AC1)', () => {
   })
 })
 
-describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, AC3)', () => {
-  it('spawns one concentric jagged star splat on player death', () => {
+describe('fx player-death splat — spawn + grow/shrink (Story 10-5; re-seated by tp1-18)', () => {
+  it('spawns one splat at the death location on a charge/bolt death', () => {
     const { s, fx } = seeded()
     s.player.alive = false
-    fx.detect(s, FRAME, [])
+    fx.detect(s, FRAME, [playerDeath('bolt')])
 
     const splats = explosionsOf(fx, 'player')
     expect(splats.length).toBe(1)
 
+    // The splat's SHAPE (the ROM's 24-vertex ragged tri-colour ring) is pinned in
+    // tp1-18.shapes.test.ts against splatGlyph; here we only assert it is PLACED.
     const splat = splats[0]
-    expect(splat.spokes).toBeGreaterThanOrEqual(MIN_JAGGED_POINTS)
-
     const pos = project(s.tube, currentLane(s.tube, s.player.lane), 1.0)
     expect(splat.x).toBeCloseTo(pos.x, 1)
     expect(splat.y).toBeCloseTo(pos.y, 1)
@@ -188,7 +194,7 @@ describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, A
   it('grows then shrinks — radius rises to a peak, then falls back', () => {
     const { s, fx } = seeded()
     s.player.alive = false
-    fx.detect(s, FRAME, [])
+    fx.detect(s, FRAME, [playerDeath('bolt')])
 
     const radii = trackExplosion(fx, 'player').map((e) => e.radius)
     expect(radii.length).toBeGreaterThan(3)
@@ -201,28 +207,19 @@ describe('fx player-death splat — color-cycling jagged star (Story 10-5 AC2, A
     expect(radii[radii.length - 1]).toBeLessThan(peak) // and shrank from the peak
   })
 
-  it('color-cycles through white/red/yellow, changing essentially every frame', () => {
-    const { s, fx } = seeded()
-    s.player.alive = false
-    fx.detect(s, FRAME, [])
-
-    const colors = trackExplosion(fx, 'player').map((e) => e.color)
-    expect(colors.length).toBeGreaterThan(3)
-
-    // Exactly the three documented colours — nothing else.
-    expect(new Set(colors)).toEqual(new Set([SPLAT_WHITE, SPLAT_RED, SPLAT_YELLOW]))
-
-    // Cycles EVERY frame (AC3): no two consecutive frames share a colour. The cycle
-    // is driven by an integer counter (no float jitter), so this is exact.
-    expect(dedupeConsecutive(colors).length).toBe(colors.length)
-  })
+  // RE-SEATED by tp1-18 (DA-009): the old "color-cycles white/red/yellow EACH
+  // FRAME (one colour for the whole shape)" test asserted the exact DEFECT the audit
+  // refutes — the ROM's splat is a SPATIAL tri-colour ring (all three colours on
+  // screen at once, re-stated every ~2 vertices, with ROTCOL spinning the assignment
+  // over frames), not a whole-object strobe. That contract now lives in
+  // tp1-18.shapes.test.ts against splatGlyph(rot). Removed rather than perturbed.
 })
 
 describe('fx explosions integrate with existing cues (Story 10-5 AC4)', () => {
-  it('player death still flashes red and shakes — the splat is added, not a swap-out of the cue', () => {
+  it('a charge/bolt death still flashes red and shakes — the splat is added, not a swap-out of the cue', () => {
     const { s, fx } = seeded()
     s.player.alive = false
-    fx.detect(s, FRAME, [])
+    fx.detect(s, FRAME, [playerDeath('bolt')])
 
     expect(fx.flashColor).toBe(DEATH_RED)
     expect(fx.flash).toBeGreaterThan(0)
@@ -237,10 +234,10 @@ describe('fx explosions integrate with existing cues (Story 10-5 AC4)', () => {
     expect(explosionsOf(enemy.fx, 'enemy').length).toBe(1)
     expect(explosionsOf(enemy.fx, 'player').length).toBe(0)
 
-    // ...and a player death must not spawn an enemy burst.
+    // ...and a charge/bolt player death must not spawn an enemy burst.
     const player = seeded()
     player.s.player.alive = false
-    player.fx.detect(player.s, FRAME, [])
+    player.fx.detect(player.s, FRAME, [playerDeath('bolt')])
     expect(explosionsOf(player.fx, 'player').length).toBe(1)
     expect(explosionsOf(player.fx, 'enemy').length).toBe(0)
   })
