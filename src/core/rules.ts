@@ -124,7 +124,15 @@ export const SCORE_PULSAR = 200
 export const SCORE_FUSEBALL_BASE = 250
 export const SCORE_FUSEBALL_STEP = 250  // 250 / 500 / 750 across depth thirds
 export const SCORE_SPIKE_SEGMENT = 1    // LIFECT signals UPSCORE with TEMP0=1 (ALWELG.MAC:2606)
-export const SPIKE_MAX_DEPTH = 0.75     // spiker turnaround + spike height cap
+// Spike-height cap. JSTRAI writes the climbing spiker's INVAY straight into the
+// spike's tip (LINEY) whenever it is higher, bounded ONLY by the spiker's own $20
+// turnaround (ALWELG.MAC:2214-2229) — so a full-grown spike reaches depth
+// (0xf0-$20)/224 ≈ 0.929, the SAME $20 as SPIKER_TURNAROUND_DEPTH. Story 6-15
+// deliberately clamped this to 0.75 for warp-crash playability; PM ruling
+// 2026-07-13 OVERTURNED that deviation once tp1-10 made a spike crash replay the
+// wave instead of costing a life outright — reuniting the cap with the turnaround
+// at the ROM's single $20 (findings W-039 / B-006).
+export const SPIKE_MAX_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929, the ROM $20
 export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
 export const EXTRA_LIFE_INTERVAL = 10000
 
@@ -410,9 +418,10 @@ export function wfuschForLevel(level: number): number {
 }
 // Spiker near-turnaround (story 6-15). ROM clamps `along` to $20 and reverses
 // (move away) once it climbs below it (rev-3 §C l.202-208). $20 → depth
-// (0xf0-$20)/224 ≈ 0.929 — far closer to the rim than the spike-height cap. Kept
-// SEPARATE from SPIKE_MAX_DEPTH (0.75) so raising the turnaround does not also
-// grow spikes (which feed warp-crash balance) — see story 6-15 deviations.
+// (0xf0-$20)/224 ≈ 0.929. This is the SAME $20 that also caps the spike height
+// (SPIKE_MAX_DEPTH): story 6-15 had kept them separate (a 0.75 spike cap) for
+// warp-crash balance, but PM ruling 2026-07-13 OVERTURNED that deviation and
+// reunited both at the ROM's single $20 (see SPIKE_MAX_DEPTH, findings W-039 / B-006).
 export const SPIKER_TURNAROUND_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929
 // Pulsar climb speed when near (story 6-15). spd_pulsar = $fea0, hardcoded and
 // level-independent — the SAME ROM byte as the L1 flipper (1.375 along/frame), so it

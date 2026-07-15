@@ -492,6 +492,70 @@ export function lifeIconGlyph(): Glyph {
 }
 
 // ==========================================================================
+// I2. The player-death SPLAT and the invader-collision SPARK (Cluster C13, tp1-18).
+// ==========================================================================
+
+// SPLAT — ALVROM.MAC:806-850 (CM=2, `.RADIX 16`). ONE closed ragged ring: 24 lit
+// SCVEC vectors (b=CB) in 12 CSTAT runs of two, colour re-stated every 2 vectors
+// (PDIWHI=9 / PDIRED=11 / PDIYEL=10, ALCOMN.MAC:384-386 — all three on screen at
+// once, V-013/DA-009). DA-009's ROTCOL 3-way-rotates those colour slots every frame,
+// so `rot` cyclically permutes every run's hue while the geometry stays fixed. The
+// pen positions beam-off at (24,-8) (SCVEC 18,-8,0), draws the ring, and the last
+// lit vector closes back to it (SCVEC 18,-8,CB). Note the hand-authored irregularity
+// at run 8 (ALVROM.MAC:837 — WHITE follows RED, skipping YELLOW): faithful, not a bug.
+const SPLAT_START: readonly [number, number] = [0x18, -0x8] // (24,-8) — ring origin (beam-off)
+// [slot 0=PDIWHI / 1=PDIRED / 2=PDIYEL, vertexA, vertexB] per CSTAT run (hex → decimal).
+const SPLAT_RUNS: readonly (readonly [number, readonly [number, number], readonly [number, number]])[] = [
+  [0, [0x38, 0x8], [0x20, 0x0c]],      // 814,815 WHITE
+  [1, [0x24, 0x14], [0x1c, 0x15]],     // 817,818 RED
+  [2, [0x22, 0x20], [0x10, 0x16]],     // 820,821 YELLOW
+  [0, [0x12, 0x30], [0x4, 0x28]],      // 823,824 WHITE
+  [1, [-0x0a, 0x2d], [-0x0c, 0x12]],   // 826,827 RED
+  [2, [-0x2e, 0x18], [-0x1c, 0x0]],    // 829,830 YELLOW
+  [0, [-0x26, -0x8], [-0x20, -0x0a]],  // 832,833 WHITE
+  [1, [-0x26, -0x17], [-0x0d, -0x0e]], // 835,836 RED
+  [0, [-0x10, -0x22], [-0x0c, -0x20]], // 838,839 WHITE (ALVROM.MAC:837 — breaks the beat)
+  [2, [-0x8, -0x2c], [0x4, -0x20]],    // 841,842 YELLOW
+  [1, [0x10, -0x2c], [0x12, -0x18]],   // 844,845 RED
+  [2, [0x22, -0x1e], [0x18, -0x8]],    // 847,848 YELLOW (closes to start)
+]
+const SPLAT_SLOTS: readonly GlyphColor[] = ['white', 'red', 'yellow'] // PDIWHI, PDIRED, PDIYEL
+// Normalise the ring's max object-unit extent to 1; render.ts scales by the splat radius.
+const SPLAT_SCALE = 1 / maxExtent(SPLAT_RUNS.flatMap((r) => [r[1], r[2]]))
+
+/** The ROM player-death SPLAT as one closed tri-colour ring. `rot` is the ROTCOL
+ *  phase (advanced per frame in the shell): it rotates which colour each run shows,
+ *  keeping all three on screen at once. Geometry is fixed; only the hues rotate. */
+export function splatGlyph(rot: number): Glyph {
+  const sv = (p: readonly [number, number]) => ({ x: p[0] * SPLAT_SCALE, y: p[1] * SPLAT_SCALE })
+  let prev = SPLAT_START
+  return SPLAT_RUNS.map(([slot, a, b]) => {
+    const stroke: GlyphStroke = { points: [sv(prev), sv(a), sv(b)], closed: false, color: SPLAT_SLOTS[(slot + rot) % 3] }
+    prev = b
+    return stroke
+  })
+}
+
+// SPARK1 — DA-007, ALVROM.MAC:672-684. TEXTYP[5]=PTSPAR "INVADER - PLAYER COLLISION"
+// (ALDISP.MAC:982): a STATIC 4-dot YELLOW cross on the AXES at (±10,0),(0,±10) hex =
+// (±16,0),(0,±16). SPARK2's diagonal cross (ALVROM.MAC:685) is never invoked (DSPEXP
+// forces picture offset 0). Each mark is a beam-off move + a zero-length lit DOT.
+const SPARK1_R = 0x10 // 16
+const SPARK1_DOTS: readonly (readonly [number, number])[] = [
+  [SPARK1_R, 0], [-SPARK1_R, 0], [0, SPARK1_R], [0, -SPARK1_R],
+]
+
+/** The ROM invader-collision SPARK1: a static yellow 4-dot cross on the axes,
+ *  normalised to unit radius (render.ts scales it). */
+export function sparkGlyph(): Glyph {
+  return SPARK1_DOTS.map((p) => ({
+    points: [{ x: p[0] / SPARK1_R, y: p[1] / SPARK1_R }],
+    closed: false,
+    color: 'yellow',
+  }))
+}
+
+// ==========================================================================
 // J. THE PALETTE — per-wave-group COLTAB (tp1-12).
 // ==========================================================================
 // Enemy/well colours are not fixed hues: they come from a per-wave-group colour
