@@ -2,26 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
-import { rollSpawnKind, rollTankerCargo } from '../../src/core/rules'
+import { rollTankerCargo } from '../../src/core/rules'
 import { createRng } from '@arcade/shared/rng'
-import type { EnemyKind, TankerCargo } from '../../src/core/state'
+import type { TankerCargo } from '../../src/core/state'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
-
-// Sample rollSpawnKind `n` times at `level` from a fixed seed and return the set
-// of kinds that can appear. Absence is EXACT — a weight-0 kind is skipped by
-// weightedPick and can never be returned — so a missing kind is a real gate, not
-// an unlucky sample. Presence is reliable at this sample size for any non-trivial
-// weight. Calling rollSpawnKind directly (not via the sim) avoids contamination
-// from tanker-split cargo, which can manufacture pulsar/fuseball children.
-function rolledKinds(level: number, seed: number, n = 4000): Set<EnemyKind> {
-  const r = createRng(seed) // mutable cursor: rollSpawnKind advances it in place
-  const kinds = new Set<EnemyKind>()
-  for (let i = 0; i < n; i++) {
-    kinds.add(rollSpawnKind(level, r))
-  }
-  return kinds
-}
 
 // Sample rollTankerCargo `n` times at `level` and return the set of cargo kinds
 // that can appear. Absence is EXACT (weight-0 cargo is skipped by weightedPick),
@@ -50,56 +35,11 @@ function spawnedKinds(level: number, seed: number): Set<string> {
   return kinds
 }
 
-// Authentic Atari rev-3 enemy *introduction* schedule. RE-SEATED by tp1-7 (W-035): the
-// introduction is the WTANMX/WSPIMX/WFUSMX/WPULMX max tables in ALWELG.MAC, NOT the
-// enemy-roster doc story 6-13 cited (docs/ux/2026-06-27-enemy-roster-rom-extract.md §H),
-// which W-035 refutes. The first non-zero max of each type is its introduction wave:
-//   flippers L1+ · tankers WAVE 3+ · spikers WAVE 4+ · fuseballs L11+ · pulsars L17+.
-// (tp1-7 corrects the INTRODUCTION waves only; per-wave availability gaps — WSPIMX blanks
-// out spikers on waves 17-19, 33-34, 40-42 — and count enforcement belong to the NYMCHA
-// population solver, story tp1-8.)
-describe('rollSpawnKind — authentic ROM introduction schedule (RE-SEATED by tp1-7 / W-035)', () => {
-  it('spawns flippers only through wave 2', () => {
-    // A tanker first appears on WAVE 3 (WTANMX), so only waves 1-2 are flippers-only. This
-    // used to say "through level 4", from the doc W-035 refutes.
-    for (const level of [1, 2]) {
-      expect(rolledKinds(level, 100 + level)).toEqual(new Set<EnemyKind>(['flipper']))
-    }
-  })
-
-  it('introduces the tanker on WAVE 3 and the spiker on WAVE 4 (WTANMX/WSPIMX)', () => {
-    const w2 = rolledKinds(2, 11)
-    expect(w2.has('tanker')).toBe(false)
-    expect(w2.has('spiker')).toBe(false)
-
-    const w3 = rolledKinds(3, 11)
-    expect(w3.has('tanker'), 'tanker enters on wave 3 (WTANMX = 1)').toBe(true)
-    expect(w3.has('spiker'), 'spiker not until wave 4').toBe(false)
-
-    const w4 = rolledKinds(4, 11)
-    expect(w4.has('spiker'), 'spiker enters on wave 4 (WSPIMX = 2)').toBe(true)
-  })
-
-  it('keeps fuseballs out until level 11', () => {
-    for (const level of [5, 6, 10]) {
-      expect(rolledKinds(level, 22).has('fuseball')).toBe(false)
-    }
-    expect(rolledKinds(11, 22).has('fuseball')).toBe(true)
-  })
-
-  it('keeps pulsars out until level 17', () => {
-    for (const level of [5, 11, 16]) {
-      expect(rolledKinds(level, 33).has('pulsar')).toBe(false)
-    }
-    expect(rolledKinds(17, 33).has('pulsar')).toBe(true)
-  })
-
-  it('reaches the full five-enemy roster at the L33+ steady state', () => {
-    const all: EnemyKind[] = ['flipper', 'tanker', 'spiker', 'pulsar', 'fuseball']
-    const dist = rolledKinds(33, 44)
-    for (const kind of all) expect(dist.has(kind)).toBe(true)
-  })
-})
+// The rollSpawnKind-DIRECT introduction-schedule suite is REMOVED by tp1-8: NYMCHA replaces the
+// weighted roll, so there is no rollSpawnKind to sample. The introduction schedule (a type first
+// appears the wave its MAX table is non-zero) and the per-wave availability GAPS it deferred to
+// this story are now covered per-wave by tests/core/tp1-8.nymcha.test.ts; the schedule THROUGH
+// THE SIM is held by the `spawn mix through the sim` suite below.
 
 describe('spawn mix through the sim (story 6-13)', () => {
   it('level 1 spawns only flippers', () => {

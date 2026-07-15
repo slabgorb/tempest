@@ -26,7 +26,6 @@ import { fileURLToPath } from 'node:url'
 import { createRng } from '@arcade/shared/rng'
 import {
   levelParams,
-  rollSpawnKind,
   rollTankerCargo,
   ENEMY_BOLT_SPEED_OFFSET,
   ROM_FPS,
@@ -35,7 +34,7 @@ import {
 // enemyBoltCapForLevel and initialSpikeHeightForLevel are NEW exports this story adds; the
 // tests that exercise them live in tp1-7.new-lookups.test.ts (import-RED until Dev adds them),
 // kept SEPARATE so this file can run assertion-RED against the current code today.
-import type { EnemyKind, TankerCargo } from '../../src/core/state'
+import type { TankerCargo } from '../../src/core/state'
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const rules = readFileSync(join(repoRoot, 'src/core/rules.ts'), 'utf8')
@@ -44,14 +43,8 @@ const stripComments = (s: string): string =>
   s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 const rulesCode = stripComments(rules)
 
-// Sample rollSpawnKind / rollTankerCargo across seeds and return the reachable set.
-// Absence is EXACT — weight-0/absent kinds are never emitted (sim.spawn.test.ts convention).
-function rolledKinds(level: number, seed: number, n = 4000): Set<EnemyKind> {
-  const r = createRng(seed)
-  const s = new Set<EnemyKind>()
-  for (let i = 0; i < n; i++) s.add(rollSpawnKind(level, r))
-  return s
-}
+// Sample rollTankerCargo across seeds and return the reachable set. Absence is EXACT —
+// weight-0/absent cargo is never emitted (sim.spawn.test.ts convention).
 function rolledCargo(level: number, seed: number, n = 4000): Set<TankerCargo> {
   const r = createRng(seed)
   const s = new Set<TankerCargo>()
@@ -181,30 +174,11 @@ describe('tp1-7 — tanker cargo reads the WTACAR table (not level>=11 / level>=
 })
 
 // ── 7. INTRO WAVES — WTANMX/WSPIMX introduction (W-035) ───────────────────────
-describe('tp1-7 — enemy introduction reads the max tables (tanker wave 3, spiker wave 4)', () => {
-  it('waves 1-2 are flippers only', () => {
-    expect(rolledKinds(1, 11)).toEqual(new Set<EnemyKind>(['flipper']))
-    expect(rolledKinds(2, 11)).toEqual(new Set<EnemyKind>(['flipper']))
-  })
-
-  it('a tanker first appears on WAVE 3, before any spiker', () => {
-    const w3 = rolledKinds(3, 11)
-    expect(w3.has('tanker')).toBe(true)
-    expect(w3.has('spiker')).toBe(false)
-  })
-
-  it('a spiker first appears on WAVE 4', () => {
-    expect(rolledKinds(3, 22).has('spiker')).toBe(false)
-    expect(rolledKinds(4, 22).has('spiker')).toBe(true)
-  })
-
-  it('fuseballs stay out until wave 11, pulsars until wave 17 (WFUSMX/WPULMX)', () => {
-    expect(rolledKinds(10, 33).has('fuseball')).toBe(false)
-    expect(rolledKinds(11, 33).has('fuseball')).toBe(true)
-    expect(rolledKinds(16, 44).has('pulsar')).toBe(false)
-    expect(rolledKinds(17, 44).has('pulsar')).toBe(true)
-  })
-})
+// The rollSpawnKind-DIRECT introduction assertions are REMOVED by tp1-8: NYMCHA replaces the
+// weighted roll, so there is no rollSpawnKind to sample, and the introduction is now the per-wave
+// MIN/MAX behaviour covered by tests/core/tp1-8.nymcha.test.ts (which also enforces the per-wave
+// availability GAPS — e.g. no tanker on wave 4 — that the old monotonic roll could not express).
+// The source-side pin that the max tables START non-zero on waves 3/4/11/17 stays below.
 
 // (Pre-seeded spikes — TELIHI — are a NEW lookup; see tp1-7.new-lookups.test.ts.)
 

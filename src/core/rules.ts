@@ -1,6 +1,6 @@
 // src/core/rules.ts
 
-import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
+import { type Rng, nextInt } from '@arcade/shared/rng'
 import type { Enemy, EnemyKind, Nymph, TankerCargo } from './state'
 import { flipperCamForWave } from './enemies/cam'
 import { assertNever } from './assert'
@@ -699,16 +699,61 @@ const WPULMX: readonly ContourRecord[] = [
   { t: 'TZ', start: 17, end: 32, vs: [5, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 2] },
   { t: 'T1', start: 33, end: 99, v: 3 },
 ]
-// The introduction wave = the first wave the max table is non-zero. Monotonic: once introduced
-// a type stays in the weighted roll (the per-wave gaps belong to tp1-8's solver).
-function firstNonZeroWave(records: readonly ContourRecord[]): number {
-  for (let w = 1; w <= 99; w++) if (contourValue(records, w) > 0) return w
-  return 1
-}
-const TANKER_INTRO_WAVE = firstNonZeroWave(WTANMX)     // 3
-const SPIKER_INTRO_WAVE = firstNonZeroWave(WSPIMX)     // 4
-const FUSEBALL_INTRO_WAVE = firstNonZeroWave(WFUSMX)   // 11
-const PULSAR_INTRO_WAVE = firstNonZeroWave(WPULMX)     // 17
+// ── 8. The per-type MIN tables + flipper MAX (ALWELG.MAC:621-676), tp1-8. NYMCHA reads the
+// full min/max pair per type per wave. The four other MAX tables (WTANMX/WSPIMX/WFUSMX/WPULMX)
+// landed in tp1-7; these five MINs and the flipper MAX are the population solver's new data.
+const WFLIMI: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 4, v: 1 },
+  { t: 'T1', start: 5, end: 99, v: 0 }, // flippers required only on waves 1-4, then min 0
+]
+const WFLIMX: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 4, v: 4 },
+  { t: 'T1', start: 5, end: 16, v: 5 },
+  { t: 'T1', start: 17, end: 19, v: 3 },
+  { t: 'T1', start: 20, end: 25, v: 4 },
+  { t: 'T1', start: 26, end: 99, v: 5 },
+]
+const WPULMI: readonly ContourRecord[] = [
+  { t: 'T1', start: 17, end: 32, v: 2 },
+  { t: 'T1', start: 33, end: 99, v: 1 },
+]
+const WTANMI: readonly ContourRecord[] = [
+  { t: 'TZ', start: 1, end: 4, vs: [0, 0, 1, 0] }, // a tanker is REQUIRED on wave 3
+  { t: 'T1', start: 5, end: 16, v: 1 },
+  { t: 'T1', start: 17, end: 32, v: 1 },
+  { t: 'T1', start: 33, end: 39, v: 1 },
+  { t: 'T1', start: 40, end: 99, v: 1 },
+]
+const WSPIMI: readonly ContourRecord[] = [
+  { t: 'TZ', start: 1, end: 4, vs: [0, 0, 0, 1] }, // a spiker is REQUIRED on wave 4
+  { t: 'T1', start: 5, end: 16, v: 2 },
+  { t: 'T1', start: 17, end: 19, v: 0 },
+  { t: 'T1', start: 20, end: 32, v: 1 },
+  // ALWELG.MAC:625 `.BYTE T1,35.,39.,1` — DOTTED (decimal 35) so spiker MIN is 1 on waves 35-39,
+  // where WSPIMX's UN-dotted 35 (rules.ts WSPIMX record 6, 0x35=53 dead range) gives MAX 0. NYMCHA
+  // reads both; min 1 > max 0 resolves to ZERO spikers because every launch is gated on openings != 0.
+  { t: 'T1', start: 35, end: 39, v: 1 },
+  { t: 'T1', start: 44, end: 99, v: 1 },
+]
+const WFUSMI: readonly ContourRecord[] = [
+  { t: 'T1', start: 11, end: 16, v: 1 },
+  { t: 'T1', start: 22, end: 25, v: 1 },
+  { t: 'T1', start: 27, end: 99, v: 1 },
+]
+
+// NYMCHA indexes WFLMIN/WFLMAX/OPFLIP/FLIPCO by a fixed type order (WTABLE :733-742, NYMTAD
+// :1423-1427): flipper, pulsar, tanker, spiker, fuseball. NOT the EnemyKind union order.
+const NYMCHA_KINDS: readonly EnemyKind[] = ['flipper', 'pulsar', 'tanker', 'spiker', 'fuseball']
+const FLIPPER_IX = 0, PULSAR_IX = 1, TANKER_IX = 2, SPIKER_IX = 3, FUSE_IX = 4
+const TYPE_MIN: readonly (readonly ContourRecord[])[] = [WFLIMI, WPULMI, WTANMI, WSPIMI, WFUSMI]
+const TYPE_MAX: readonly (readonly ContourRecord[])[] = [WFLIMX, WPULMX, WTANMX, WSPIMX, WFUSMX]
+const IX_BY_KIND: Record<EnemyKind, number> = { flipper: 0, pulsar: 1, tanker: 2, spiker: 3, fuseball: 4 }
+// ZCARFL/ZCARFU/ZCARPU cargo -> the OPFLIP type index its 2 reserved openings come off
+// (NYMCHA :1294-1297 maps ZCARFU -> ZABFUS+1, i.e. the fuse slot).
+const CARGO_TYPE_IX: Record<TankerCargo, number> = { flipper: FLIPPER_IX, fuseball: FUSE_IX, pulsar: PULSAR_IX }
+
+const typeMin = (ix: number, level: number): number => contourValue(TYPE_MIN[ix], level)
+const typeMax = (ix: number, level: number): number => contourValue(TYPE_MAX[ix], level)
 
 // The CAM's two wave parameters, which VSLOPB loads into an invader's loop counter
 // (WTABLE, ALWELG.MAC:728-751). Story 6-14's `flipPatternForLevel` used to sit here
@@ -801,44 +846,102 @@ export function scoreFor(enemy: Enemy): number {
   }
 }
 
-// `rng` is a mutable cursor advanced in place (one draw per pick).
-function weightedPick<T>(table: ReadonlyArray<readonly [T, number]>, rng: Rng): T {
-  const total = table.reduce((sum, [, w]) => sum + w, 0)
-  let pick = nextFloat(rng) * total
-  for (const [value, w] of table) {
-    if (w <= 0) continue
-    pick -= w
-    if (pick < 0) return value
-  }
-  return table[0][0]
+// ── NYMCHA (ALWELG.MAC:1266-1412): the per-type MIN/MAX population solver (W-034). ──────────
+// Replaces the memoryless weighted roll: what a hatching nymph becomes is a CONSTRAINT
+// SATISFACTION over the live board, not a draw. Returns null when no type may launch (the ROM's
+// TEMP0=0 -> CONYMP puts the nymph back) — the back-pressure that keeps the 7-cap safe. It is
+// MIN-DRIVEN: every launch path is gated on the type's min != 0 (steps 4/5/7) or is spiker/
+// tanker-only (step 6), so a min-0 type (flippers past wave 4) never hatches fresh — those come
+// only from tanker splits. Deterministic except the fallback type + the tanker-cargo slot (rng).
+export interface NymchaPick {
+  readonly kind: EnemyKind
+  readonly cargo: TankerCargo
 }
 
-// Each full pass through the 16 geometries (a "cycle") ramps the hard-enemy
-// spawn weights up by this fraction, so a repeated geometry plays meaner than
-// its first appearance. Flipper weight stays fixed, so its share shrinks as the
-// roster hardens — difficulty does not reset when the geometry table wraps.
-export const SPAWN_CYCLE_HARD_SCALE = 0.5
+// LINEY (the ROM's per-line enemy reach): a lane whose deepest enemy is near the rim is a LONG
+// line, an empty/shallow one short/dead. LINEY is an INVAY value, inverted from our depth (0 far
+// -> 1 near rim), so the ROM's `CMP I,0CC` threshold maps to ~0.2 of our depth — any enemy past
+// it makes the line long.
+const LINE_LONG_DEPTH = 1 - 0xcc / 0xff // ~0.2
 
-// Authentic Atari rev-3 enemy *introduction* schedule. The introduction wave of each type is
-// the first wave its MAX table (WTANMX/WSPIMX/WFUSMX/WPULMX above) is non-zero — tanker WAVE 3,
-// spiker WAVE 4, fuseball 11, pulsar 17 (W-035). This DELETES the old hardcoded `level >= 5`
-// gates, which cited docs/ux/2026-06-27-enemy-roster-rom-extract.md §H — a doc W-035 refutes
-// (it claimed tankers/spikers both L5+). The introduction is monotonic (once a type appears it
-// stays in the roll); the per-wave availability GAPS (WSPIMX blanks spikers on 17-19/33-34/40-42)
-// and count enforcement are the population solver, story tp1-8. The per-cycle `hard` ramp is a
-// separate difficulty axis (story 3-4), not part of the ROM schedule; it is intentionally kept.
-export function rollSpawnKind(level: number, rng: Rng): EnemyKind {
-  // cycle 0 for levels 1–16, 1 for 17–32, … (tubeForLevel wraps with period 16).
-  const cycle = Math.floor((level - 1) / 16)
-  const hard = 1 + cycle * SPAWN_CYCLE_HARD_SCALE
-  const table: ReadonlyArray<readonly [EnemyKind, number]> = [
-    ['flipper', 10],
-    ['tanker', level >= TANKER_INTRO_WAVE ? 4 * hard : 0],
-    ['spiker', level >= SPIKER_INTRO_WAVE ? 3 * hard : 0],
-    ['pulsar', level >= PULSAR_INTRO_WAVE ? 3 * hard : 0],
-    ['fuseball', level >= FUSEBALL_INTRO_WAVE ? 3 * hard : 0],
-  ]
-  return weightedPick(table, rng)
+function lineIsLong(enemies: readonly Enemy[], lane: number): boolean {
+  let reach = 0
+  for (const e of enemies) if (e.lane === lane && e.depth > reach) reach = e.depth
+  return reach >= LINE_LONG_DEPTH
+}
+
+// NEWTYP/NEWTAN (ALWELG.MAC:1413-1474). A tanker draws a random WTACAR slot and takes a cargo
+// whose TYPE still has an opening (so the split can land); if none of the 4 slots' cargo has
+// room the tanker launch fails (null). Non-tankers carry a dummy 'flipper' cargo (unused).
+function tryLaunch(ix: number, level: number, openings: readonly number[], rng: Rng): NymchaPick | null {
+  const kind = NYMCHA_KINDS[ix]
+  if (kind !== 'tanker') return { kind, cargo: 'flipper' }
+  const slots = tankerCargoSlots(level)
+  let slot = nextInt(rng, 4) // RANDOM AND 3
+  for (let tries = 0; tries < 4; tries++) {
+    const cargo = slots[slot]
+    if (openings[CARGO_TYPE_IX[cargo]] > 0) return { kind: 'tanker', cargo }
+    slot = (slot + 3) % 4 // DEY, cycling 0..3
+  }
+  return null
+}
+
+export function nymcha(level: number, enemies: readonly Enemy[], hatchLane: number, rng: Rng): NymchaPick | null {
+  const count = [0, 0, 0, 0, 0] // FLIPCO — live count per type index
+  for (const e of enemies) count[IX_BY_KIND[e.kind]] += 1
+
+  // 1. openings[t] = max(0, WFLMAX[t] - FLIPCO[t]) (:1273-1282).
+  const openings = count.map((c, ix) => Math.max(0, typeMax(ix, level) - c))
+  // 2. reserve TWO openings of each live carrier tanker's cargo type (:1286-1303). Clamp at 0:
+  //    the ROM DECs raw, but the tables never over-subscribe a reachable board, so a byte wrap is
+  //    unreachable and clamping is the faithful reading.
+  for (const e of enemies) {
+    if (e.kind === 'tanker') {
+      const cix = CARGO_TYPE_IX[e.contains]
+      openings[cix] = Math.max(0, openings[cix] - 2)
+    }
+  }
+  // 3. cap every opening at the total free slots, WINVMX+1 - sum(FLIPCO) = NINVAD - live (:1304-1320).
+  const free = Math.max(0, NINVAD - enemies.length)
+  for (let i = 0; i < 5; i++) openings[i] = Math.min(openings[i], free)
+
+  const openCount = openings.reduce((n, o) => (o > 0 ? n + 1 : n), 0)
+  if (openCount === 0) return null // TEMP0=0 -> nymph goes back
+
+  // 4. exactly one open type: launch it ONLY if it is required (min != 0) (:1332-1347).
+  if (openCount === 1) {
+    const ix = openings.findIndex((o) => o > 0)
+    return typeMin(ix, level) !== 0 ? tryLaunch(ix, level, openings, rng) : null
+  }
+
+  // 5. satisfy any below-min type FIRST — nested inside "has openings" (:1351-1364). The min>max
+  //    resolution lives here: a type with 0 openings (max 0) never reaches this compare, so on
+  //    waves 35-39 the spiker (min 1, max 0) is never launched — max governs, the min is inert.
+  for (let ix = 4; ix >= 0; ix--) {
+    if (openings[ix] > 0 && count[ix] < typeMin(ix, level)) {
+      const pick = tryLaunch(ix, level, openings, rng)
+      if (pick) return pick
+    }
+  }
+
+  // 6. smart launch: spiker on a short/dead line, tanker on a long one (:1366-1385).
+  if (openings[SPIKER_IX] > 0 && openings[TANKER_IX] > 0) {
+    const ix = lineIsLong(enemies, hatchLane) ? TANKER_IX : SPIKER_IX
+    const pick = tryLaunch(ix, level, openings, rng)
+    if (pick) return pick
+  }
+
+  // 7. random fallback: RANDO2 AND 3, +1 (excludes flipper as the START), then walk to the first
+  //    type with a non-zero min AND openings (:1386-1408).
+  let ix = nextInt(rng, 4) + 1 // 1..4
+  for (let step = 0; step < 5; step++) {
+    if (typeMin(ix, level) !== 0 && openings[ix] > 0) {
+      const pick = tryLaunch(ix, level, openings, rng)
+      if (pick) return pick
+    }
+    ix = ix - 1 < 0 ? 4 : ix - 1 // DEX; wrap below 0 to 4
+  }
+  return null // signal failure -> nymph goes back
 }
 
 // Tanker cargo is the WTACAR 4-slot table (W-033), not a roster-aligned weight. NEWTAN
