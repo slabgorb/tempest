@@ -50,29 +50,34 @@ function spawnedKinds(level: number, seed: number): Set<string> {
   return kinds
 }
 
-// Authentic Atari rev-3 enemy *introduction* schedule (story 6-13 — decision:
-// follow the ROM, do not re-tune the canonical game). Source of truth:
-// docs/ux/2026-06-27-enemy-roster-rom-extract.md §H "Mix per level" (line 426),
-// corroborated by docs/ux/2026-06-27-tempest-arcade-feel-reference.md line 242:
-//   flippers L1+ · tankers L5+ · spikers L5+ · fuseballs L11+ · pulsars L17+.
-// (The ROM thins the spiker weight above L16 then restores 1 at the L33+ steady
-// state; we gate spikers monotonically at L5+ — see story 6-13 delivery finding
-// re: the doc-flagged suspected `$35` spiker-table bug.)
-describe('rollSpawnKind — authentic ROM introduction schedule (story 6-13)', () => {
-  it('spawns flippers only through level 4', () => {
-    for (const level of [1, 2, 3, 4]) {
+// Authentic Atari rev-3 enemy *introduction* schedule. RE-SEATED by tp1-7 (W-035): the
+// introduction is the WTANMX/WSPIMX/WFUSMX/WPULMX max tables in ALWELG.MAC, NOT the
+// enemy-roster doc story 6-13 cited (docs/ux/2026-06-27-enemy-roster-rom-extract.md §H),
+// which W-035 refutes. The first non-zero max of each type is its introduction wave:
+//   flippers L1+ · tankers WAVE 3+ · spikers WAVE 4+ · fuseballs L11+ · pulsars L17+.
+// (tp1-7 corrects the INTRODUCTION waves only; per-wave availability gaps — WSPIMX blanks
+// out spikers on waves 17-19, 33-34, 40-42 — and count enforcement belong to the NYMCHA
+// population solver, story tp1-8.)
+describe('rollSpawnKind — authentic ROM introduction schedule (RE-SEATED by tp1-7 / W-035)', () => {
+  it('spawns flippers only through wave 2', () => {
+    // A tanker first appears on WAVE 3 (WTANMX), so only waves 1-2 are flippers-only. This
+    // used to say "through level 4", from the doc W-035 refutes.
+    for (const level of [1, 2]) {
       expect(rolledKinds(level, 100 + level)).toEqual(new Set<EnemyKind>(['flipper']))
     }
   })
 
-  it('introduces tankers and spikers at level 5, not before', () => {
-    const l4 = rolledKinds(4, 11)
-    expect(l4.has('tanker')).toBe(false)
-    expect(l4.has('spiker')).toBe(false)
+  it('introduces the tanker on WAVE 3 and the spiker on WAVE 4 (WTANMX/WSPIMX)', () => {
+    const w2 = rolledKinds(2, 11)
+    expect(w2.has('tanker')).toBe(false)
+    expect(w2.has('spiker')).toBe(false)
 
-    const l5 = rolledKinds(5, 11)
-    expect(l5.has('tanker')).toBe(true)
-    expect(l5.has('spiker')).toBe(true)
+    const w3 = rolledKinds(3, 11)
+    expect(w3.has('tanker'), 'tanker enters on wave 3 (WTANMX = 1)').toBe(true)
+    expect(w3.has('spiker'), 'spiker not until wave 4').toBe(false)
+
+    const w4 = rolledKinds(4, 11)
+    expect(w4.has('spiker'), 'spiker enters on wave 4 (WSPIMX = 2)').toBe(true)
   })
 
   it('keeps fuseballs out until level 11', () => {
@@ -101,10 +106,22 @@ describe('spawn mix through the sim (story 6-13)', () => {
     expect(spawnedKinds(1, 1)).toEqual(new Set(['flipper']))
   })
 
-  it('level 4 still spawns only flippers — hard enemies start at level 5', () => {
-    // Authentic ROM: L1-4 are flippers-only. With no tankers there are also no
-    // tanker-split children, so the sim-observed set is exactly {flipper}.
-    expect(spawnedKinds(4, 1)).toEqual(new Set(['flipper']))
+  it('wave 2 still spawns only flippers — tankers do not enter until wave 3 (RE-SEATED by tp1-7)', () => {
+    // Authentic ROM (W-035): waves 1-2 are flippers-only, a tanker first appears on wave 3.
+    // Below wave 3 there are no tankers, so no tanker-split children either — the sim-observed
+    // set is exactly {flipper}. (This used to assert "level 4 flippers only", from the doc
+    // W-035 refutes.)
+    expect(spawnedKinds(2, 1)).toEqual(new Set(['flipper']))
+  })
+
+  it('wave 4 spawns tankers and spikers through the sim, still no fuseball/pulsar (RE-SEATED by tp1-7)', () => {
+    // Tanker enters wave 3, spiker wave 4 (WTANMX/WSPIMX); fuseballs (11) and pulsars (17) stay
+    // out. Cargo below wave 33 is flippers only, so tanker splits add no new kinds here.
+    const kinds = spawnedKinds(4, 1)
+    expect(kinds.has('tanker')).toBe(true)
+    expect(kinds.has('spiker')).toBe(true)
+    expect(kinds.has('fuseball')).toBe(false)
+    expect(kinds.has('pulsar')).toBe(false)
   })
 
   it('a level past the first gate (L5) spawns a varied roster including flippers', () => {
@@ -114,27 +131,28 @@ describe('spawn mix through the sim (story 6-13)', () => {
   })
 })
 
-// A tanker must not split into an enemy type that has not yet entered the roster.
-// rollSpawnKind gates fuseballs at L11+ and pulsars at L17+, so rollTankerCargo's
-// cargo gates are aligned to match (story 6-13 follow-up): below those levels a
-// tanker carries flippers only, keeping the roster-by-level promise consistent
-// even through tanker splits.
-describe('rollTankerCargo respects the roster introduction schedule (story 6-13 follow-up)', () => {
-  it('carries flippers only before fuseballs enter the roster (below L11)', () => {
-    for (const level of [5, 6, 10]) {
+// RE-SEATED by tp1-7 (W-033): tanker cargo comes from the WTACAR table, NOT from a gate
+// aligned to the roster introduction. All four cargo slots are ZCARFL (flipper) until wave
+// 33; WWTAC2 turns slot 2 to fuseball at 33 and pulsar at 41; WWTAC3 turns slot 3 to fuseball
+// at 49. So cargo lags the ROSTER by a lot (fuseballs enter the roster at 11 but cannot be
+// CARRIED until 33), and the "a split never manufactures a type before it is in the roster"
+// invariant still holds — with far more headroom than the old L11/L17 gates gave.
+describe('rollTankerCargo reads the WTACAR cargo table (RE-SEATED by tp1-7 / W-033)', () => {
+  it('carries flippers only until wave 33 — all four WTACAR slots are ZCARFL below it', () => {
+    for (const level of [5, 11, 20, 32]) {
       expect(rolledCargo(level, 55)).toEqual(new Set<TankerCargo>(['flipper']))
     }
   })
 
-  it('introduces fuseball cargo at L11, matching the fuseball roster gate', () => {
-    expect(rolledCargo(10, 66).has('fuseball')).toBe(false)
-    expect(rolledCargo(11, 66).has('fuseball')).toBe(true)
+  it('introduces fuseball cargo at wave 33 (WWTAC2 slot 2), not L11', () => {
+    expect(rolledCargo(32, 66).has('fuseball')).toBe(false)
+    expect(rolledCargo(33, 66).has('fuseball')).toBe(true)
   })
 
-  it('keeps pulsar cargo out until L17, matching the pulsar roster gate', () => {
-    for (const level of [11, 13, 16]) {
+  it('keeps pulsar cargo out until wave 41 (WWTAC2 -> ZCARPU), not L17', () => {
+    for (const level of [17, 33, 40]) {
       expect(rolledCargo(level, 77).has('pulsar')).toBe(false)
     }
-    expect(rolledCargo(17, 77).has('pulsar')).toBe(true)
+    expect(rolledCargo(41, 77).has('pulsar')).toBe(true)
   })
 })
