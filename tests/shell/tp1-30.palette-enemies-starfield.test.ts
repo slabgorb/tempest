@@ -96,8 +96,14 @@ const BANK_LEVEL = [1, 17, 33, 49, 65, 81] as const
 
 // The closed X-diamond body vs the open cargo emblem (identify by `closed`, so the
 // test does not depend on sub-stroke ORDER).
-const bodyOf = (g: readonly GlyphStroke[]): GlyphStroke | undefined => g.find((s) => s.closed)
-const emblemOf = (g: readonly GlyphStroke[]): GlyphStroke | undefined => g.find((s) => !s.closed)
+// tp1-17 RE-SEAT: identify the body/emblem POSITIONALLY, not by `closed`. The ROM's
+// GENTNK body (tp1-17) is authored as a laced polyline that need not be a closed loop,
+// so the old `find(s.closed)` detector would miss it. The cargo emblem is always
+// PREPENDED (TANKP/TANKF draw the emblem, then JMPL GENTNK), so the body is the LAST
+// stroke and the emblem the first — true for both the current 4-diamond body and the
+// incoming 17-vertex double diamond.
+const bodyOf = (g: readonly GlyphStroke[]): GlyphStroke | undefined => g[g.length - 1]
+const emblemOf = (g: readonly GlyphStroke[]): GlyphStroke | undefined => (g.length > 1 ? g[0] : undefined)
 
 // A minimal recording ctx — captures the strokeStyle used at each stroke()/fill().
 // drawEnemy's glyphs are DOM-free (strokeGlyph only touches these members), so a
