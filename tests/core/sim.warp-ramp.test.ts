@@ -212,14 +212,21 @@ describe('warp ramp — pure, deterministic, dt-driven core (AC4)', () => {
   })
 
   it('is frame-rate independent: total descent time barely moves across dt (no spikes)', () => {
+    // Only the DESCENT is dt-scaled (warpAccel × dt), so only it is wall-clock stable.
+    // The post-descent eye fly-in (tp1-37) is a frame COUNT — the qframe convention, like
+    // tp1-31's per-frame camera slide (stepCamera) — so its wall-time is tied to the step
+    // rate by design and must NOT be folded into this dt-independence check. Measure the
+    // descent up to the bottom (where beginFlyIn arms flyIn), before the fly-in begins.
     const descentSeconds = (dt: number): number => {
       let s = enterWarp(1, 4)
       let t = 0
-      for (let i = 0; i < 5000 && s.mode === 'warp'; i++) {
+      for (let i = 0; i < 5000 && s.mode === 'warp' && (s.warp.flyIn ?? 0) === 0; i++) {
         s = stepGame(s, NEUTRAL, dt)
         t += dt
       }
-      expect(s.mode).toBe('playing') // completed within budget at this dt
+      // Reached the bottom within budget at this dt: the fly-in is armed (or, defensively,
+      // play already resumed) — either way the dt-scaled descent has completed.
+      expect((s.warp.flyIn ?? 0) > 0 || s.mode === 'playing').toBe(true)
       return t
     }
     const at60 = descentSeconds(1 / 60)

@@ -44,7 +44,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 173,
+      "line": 179,
       "verbatim": "export interface HighScoreEntryState {"
     },
     "claim": "ITIMHI=60 (ALSCOR.MAC:36) is HEX in this assembler — decimal literals carry a trailing period ('SECOND\t=20.', ALCOMN.MAC:87; 'CMP I,10.', ALWELG.MAC:571), cf. B-021 — so ITIMHI = 0x60 = 96, not 60. It seeds TIMHIS (INTLDR, ALSCOR.MAC:745-746), which GETINI decrements once per 32 GAME frames (`LDA QFRAME / AND I,1F / IFEQ ... DEC TIMHIS`, ALSCOR.MAC:768-772) and aborts entry (CNOTFOU) at zero: 96 * 32 = 3072 game frames, which at the ROM's 256/9 = 28.44 fps (FR-001) is ~108 seconds before an idle player's initials entry is auto-cancelled. `HighScoreEntryState` (src/core/state.ts:106-108) carries only `{ initials: string }` — no countdown field anywhere in state.ts or sim.ts — so our entry screen waits indefinitely for input.",

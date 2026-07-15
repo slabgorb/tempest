@@ -160,6 +160,12 @@ export interface WarpState {
   // = descending or not warping. Optional so the pre-tp1-10 3-field warp literals in
   // the suite still type-check (undefined ≡ 0).
   flyIn?: number
+  // tp1-37 (WD-018): the LIVE eye Y during the fly-in, in ROM units. NEWAV2 parks the
+  // eye far back (EYE_FLYIN_START = 0xFA00 = -1536, INEWAV ALWELG.MAC:29-33) and walks
+  // it toward the new well at +0x18/frame, clamping at the per-well EYLDES = -H
+  // (ALWELG.MAC:85-108). Present only while `flyIn > 0`; the shell feeds it to
+  // warpDiveTube so the new well animates in. Optional for the same 3-field literals.
+  eyeY?: number
 }
 
 export interface SelectState {

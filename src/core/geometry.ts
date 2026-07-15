@@ -326,6 +326,15 @@ export function warpDiveTube(tube: Tube, progress: number): Tube {
   return { ...tube, far, farRatio: R / denom }
 }
 
+// tp1-37 (WD-018): the per-well eye DESTINATION for the NEWAV2 fly-in. INIWLS sets
+// EYLDES = -HOLEYL[wellID] (two's complement of the eye-Y, ALDISP.MAC:2470-2475), so
+// the destination is -H. H is the same per-well eye-Y baked into farRatio = (16+H)/
+// (240+H), recovered exactly (H is an integer ROM byte): H = (240·r - 16)/(1 - r).
+export function warpEyeDest(tube: Tube): number {
+  const r = tube.farRatio
+  return -Math.round((240 * r - 16) / (1 - r))
+}
+
 // --- Story 12-1: rim-anchored ROM CURSOR (claw) transform --------------------
 //
 // The player CURSOR is a FIXED-SIZE screen-space object pinned to the near rim —
