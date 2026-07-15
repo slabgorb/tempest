@@ -132,7 +132,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 129,
+      "line": 137,
       "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
     },
     "claim": "BLIFIN is a 1-byte RAM variable (not a compile-time constant) that BOLOUT displays via 3-digit BCD output captioned \"OUTPUT 10K & 20K\" (ALSCOR.MAC:966-979) — i.e. its value is operator-set via the cabinet's game-play options, with no fixed default anywhere in ALSCOR.MAC/ALCOMN.MAC. `EXTRA_LIFE_INTERVAL = 10000` in rules.ts is a single, permanent, non-configurable value.",

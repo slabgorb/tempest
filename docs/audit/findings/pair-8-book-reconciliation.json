@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 165,
+      "line": 173,
       "verbatim": "export const ZAP_WINDOW_FIRST = 13"
     },
     "claim": "We shipped ZAP_WINDOW_FIRST = 13 frames, matching the book's literal transcription \"TIMAX: .BYTE 00,13,05\". The primary source's TIMAX table is not a literal byte list, it is a computed expression: TIMAX[1] = CSUSTA + (8*(CSUINT+1)). With CSUSTA=3 and CSUINT=1 (ALWELG.MAC:3490-3492), TIMAX[1] = 3 + (8*2) = 19, not 13. The authentic first Superzapper active window is 19 GAME frames — which at the ROM's 256/9 = 28.44 fps (FR-001) is 0.668 s, not the '~0.317s at 60Hz' this finding originally stated. Ours, 13 frames ticked at the sim's 1/60 s timestep, lasts 0.217 s: 3.1x short in wall-clock.",
@@ -30,7 +30,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 166,
+      "line": 174,
       "verbatim": "export const ZAP_WINDOW_SECOND = 5"
     },
     "claim": "Both agree at 5 frames. TIMAX[2] = CSUSTA + (1*(CSUINT+1)) = 3 + (1*2) = 5, matching ZAP_WINDOW_SECOND = 5 and the book's transcribed final byte '05'. The COUNT matches; the DURATION does not — 5 ROM game frames is 5/28.44 = 0.176 s (FR-001), whereas our 5 frames are ticked once per 1/60 s sim step and last 0.083 s.",
@@ -108,7 +108,8 @@
     "claim": "We ship SPIKE_MAX_DEPTH=0.75. The ROM has no cap distinct from the spiker's own climb clamp: JSTRAI (ALWELG.MAC:2205-2229) caps a climbing spiker's INVAY at 0x20 (\"MAX HEIGHT\", line 2228), and LINEY (the spike's visible tip) is set directly from that same INVAY (lines 2214-2217) — so the ROM's one and only relevant cap is 0x20, i.e. depth (0xF0-0x20)/224 = 0.929, the SAME value already used for our own SPIKER_TURNAROUND_DEPTH (rules.ts:115). Our SPIKE_MAX_DEPTH (0.75) sits well below the ROM's actual cap (0.929).",
     "reasoning": "This is a known, already-reviewed deliberate deviation, not a newly-discovered defect: rules.ts:110-115 explicitly documents that SPIKE_MAX_DEPTH was deliberately kept lower/separate from SPIKER_TURNAROUND_DEPTH \"so raising the turnaround does not also grow spikes\" (story 6-15), and sprint/archive/context-epic-10.md explicitly excludes \"spike-max-height 6-15\" from epic-10's fidelity scope. The book's own §11 text gives no numeric spike-height-cap value either, so there is nothing for the book itself to have mis-transcribed — the gap here is our own gameplay-balance choice against the ROM (which uses one shared cap, not two). Reclassed from BOOK_WAS_WRONG to DIVERGENCE (recommendation accept) during coverage review: BOOK_WAS_WRONG requires an actual book transcription error, and there is none to find here; DIVERGENCE/accept is the closest the enum has to \"accepted deviation.\" This finding CONFLICTS with W-039 (pair-1-alwelg-sim-enemies.json), which argues SPIKE_MAX_DEPTH should be RAISED to 0.929 (matching SPIKER_TURNAROUND_DEPTH) because the last 0.18 of the spiker's climb currently lays no spike at all — a visible rendering artifact, not just a balance knob. The user must rule ONCE on this merged pair (B-006 + W-039), not have each resolved independently. [REFUTATION] Re-opened JSTRAI (ALWELG.MAC:2205-2239) in full. Verified line 2228 verbatim 'LDA I,20 ;MAX HEIGHT' inside the IFCC block that clamps INVAY to 0x20 when a climbing spiker exceeds it (2222-2229), and confirmed LINEY (the spike's rendered extent) is set directly from INVAY only when INVAY < LINEY (2214-2217, 'NEW ENEMY LINE?' / 'STA Y,LINEY') — so LINEY can never grow past whatever bound governs INVAY, i.e. there really is only ONE cap (0x20) governing both the spiker's own climb and the spike's max drawn height, exactly as claimed. Checked for a second independent height cap I could use to refute this (NWTELI/INIENE at lines 303-313, and LIFECT at 2588-2609) — both are genuinely different mechanisms (NWTELI seeds the STARTING per-wave height, LIFECT SHRINKS the line when shot) and neither imposes an independent maximum; they don't contradict the claim. Confirmed .RADIX 16 is inherited (ALWELG.MAC:9 .INCLUDE ALCOMN, which sets .RADIX 16 at line 17), so 0x20/0xF0 hex reads are correct, and the arithmetic (0xF0-0x20)/224=0.929 matches rules.ts's own pre-existing SPIKER_TURNAROUND_DEPTH comment exactly — no unit/radix error. Verified ALWELG.MAC is linked (ALEXEC.MAP:10,25) and JSTRAI/LOGINI sit in no false conditional-assembly block. The finding transparently discloses its classification history and a conflict with W-039 (not in this batch) but that is a policy question about which recommendation to act on, not a factual weakness — both findings agree on the same underlying ROM fact.",
     "recommendation": "accept",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-11"
   },
   {
     "id": "B-007",
@@ -261,7 +262,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 834,
+      "line": 843,
       "verbatim": "  const tier = Math.min(2, Math.max(0, Math.floor(depth * 3))) // 0,1,2"
     },
     "claim": "Our fuseballScore() derives the 250/500/750 tier from the fuseball's DEPTH at time of kill (Math.floor(depth*3), rules.ts:200-203). The ROM's INCFS2 instead rolls RANDO2 AND 7 (0-7, ALWELG.MAC:2754-2755); if the roll is >=3 (5 of 8 outcomes) it forces tier 0, otherwise it keeps the roll (0, 1, or 2) directly as the tier (ALWELG.MAC:2756-2759) — i.e. P(tier0)=6/8=75%, P(tier1)=1/8, P(tier2)=1/8, entirely independent of where onscreen the fuseball died. The point VALUES (250/500/750, see B-014) are correct, but the selection MECHANISM is not depth-based at all — it is a heavily tier-0-weighted coin flip.",
@@ -302,7 +303,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 129,
+      "line": 137,
       "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
     },
     "claim": "EXTRA_LIFE_INTERVAL=10000 is shipped as one fixed rule (\"extra life every 10,000 points\"). The primary source has no single such constant: BLIFIN (ALCOMN.MAC:782, \"BONUS LIFE INTERVAL\") is a RAM variable set at boot from an operator DIP-switch field, decoded through TBLIFI (ALLANG.MAC:289, '.BYTE 2,1,3,4,5,6,7,0') into a bonus-life interval of 0 (off), 10K, 20K, ... or 70K points depending on the cabinet's switch setting. 10,000 IS one of the 8 selectable values, but nothing in the disassembly identifies a single canonical/default interval the way a fixed constant would.",
