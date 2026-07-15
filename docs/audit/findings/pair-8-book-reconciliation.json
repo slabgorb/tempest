@@ -359,7 +359,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 83,
+      "line": 93,
       "verbatim": "const ENEMY_SCALE_STEPS = [1, 2, 4, 8] as const // doubling each frame"
     },
     "claim": "Confirmed: ALVROM.MAC:344-376 defines EXPL1..EXPL4 with CM (scale) = 1,2,4,8 and CB (brightness) = 07,0E,0E,0E — matching ENEMY_SCALE_STEPS=[1,2,4,8] and ENEMY_DIM=7 / ENEMY_BRIGHT=14 (fx.ts:85-86; 0x0E=14).",

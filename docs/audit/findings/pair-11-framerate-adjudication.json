@@ -299,7 +299,8 @@
     "reasoning": "DA-010 explicitly inoculated itself against this ('checked against the unit trap: 20 ROM frames genuinely is ~0.33s, not close to 0.9s under any frame-rate reading') - and that inoculation is exactly what is refuted here: under the ROM's actual frame rate, 20 frames IS close to 0.9 s. The finding survives as a minor divergence (0.9 -> 0.70) rather than the near-3x timing bug it was filed as. This is the second finding that moves in our favour once the base is corrected (see FR-013), and it is why the rebase must be applied to the WHOLE audit before any of its timing fixes are actioned. [REFUTATION] ALDISP.MAC:1022 verbatim matches. Read the full TSPTIM 'charge-player' sequence (lines 1022-1030): entries 2,2,2,2,2,4,3,2,1 (the last '1' at PPSTART, explicitly commented 'CHARGE PLAYER EXPLOSION FINISH' — i.e. still part of this sequence, not the next one). Sum = 20 frames exactly, matching the claim. Confirmed CHPLKI (which reads TSPTIM) is invoked from DSPEXP in the shipped ALDISP.MAC (not the ALDIS2.MAC decoy — verified the same code exists in both, but only ALDISP is linked per the brief), itself part of DISPLA, called once per gated 28.444fps game frame. 20/28.444 = 0.703s, matching the claim exactly (not the naive 20/60=0.333s DA-010 used). Verified SPLAT_LIFE = 0.9 in fx.ts:89. 0.9/0.703 = 1.28x, matching the claimed correction precisely, versus 0.9/0.333=2.7x under the wrong (60Hz) basis. The finding correctly identifies and corrects its own predecessor's unit error rather than compounding it. [CORRECTION] None — the finding already downgrades DA-010's overstated 'nearly 3x' to the correct 1.28x and shows its work.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-18"
   },
   {
     "id": "FR-016",
