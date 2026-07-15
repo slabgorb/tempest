@@ -19,7 +19,12 @@ import renderSrc from '../../src/shell/render.ts?raw'
 
 // First-match indices of each call site / branch token in render.ts source.
 const iSpikes = renderSrc.search(/drawSpikes\s*\(\s*pctx/)
-const iWarpCond = renderSrc.search(/s\.mode\s*===\s*'warp'/) // dispatch branch (line ~823)
+// Anchor on the drawWarp DISPATCH `if (s.mode === 'warp') {` specifically. tp1-33
+// added an earlier `const scene = s.mode === 'warp' ? ...` (the diving-well swap for
+// drawTube/drawSpikes), so a bare /s\.mode === 'warp'/ would match that instead and
+// misread the spikes-before-split order. The invariant is unchanged: drawSpikes must
+// run before the drawWarp dispatch.
+const iWarpCond = renderSrc.search(/if\s*\(\s*s\.mode\s*===\s*'warp'\s*\)/)
 const iWarp = renderSrc.search(/drawWarp\s*\(\s*pctx/)
 const iEnemy = renderSrc.search(/drawEnemy\s*\(\s*pctx/) // call site in the else branch
 const iStarfield = renderSrc.search(/drawStarfield\s*\(\s*pctx/)

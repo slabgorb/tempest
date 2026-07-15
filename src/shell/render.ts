@@ -2,7 +2,7 @@
 import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import { withGlow, glowPolyline } from '@arcade/shared/glow'
-import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
@@ -980,9 +980,18 @@ export function render(
   // (ALDISP.MAC:2274), so the WHOLE scene shifts — tube, spikes, enemies, claw,
   // and the warp starfield (DSTARF swaps the eye but keeps ZADJL). The sim owns
   // the animation: render just applies the current camera.screenZ.
+  // tp1-33 (WD-012): during the dive the well EXPANDS past the fixed Claw. The eye
+  // tracks the cursor (MOVCUD), so the far ring rushes outward toward the rim while
+  // the near ring stays put — warpDiveTube returns that progress-driven diving well.
+  // Draw the tube AND spikes against it, so the well and any spike grow around the
+  // stationary Claw (the spike growing up to meet the Claw, WD-012). drawWarp keeps
+  // the Claw on the base near ring (identical to the diving near ring), so it does
+  // not move. Non-warp frames pass the well through unchanged.
+  const scene =
+    s.mode === 'warp' ? { ...s, tube: warpDiveTube(s.tube, Math.min(1, s.warp.progress)) } : s
   pctx.translate(0, s.camera.screenZ)
-  drawTube(pctx, s, wellHex, currentLane(s.tube, s.player.lane))
-  drawSpikes(pctx, s)
+  drawTube(pctx, scene, wellHex, currentLane(scene.tube, scene.player.lane))
+  drawSpikes(pctx, scene)
   if (s.mode === 'warp') {
     // tp1-10 (WD-013): the starfield does not open until the dive is ~29% down the
     // well (WARP_STARFIELD_GATE) — gated on the dive progress, not merely on the warp
