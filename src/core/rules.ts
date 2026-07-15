@@ -685,7 +685,7 @@ const WSPIMX: readonly ContourRecord[] = [
   { t: 'T1', start: 11, end: 16, v: 3 },
   { t: 'T1', start: 20, end: 25, v: 2 },
   { t: 'TZ', start: 26, end: 32, vs: [1, 2, 2, 2, 1, 1, 2] },
-  { t: 'T1', start: 35, end: 39, v: 1 },
+  { t: 'T1', start: 53, end: 39, v: 1 }, // ALWELG.MAC:633 `.BYTE T1,35,39.,1` — the `35` is UN-dotted, so under ALWELG's hex radix it is 0x35 = 53: a DEAD [53,39] range → waves 35-39 spiker-max 0, like every other gap here. WSPIMI:625 DOTS it (`35.` = dec 35, min 1), so the assembled ROM is self-contradictory (min 1 > max 0) — a 1981 typo tp1-8's solver resolves. NOT decimal 35.
   { t: 'T1', start: 43, end: 99, v: 1 },
 ]
 const WFUSMX: readonly ContourRecord[] = [
