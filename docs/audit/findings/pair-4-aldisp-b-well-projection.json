@@ -316,7 +316,7 @@
     },
     "ours": {
       "file": "src/core/geometry.ts",
-      "line": 340,
+      "line": 372,
       "verbatim": "  const rotation = Math.atan2(anchor.y - far.y, anchor.x - far.x) + Math.PI / 2"
     },
     "claim": "ILINANG (ALDISP.MAC:1362-1379) is a 16x16 companion to NEWLIX/NEWLIZ: one byte per rim segment, copied into LINANG at INIWLS (ALDISP.MAC:2527-2528) and documented as 'INDEX=ANGLE FROM GRID LINE TO NEXT CCW LINE' (ALCOMN.MAC:923). It is a 4-bit direction index — 1/16 of a turn, 22.5 degrees per step — used to orient objects that ride the rim. We store no such table; render/geometry recover the same tangent exactly, at full float precision, from the very coordinates the table was authored against (clawTransform's rotation = the lane's far->near radial + pi/2, geometry.ts:269, and render.ts:320-324 leans on it for the flipper's rim-tangent axis).",

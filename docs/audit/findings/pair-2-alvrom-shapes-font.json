@@ -547,7 +547,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1028,
+      "line": 1037,
       "verbatim": "    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, 28, '#ffffff', 18)"
     },
     "claim": "SPIKE is WHITE at scale 0 (double-size cell), y=0; English literal `ESPIKE: ASCVH -72.,<AVOID SPIKES>` (ALLANG.MAC 238). We draw 'AVOID SPIKES' in '#ffffff' during the warp hold.",
@@ -564,7 +564,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1036,
+      "line": 1045,
       "verbatim": "    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, 40, '#39ff14', 20)"
     },
     "claim": "BONUS = GREEN scale 1 y=-70. (ALLANG.MAC 77) and TIME = GREEN scale 1 y=98h (ALLANG.MAC 78); literals `SBONUS: ASCVH 8B,<BONUS>` (164) and `ETIME: ASCVH 0E8,<TIME>` (166). We draw both banners in '#39ff14' on the level-clear warp (render.ts 993-994).",
@@ -581,7 +581,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1053,
+      "line": 1062,
       "verbatim": "    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, 26, '#1f8fff', 16)"
     },
     "claim": "SUPZA uses BLULET (=7, the second letters slot, ALCOMN.MAC 352) — not the usual LETCOL green. English falls through to `FSUPZA: ASCVH <SUPERZAPPER RECHARGE>` (ALLANG.MAC 248-249), i.e. the English string IS 'SUPERZAPPER RECHARGE'. We draw exactly that string in '#1f8fff' blue.",

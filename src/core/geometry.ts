@@ -294,6 +294,38 @@ export function tubeForLevel(level: number): Tube {
   return GEOMETRIES[(((level - 1) % n) + n) % n]
 }
 
+// tp1-33 (WD-012): THE MOVING EYE. During the warp DIVE the eye advances by the
+// SAME velocity as the cursor every frame (MOVCUD, "LDA EYLL / ADC CURSVL",
+// ALWELG.MAC:1049-1062), so (CURSY − EY) is invariant — the Claw's projected size
+// stays fixed while the well's rim/floor near the advancing eye, and the tube
+// expands and streams past the stationary Claw. INIWLS freezes YDEUNI at 16+H
+// (ALDISP.MAC:2464-2506), so the scale is NOT recomputed as the eye moves; over the
+// descent the eye covers the FULL along-span (WARP_ALONG_SPAN = 0xF0−0x10 = 224).
+// The far end's foreshortening ratio relative to the fixed rim therefore grows
+//     R_eff(progress) = (16+H)/((240+H) − 224·progress),  H = ROM_EYE_Y[wellID]
+// from the well's static R = (16+H)/(240+H) at progress 0 (no pop) to exactly 1.0
+// (flat) at the bottom. H cancels when written in terms of R alone:
+//     R_eff = R / (1 − progress·(1 − R))
+// This returns the effective EXPANDING well for a dive progress: the NEAR ring
+// (rim/Claw) is held FIXED and every far vertex slides toward its own near vertex
+// by k = (1 − progress)/(1 − progress·(1 − R)) — a scale about the same per-well
+// vanishing point, so the whole existing projection pipeline (perspectiveDepth/
+// project/laneWidth) reuses it. Exact at both endpoints (k=1 → the static far ring,
+// k=0 → the near ring). Pure: no eye/VP recovery, no state, no time. Phase-2 (the
+// post-descent fly-in INTO the new well, WD-018) is a separate movement and keeps
+// its shipped countdown placeholder.
+export function warpDiveTube(tube: Tube, progress: number): Tube {
+  const R = tube.farRatio
+  const denom = 1 - progress * (1 - R)
+  const k = (1 - progress) / denom
+  const near = tube.near
+  const far = tube.far.map((f, i) => ({
+    x: near[i].x + (f.x - near[i].x) * k,
+    y: near[i].y + (f.y - near[i].y) * k,
+  }))
+  return { ...tube, far, farRatio: R / denom }
+}
+
 // --- Story 12-1: rim-anchored ROM CURSOR (claw) transform --------------------
 //
 // The player CURSOR is a FIXED-SIZE screen-space object pinned to the near rim —
