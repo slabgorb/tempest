@@ -323,7 +323,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 467,
+      "line": 480,
       "verbatim": "  if (chargesInFlight >= 8) return 'red'"
     },
     "claim": "Confirmed: the ROM's bullet-center color select (ALDISP.MAC:920-929) defaults to ZYELLO (plenty), promotes to ZBLUE once CHACOU >= NPCHARG-2 (=6, line 922), and to ZRED once CHACOU >= NPCHARG (=8, line 925) — exactly our thresholds (<6 yellow, 6-7 cyan, 8 red; glyphs.ts:292-296).",
@@ -361,7 +361,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 93,
+      "line": 109,
       "verbatim": "const ENEMY_SCALE_STEPS = [1, 2, 4, 8] as const // doubling each frame"
     },
     "claim": "Confirmed: ALVROM.MAC:344-376 defines EXPL1..EXPL4 with CM (scale) = 1,2,4,8 and CB (brightness) = 07,0E,0E,0E — matching ENEMY_SCALE_STEPS=[1,2,4,8] and ENEMY_DIM=7 / ENEMY_BRIGHT=14 (fx.ts:85-86; 0x0E=14).",

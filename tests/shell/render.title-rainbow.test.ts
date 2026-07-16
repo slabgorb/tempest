@@ -47,7 +47,12 @@ describe('render title rainbow — wires the pure titleLogo model (Story 10-6)',
   })
 
   it('still draws the word TEMPEST in the attract title', () => {
-    expect(attractSrc).toMatch(/['"]TEMPEST['"]/)
+    // tp1-19 (V-017): the word is no longer the string 'TEMPEST' pushed through the
+    // message font — it is the ROM's own picture, TEMLIT's back-slanted alphabet.
+    // The literal left drawAttract with it, so the proxy for "the logo is present"
+    // is now the glyph. The rainbow itself is unchanged (asserted above): LOGPRO
+    // stacks VORLIT, the label directly above TEMLIT (ALVROM.MAC:1301).
+    expect(attractSrc).toMatch(/\blogoGlyph\b/)
   })
 })
 
