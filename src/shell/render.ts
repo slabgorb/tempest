@@ -4,7 +4,7 @@ import type { HighScoreTable } from '@arcade/shared/highscore'
 import { withGlow, glowPolyline } from '@arcade/shared/glow'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube, warpEyeDest } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
-import { Fx, EnemyBurst, PlayerSplat, PlayerSpark } from './fx'
+import { Fx, EnemyBurst, PlayerSplat, PlayerSpark, FuseScorePop } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
 import { createStarfield, STAR_SPAWN_Z, STAR_RETIRE_Z, starReachFraction } from './starfield'
 import { titleLogoPasses } from './titleLogo'
@@ -12,7 +12,7 @@ import {
   flipperGlyph, tankerGlyph, spikerGlyph, fuseballGlyph,
   pulsarBar, pulsarVariant, pulsarColor, enemyBoltGlyph, playerBulletGlyph,
   playerBulletColor, playerClawGlyph, lifeIconGlyph, wellColor, starColor,
-  splatGlyph, sparkGlyph,
+  splatGlyph, sparkGlyph, logoGlyph, starPictureGlyph, fuseScoreGlyph,
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
@@ -164,15 +164,11 @@ const starfield = createStarfield()
 export function advanceStarfield(dt: number): void {
   starfield.step(dt)
 }
-// The 4 reused star "pictures": fixed unit directions from screen centre. Each
-// plane scatters its picture's dots outward as it dives, so 8 planes share 4
-// constellations (the book's "4 reused star pictures").
-const STAR_PICTURE_DOTS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
-  [[-0.8, -0.5], [0.3, -0.9], [0.9, 0.2], [-0.2, 0.7], [0.6, 0.6]],
-  [[0.7, -0.4], [-0.6, -0.7], [-0.9, 0.3], [0.1, 0.9], [0.4, 0.1]],
-  [[-0.5, 0.8], [0.8, -0.6], [0.2, -0.3], [-0.85, -0.15], [0.55, 0.75]],
-  [[0.0, -0.95], [-0.7, 0.55], [0.95, 0.05], [-0.3, -0.4], [0.45, 0.85]],
-]
+// The 4 reused star "pictures" are the ROM's own MSTAR1-4 (tp1-19 / V-015): 22/20/
+// 21/20 dots at authored absolute coordinates, in glyphs.ts. Each plane scatters its
+// picture's dots outward as it dives, so 8 planes share 4 constellations. (The old
+// table here was four EYEBALLED 5-dot pictures of unit vectors — a quarter of the
+// arcade's density, and a ring rather than a scatter.)
 
 // Step the starfield one frame and stroke every live plane. A plane's Z maps to
 // a radial reach: far (Z≈STAR_SPAWN_Z) sits near centre, near (Z≈STAR_RETIRE_Z)
@@ -205,9 +201,13 @@ export function drawStarfield(ctx: CanvasRenderingContext2D, level: number): voi
     ctx.shadowColor = hex
     ctx.globalAlpha = 0.25 + t * 0.7
     ctx.shadowBlur = 4 + t * 8
-    for (const [ux, uy] of STAR_PICTURE_DOTS[plane.picture]) {
+    // The picture's dots are normalised to the largest MSTAR's extent, so scaling by
+    // the plane's reach expands the whole authored constellation outward as it dives
+    // — the dots keep their own radii instead of riding one circle.
+    for (const dot of starPictureGlyph(plane.picture)) {
+      const p = dot.points[0]
       ctx.beginPath()
-      ctx.arc(ux * r, uy * r, size, 0, Math.PI * 2)
+      ctx.arc(p.x * r, p.y * r, size, 0, Math.PI * 2)
       ctx.fill()
     }
   })
@@ -593,11 +593,21 @@ function drawPlayerSpark(ctx: CanvasRenderingContext2D, ex: PlayerSpark): void {
   strokeGlyph(ctx, sparkGlyph(), ex.x, ex.y, SPARK_RADIUS, 0, 12)
 }
 
+// The ROM fuseball score pop-up (V-022, FUSEX1/2/3): the white 750/500/250 that
+// blooms where a fuseball died. Fades out over its life; the ROM's `SCAL 1,20` is a
+// fixed size, so it does not grow with the burst underneath it.
+const FUSE_SCORE_PX = 15 // on-screen cap height of the number
+function drawFuseScore(ctx: CanvasRenderingContext2D, ex: FuseScorePop): void {
+  ctx.globalAlpha = Math.max(0, ex.life / ex.max)
+  strokeGlyph(ctx, fuseScoreGlyph(ex.tier), ex.x, ex.y, FUSE_SCORE_PX, 0, 10)
+}
+
 function drawExplosions(ctx: CanvasRenderingContext2D, fx: Fx): void {
   for (const ex of fx.explosions) {
     if (ex.kind === 'enemy') drawEnemyBurst(ctx, ex)
     else if (ex.kind === 'player') drawPlayerSplat(ctx, ex)
-    else drawPlayerSpark(ctx, ex)
+    else if (ex.kind === 'spark') drawPlayerSpark(ctx, ex)
+    else drawFuseScore(ctx, ex)
   }
   ctx.globalAlpha = 1
   ctx.shadowBlur = 0
@@ -647,8 +657,19 @@ function vecText(
       })
     }
   }
+  glowTrace(ctx, trace, color, blur, Math.max(1, sizePx / 18))
+}
+
+// Stroke a traced path as glowing vectors: two additive blurred passes, then the
+// crisp core on top. Shared by the message-font text above and the ROM logo picture
+// below, which needs the same glow at an arbitrary hex hue (the rainbow's per-pass
+// colour) rather than a GlyphColor name.
+function glowTrace(
+  ctx: CanvasRenderingContext2D,
+  trace: () => void, color: string, blur: number, lineWidth: number,
+): void {
   ctx.save()
-  ctx.lineWidth = Math.max(1, sizePx / 18)
+  ctx.lineWidth = lineWidth
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
   ctx.strokeStyle = color
@@ -664,6 +685,27 @@ function vecText(
   ctx.shadowBlur = 0
   trace(); ctx.stroke()
   ctx.restore()
+}
+
+// Draw a glyph as glowing vectors centred on (cx, cy) at an arbitrary hex hue —
+// the picture analogue of drawGlowText. `sizePx` is the cap height, matching
+// vecText, so a caller can swap a string for a ROM picture and keep its sizing.
+function drawGlowGlyph(
+  ctx: CanvasRenderingContext2D,
+  glyph: Glyph, cx: number, cy: number, sizePx: number, color: string, blur: number,
+): void {
+  const trace = (): void => {
+    ctx.beginPath()
+    for (const s of glyph) {
+      s.points.forEach((p, i) => {
+        const sx = cx + p.x * sizePx
+        const sy = cy + p.y * sizePx
+        if (i === 0) ctx.moveTo(sx, sy)
+        else ctx.lineTo(sx, sy)
+      })
+    }
+  }
+  glowTrace(ctx, trace, color, blur, Math.max(1, sizePx / 18))
 }
 
 // Centered glowing vector text (the common framing-screen case). `sizePx` is the
@@ -735,16 +777,23 @@ function drawAttract(
   // Backdrop behind the title + high-score table for consistent contrast (and a
   // safety net should the playing scene ever leak through here again — see 4-2 F1).
   drawScrim(ctx, W, H)
-  // Title as the approaching rainbow (Story 10-6): TEMPEST stacked across ~19
+  // Title as the approaching rainbow (Story 10-6): the logo stacked across ~19
   // depth passes from the far horizon to the viewer, each a rainbow colour, the
   // whole stack marching forward every frame (the book's SCARNG/LOGPRO
   // "approaching logo process"). renderTime drives the advance so it animates;
   // far passes draw first (behind) small and faint, near passes large and bright.
+  //
+  // tp1-19 (V-017): the word is now the ROM's OWN picture (TEMLIT's back-slanted
+  // alphabet), not the message font blown up. The ROM agrees the two belong
+  // together — `VORLIT::` is the label immediately above `TEMLIT:` (ALVROM.MAC:1301),
+  // and VORLIT is exactly what LOGPRO's rainbow stacks. Built once, outside the
+  // loop: the geometry is identical for all ~19 passes; only hue/size/alpha differ.
   const titleY = H * 0.18
+  const logo = logoGlyph()
   for (const pass of titleLogoPasses(renderTime * LOGO_RAINBOW_SPEED)) {
     const size = Math.max(1, Math.round(TITLE_BASE_PX * pass.scale))
     ctx.globalAlpha = 0.35 + 0.65 * pass.depth
-    drawGlowText(ctx, 'TEMPEST', W / 2, titleY, size, pass.color, 8 + Math.round(20 * pass.depth))
+    drawGlowGlyph(ctx, logo, W / 2, titleY, size, pass.color, 8 + Math.round(20 * pass.depth))
   }
   ctx.globalAlpha = 1
   drawGlowText(ctx, 'A VECTOR ARENA', W / 2, H * 0.18 + 74, 16, 'rgba(150,190,255,0.7)', 8)

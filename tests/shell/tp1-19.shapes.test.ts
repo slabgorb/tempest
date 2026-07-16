@@ -37,28 +37,36 @@
 //   fuse score pop → V-022  ALVROM.MAC:1096-1114  FUSEX1/2/3 (PITAB, ALVROM.MAC:2148)
 //                      (NOT explosions — the WHITE score numbers 750/500/250)
 //
-// TWO CORRECTIONS TO THE AUDIT (filed as session Delivery Findings — the tests
-// below encode the CORRECTED geometry, not the finding's text):
+// CORRECTIONS TO THE AUDIT (filed as session Delivery Findings — the tests below
+// encode the CORRECTED geometry, not the finding's text):
 //
-//   [CORRECTION 1] V-017 says TEMLIT "has SEVEN dedicated logo-letter routines".
-//   It has FIVE (T:1318, E:1322, M:1329, P:1338, S:1344), called seven times —
-//   "TEMPEST" reuses E and T. The finding's own example list names exactly those
-//   five; "seven" is the letter count of the word, not the routine count.
+//   [CORRECTION 1] V-017's CLAIM says TEMLIT "has SEVEN dedicated logo-letter
+//   routines". It has FIVE (T:1318, E:1322, M:1329, P:1338, S:1344), called seven
+//   times — "TEMPEST" reuses E and T. NOTE: the audit already caught this itself —
+//   V-017's own reasoning carries a [CORRECTION] saying "'seven routines' should
+//   read 'five routines called seven times'". The claim text was never updated to
+//   match, so it is restated here; the credit is the audit's, not this story's.
 //
 //   [CORRECTION 2] V-017 says the layout "is NOT a straight baseline" and that
 //   "'TEMP' sits low-left and 'EST' climbs up and right in a stair-step". IT DOES
-//   NOT. Tracing the pen through the letter subroutines (which the finding, and its
-//   [REFUTATION], never did — both only read the advance opcodes verbatim), ALL
-//   SEVEN letters span exactly y=256..384: one straight baseline, one cap height.
-//   The odd-looking advances `VCTR 0F8,48` and `VCTR 16,28` are COMPENSATING for
-//   each letter's own net pen displacement (E ends 128 BELOW its origin; P ends 56
-//   above; T ends 128 above), not staggering the word. Per-letter origin / y-span:
+//   NOT — and here the audit is wrong, including its [REFUTATION], which explicitly
+//   concludes "so the 'stair-step, not a straight baseline' claim is real" after
+//   observing that the `0F8,48` advance is "unambiguously up-and-right".
+//
+//   That inference does not hold, because it reads the ADVANCES without walking the
+//   letter subroutines, which move the pen themselves: E ends 128 BELOW its origin,
+//   P 56 above, T 128 above. The advances exactly COMPENSATE for that. Traced
+//   through, all seven letters span exactly y=256..384 — one baseline, one cap
+//   height. Per-letter origin / y-span:
 //         T (-432,256) 256..384 │ E (-256,384) 256..384 │ M (-208,256) 256..384
 //         P  (-28,256) 256..384 │ E  (204,384) 256..384 │ S  (238,296) 256..384
 //         T  (454,256) 256..384
-//   The "stair-stepped alphabet" of the story title is the LETTERFORMS (the
-//   back-slanted E, arms stepping left as they descend), NOT the layout. A port
-//   built to the finding's text would introduce a NEW divergence.
+//   (The audit's reasoning gets one step closer — it notes the final `60,-60` jump
+//   "drops back down", so the climb is not monotonic — but it is still describing
+//   the PEN PATH, which does rise and fall, rather than the LETTER PLACEMENTS,
+//   which do not.) The "stair-stepped alphabet" of the story title is the
+//   LETTERFORMS (the back-slanted E, arms stepping left as they descend), NOT the
+//   layout. A port built to the finding's text would introduce a NEW divergence.
 //
 // SCOPE NOTE (see session Delivery Findings): the epic YAML's subsumes list
 // "V-014, V-015, V-022, DA-006 (shape half)" is wrong three ways.

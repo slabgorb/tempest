@@ -13,6 +13,7 @@
 // `pv_draw`/`vldraw` data in docs/ux/2026-06-27-enemy-roster-rom-extract.md.
 // This module is SHELL-only: it never imports the sim/core (the Hard
 // Architectural Boundary), keeping it a deterministic value producer.
+import { CELL_H, layoutText } from './font'
 
 // The palette's turquoise is `cyan`; `blue` (ZBLUE) is distinct from it — the ROM
 // carries both, so the type must too (tp1-12 / V-011). `orange` is NOT a palette
@@ -85,6 +86,14 @@ function fromDeltas(deltas: readonly [number, number][], ampY = 1): V[] {
 /** The largest |x| or |y| across a vertex list — its half-extent from the origin. */
 function maxExtent(verts: readonly (readonly [number, number])[]): number {
   return Math.max(...verts.flatMap(([x, y]) => [Math.abs(x), Math.abs(y)]))
+}
+
+/** Clamp a picture/tier selector into a fixed ROM table. The ROM's tables have a
+ *  fixed size and every caller indexes them in range, so this only ever fires on a
+ *  caller bug — it clamps to the nearest real entry rather than wrapping (which
+ *  would silently draw the WRONG picture) or returning undefined. */
+function clampIndex(i: number, len: number): number {
+  return Math.min(Math.max(Math.trunc(i), 0), len - 1)
 }
 
 /** Uniformly scale raw ROM object-unit vertices into the module's glyph-local space
@@ -552,6 +561,186 @@ export function sparkGlyph(): Glyph {
     points: [{ x: p[0] / SPARK1_R, y: p[1] / SPARK1_R }],
     closed: false,
     color: 'yellow',
+  }))
+}
+
+// ==========================================================================
+// I3. The LOGO alphabet, the STAR pictures, the FUSE score pop-up (tp1-19).
+// ==========================================================================
+// All three are `.RADIX 16` (ALVROM.MAC:268 is in force through 1956), so the
+// literals below are hex. Y is NEGATED into canvas space (the AVG's +y is up),
+// exactly as LIFE1 above.
+
+// --------------------------------------------------------------------------
+// The TEMPEST logo's OWN alphabet — TEMLIT, ALVROM.MAC:1297-1351 (V-017).
+// --------------------------------------------------------------------------
+// The logo does NOT use the message font: it JSRLs its own letter routines, and
+// they are back-slanted — each letter's arms step LEFT as they descend. The E
+// (1322-1327) has no vertical spine at all: three horizontal arms of 80/112/132,
+// joined by two -20/-64 descending diagonals. That stair-step IS the alphabet.
+//
+// The word is drawn by ONE picture: CNTR, then an advance + a letter, seven times
+// (1303-1317). There are FIVE letter routines, not seven — "TEMPEST" reuses E and T.
+//
+// The advances look staggered (`VCTR 0F8,48` climbs up-and-right) but they are
+// NOT: each letter leaves the pen somewhere different (E ends 128 BELOW its origin,
+// P 56 above, T 128 above), and the advances exactly COMPENSATE for that. Traced
+// through, all seven letters span y=256..384 — one baseline, one cap height. Do not
+// "restore" a stagger: the ROM has none. (The audit's V-017 says otherwise; it read
+// the advances without walking the subroutines. See sprint/archive/tp1-19-session.md.)
+type LogoVec = readonly [number, number, 0 | 1] // dx, dy, lit(CB=6) | beam-off
+const LOGO_LETTERS: Readonly<Record<string, readonly LogoVec[]>> = {
+  // 1318-1320 — stem up, back to the left tip, crossbar right.
+  T: [[0, 0x80, 1], [-0x50, 0, 0], [0xa0, 0, 1]],
+  // 1322-1327 — top arm, descend-left, middle arm, jump back, descend-left, bottom arm.
+  E: [[-0x50, 0, 1], [-0x14, -0x40, 1], [0x70, 0, 1], [-0x70, 0, 0], [-0x14, -0x40, 1], [0x84, 0, 1]],
+  // 1329-1336 — one unbroken chain: up, down the middle V, up, back down.
+  M: [[-0x20, 0, 1], [0x30, 0x80, 1], [0x10, 0, 1], [0x20, -0x58, 1], [0x20, 0x58, 1], [0x10, 0, 1], [0x30, -0x80, 1], [-0x20, 0, 1]],
+  // 1338-1342 — spine up, bowl over and back.
+  P: [[-0x10, 0, 1], [0, 0x80, 1], [0x5c, 0, 1], [0x1a, -0x48, 1], [-0x76, 0, 1]],
+  // 1344-1350 — the S's single serpentine chain.
+  S: [[-0x10, -0x28, 1], [0x90, 0, 1], [0, 0x38, 1], [-0x70, 0x20, 1], [0x10, 0x28, 1], [0x64, 0, 1], [-0x0c, -0x20, 1]],
+}
+// [advance, letter] × 7 — TEMLIT's body after CNTR (ALVROM.MAC:1304-1317).
+const LOGO_SEQ: readonly (readonly [readonly [number, number], string])[] = [
+  [[-0x1b0, 0x100], 'T'], [[0x60, 0], 'E'], [[0x24, 0], 'M'], [[0x34, 0], 'P'],
+  [[0xf8, 0x48], 'E'], [[0x16, 0x28], 'S'], [[0x60, -0x60], 'T'],
+]
+const LOGO_CAP_HEIGHT = 0x80 // 128 — every letter spans y=256..384
+
+/** Walk TEMLIT once, splitting the pen's trail into lit runs at every beam-off. */
+function buildLogoRuns(): V[][] {
+  const runs: V[][] = []
+  let x = 0
+  let y = 0 // CNTR — the pen starts at the picture origin
+  let run: V[] = []
+  const flush = (): void => {
+    if (run.length > 1) runs.push(run)
+    run = []
+  }
+  for (const [[ax, ay], letter] of LOGO_SEQ) {
+    flush() // the inter-letter advance is beam-off
+    x += ax
+    y += ay
+    run = [{ x, y }]
+    for (const [dx, dy, lit] of LOGO_LETTERS[letter]) {
+      x += dx
+      y += dy
+      if (lit) {
+        run.push({ x, y })
+      } else {
+        flush() // a beam-off move inside a letter (T's crossbar, E's jump-back)
+        run = [{ x, y }]
+      }
+    }
+  }
+  flush()
+  return runs
+}
+
+// Normalise once at module load: centre the word on the origin and scale so the cap
+// height is 1, so render.ts can pass a px cap height exactly as it does for vecText.
+const LOGO_RUNS: readonly (readonly V[])[] = (() => {
+  const runs = buildLogoRuns()
+  const all = runs.flat()
+  const xs = all.map((p) => p.x)
+  const ys = all.map((p) => p.y)
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+  return runs.map((r) => r.map((p) => ({
+    x: (p.x - cx) / LOGO_CAP_HEIGHT,
+    y: -(p.y - cy) / LOGO_CAP_HEIGHT, // AVG +y is up; canvas +y is down
+  })))
+})()
+
+/** The ROM's TEMPEST logo (TEMLIT) — its own back-slanted alphabet, on one
+ *  baseline, centred on the origin with a cap height of 1. The attract's rainbow
+ *  recolours each depth pass, so the strokes carry the base white (CB=6 is an
+ *  intensity, not a hue); render.ts overrides it per pass. */
+export function logoGlyph(): Glyph {
+  return LOGO_RUNS.map((points) => ({ points, closed: false, color: 'white' }))
+}
+
+// --------------------------------------------------------------------------
+// The warp star pictures — MSTAR1-4, ALVROM.MAC:405-515 (V-015).
+// --------------------------------------------------------------------------
+// Four macros of SCDOTs at AUTHORED ABSOLUTE coordinates, invoked at STAR1:-STAR4:
+// (512-515). The counts are NOT uniform: 22/20/21/20. (The audit's V-015 refutation
+// says "20 each" for 2/3/4; MSTAR3 has 21 — counted at 459-479.) The dots are
+// scattered across a wide radius range — that scatter is the picture. Our old
+// eyeballed table put five dots on a unit circle, a quarter as dense and ring-shaped.
+const MSTAR: readonly (readonly (readonly [number, number])[])[] = [
+  [ // MSTAR1 — 22 dots, ALVROM.MAC:408-429
+    [-0x8, 0], [0x8, 0x0c], [0x10, 0], [0x8, 0x30], [-0x30, 0x20], [-0x34, -0x20],
+    [-0x8, -0x48], [0x48, -0x20], [0x44, 0x28], [0x18, 0x50], [-0x38, 0x44], [-0x48, -0x8],
+    [-0x40, -0x50], [0x10, -0x70], [0x58, -0x50], [0x68, -0x8], [0x58, 0x50], [0x8, 0x70],
+    [-0x40, 0x68], [-0x78, 0x28], [-0x70, -0x28], [-0x70, -0x68],
+  ],
+  [ // MSTAR2 — 20 dots, ALVROM.MAC:435-454
+    [0x8, 0x8], [-0x8, 0x10], [-0x18, -0x10], [0x8, -0x28], [0x28, -0x8], [0x20, 0x20],
+    [0x8, 0x38], [-0x20, 0x30], [-0x40, 0x8], [-0x28, -0x40], [0x34, -0x44], [0x58, 0x18],
+    [0x38, 0x50], [-0x10, 0x68], [-0x58, 0x28], [-0x58, -0x30], [-0x38, -0x68], [0x0, -0x78],
+    [0x60, -0x68], [0x68, -0x30],
+  ],
+  [ // MSTAR3 — 21 dots (NOT 20), ALVROM.MAC:459-479
+    [0x10, 0x10], [0x0, 0x18], [-0x30, 0x8], [-0x18, -0x2c], [0x28, -0x18], [0x30, 0x8],
+    [0x38, 0x38], [0x0, 0x48], [-0x38, 0x28], [-0x40, -0x8], [-0x20, -0x58], [0x20, -0x58],
+    [0x50, -0x30], [0x60, 0x20], [0x2c, 0x64], [-0x20, 0x68], [-0x64, 0x38], [-0x68, -0x8],
+    [-0x60, -0x48], [-0x28, -0x78], [0x40, -0x78],
+  ],
+  [ // MSTAR4 — 20 dots, ALVROM.MAC:484-503
+    [-0x8, -0x10], [0x20, -0x10], [0x20, 0x18], [-0x18, 0x20], [-0x30, -0x10], [0x10, -0x38],
+    [0x40, 0x0], [0x20, 0x38], [-0x20, 0x48], [-0x50, 0x10], [-0x38, -0x40], [0x18, -0x4c],
+    [0x40, -0x38], [0x68, 0x10], [0x28, 0x58], [-0x38, 0x50], [-0x70, 0x18], [-0x68, -0x18],
+    [-0x58, -0x78], [0x40, -0x60],
+  ],
+]
+// ONE scale across all four, so the pictures keep their authored relative sizes and
+// do not jump when a plane recycles onto a different constellation.
+const MSTAR_SCALE = 1 / maxExtent(MSTAR.flat())
+
+/** One of the ROM's four authored star constellations (MSTAR1-4) as lit SCDOTs —
+ *  single-point strokes, normalised so the largest picture's extent is 1. The
+ *  starfield scales by the plane's radial reach and takes its own per-plane colour
+ *  (DB-017 / starColor), so the dot colour here is the ROM's waves-1-4 blue. */
+export function starPictureGlyph(picture: number): Glyph {
+  const dots = MSTAR[clampIndex(picture, MSTAR.length)]
+  return dots.map(([x, y]) => ({
+    points: [{ x: x * MSTAR_SCALE, y: -y * MSTAR_SCALE }],
+    closed: false,
+    color: 'blue',
+  }))
+}
+
+// --------------------------------------------------------------------------
+// The fuseball score pop-up — FUSEX1/2/3, ALVROM.MAC:1096-1114 (V-022).
+// --------------------------------------------------------------------------
+// FUSEX1/2/3 are NOT explosion pictures despite the name: each sets CSTAT WHITE,
+// SCAL 1,20, backs up `VCTR -36.,0,0` and JSRLs DIGIT glyphs — the score that
+// bloomed where the fuseball died (PITAB FUSEX1,PTFUSX, ALVROM.MAC:2148-2150).
+// The digits are CHAR.7 / CHAR.5 / CHAR.0 — the SHARED message font, not a bespoke
+// alphabet: only the logo above has one of those. The ROM shares tails via labels
+// (FUSEX1 → CHAR.7 → JMPL FIFTY; FUSEX3 → CHAR.2 → falls through to FIFTY), so the
+// three render as '750', '500', '250'.
+//
+// `-36.` carries a trailing dot: it is DECIMAL 36 under `.RADIX 16`, and it is
+// exactly half of a 3-digit string's 72-unit width — the backup CENTRES the number
+// on the kill. layoutText's advance is the same 24/cell, so centring on width/2
+// reproduces it.
+export const FUSE_SCORE_TIERS: readonly number[] = [750, 500, 250]
+
+/** The ROM's fuseball score pop-up: the tier's number in white, centred on the
+ *  kill point, cap height 1. Tier 0/1/2 → 750/500/250 (FUSEX1/2/3). */
+export function fuseScoreGlyph(tier: number): Glyph {
+  const value = FUSE_SCORE_TIERS[clampIndex(tier, FUSE_SCORE_TIERS.length)]
+  const { strokes, width } = layoutText(String(value))
+  return strokes.map((s) => ({
+    points: s.points.map((p) => ({
+      x: (p.x - width / 2) / CELL_H, // the ROM's -36. backup, in cap-height units
+      y: -p.y / CELL_H, // font space is y-up; canvas is y-down
+    })),
+    closed: false,
+    color: 'white', // CSTAT WHITE (ALVROM.MAC:1098/1103/1109)
   }))
 }
 
