@@ -123,7 +123,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 1013,
+      "line": 1021,
       "verbatim": "const DEMO_MAX_LEVEL = 8  // random start level 1..8 (\"RANDOM AND 7\")"
     },
     "claim": "Confirmed: ALWELG.MAC:242-243 draws 'LDA RANDOM' then 'AND I,7', masking to the range 0-7 (8 values), matching our DEMO_MAX_LEVEL=8 (used as nextInt(rng,8) -> 0..7, then +1 for the 1-indexed level).",
@@ -140,7 +140,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 1012,
+      "line": 1020,
       "verbatim": "const DEMO_LIVES = 1      // the attract demo gets a single life (book: attract admin)"
     },
     "claim": "Confirmed: ALWELG.MAC:240-241 ('LDY I,1' / 'STY LIVES1') sets the attract demo to exactly 1 life, matching DEMO_LIVES=1.",

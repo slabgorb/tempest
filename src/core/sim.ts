@@ -111,6 +111,14 @@ function stepBullets(s: GameState, dt: number): void {
     // PCVELO->PCVELO-4 once CHARCO is nonzero, ALWELG.MAC:2541-2544).
     const speed = (b.spikeHits ?? 0) > 0 ? SPIKE_BURROW_SPEED : BULLET_SPEED
     b.depth -= speed * dt
+    // A charge that reaches the far base (depth 0) on a spiked lane has passed
+    // through the whole spike, so it clears the line: LIFECT zeroes LINEY when the
+    // charge is at the base (CHARY >= ILINDDY >= LINEY, ALWELG.MAC:2598-2602). Gated on
+    // the LANE'S spike, not on `spikeHits`, so a fast free charge that jumps clean over
+    // a short spike (one 9/224 step from above-tip to past-base) still clears it — as
+    // the ROM does. Without this the burrow could only ever cut a spike to a positive
+    // stub, never shoot it clean, and resolveWarpSpikeHit crashes for any height > 0.
+    if (b.depth <= 0 && s.spikes[b.lane] > 0) s.spikes[b.lane] = 0
   }
   s.bullets = s.bullets.filter((b) => b.depth > 0)
 }
