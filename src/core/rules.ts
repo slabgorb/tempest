@@ -247,16 +247,17 @@ export const EYE_FLYIN_STEP = 0x18    // 24 ROM units/frame (NEWAV2, ALWELG.MAC:
 // at the fire gate in sim.ts — NOT a flat 4. NICHARG=4 (ALCOMN.MAC:813) was only the ROM's
 // physical charge-array size; the old flat MAX_ENEMY_BULLETS conflated it with the live cap
 // (WCHAMX+1 = 2 at wave 1), doubling the arcade's early bolt pressure. W-019 / DA-002.
-// An enemy must be at least this far up the well ("along >= 0x30") before it may
-// fire — freshly spawned enemies near the far end stay silent.
-export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
-// ...and stops firing once it reaches the arrival zone: an enemy at the rim is
-// grabbing/splitting, not shooting. This also keeps every bolt dodgeable — a
-// point-blank shot from the rim would leave the player no lane to rotate to.
-// (0.9 is its OWN number, not TANKER_SPLIT_DEPTH's — the comment here used to claim they
-// were equal, and they were, by coincidence, until the tanker's split moved to the ROM's
-// $20. They are separate rules: when a carrier bursts, and when an invader stops firing.)
-export const ENEMY_FIRE_MAX_DEPTH = 0.9   // at/after this an invader is grabbing/splitting, not shooting
+// FIREIC's ONE positional gate (ALWELG.MAC:2694-2695, `CMP I,ILINLIY+20 / IFCS`): an
+// invader may fire only while it is still at least $20 BELOW the rim — INVAY >=
+// ILINLIY+$20 = $30, i.e. depth <= (0xF0 - 0x30)/224. Past that it is grabbing or
+// splitting, not shooting. There is deliberately NO far-end counterpart: an invader that
+// hatched at the base of the well may fire on its very next frame (W-021).
+//
+// We used to enforce an invented far-end floor as well — ENEMY_FIRE_MIN_DEPTH = 0x30/0x100,
+// which silenced every fresh spawn for the first 19% of its climb and was scaled by 256
+// rather than the 224-unit well — and we capped at 0.9, letting invaders shoot across
+// 0.857-0.9 where the arcade has already stopped them. Both are gone.
+export const ENEMY_FIRE_MAX_DEPTH = (0xf0 - 0x30) / WARP_ALONG_SPAN  // 192/224 ≈ 0.857
 // A bolt's depth/sec beyond its level's invader speed. TCHARIN (ALWELG.MAC:600-601) is a
 // SINGLE TB record, byte -64, for every wave: WCHARL = WINVIL - 64, and TIMES8 scales both
 // identically, so the bolt is ALWAYS exactly |−64|/32 = 2.0 along-units/frame faster than the
@@ -644,6 +645,51 @@ const TSPIIN: readonly ContourRecord[] = [
 ]
 export function spikerSpeedForLevel(level: number): number {
   return invaderSpeedFromRaw(winvilForLevel(level) + contourValue(TSPIIN, level))
+}
+
+// ── ENSIZE (W-046) — the charge↔invader collision range, per invader TYPE.
+//
+// COLCHK is the governing check: `CMP Y,ENSIZE` (ALWELG.MAC:2963) where Y is the invader's
+// appearance index (`LDA Y,INVAC1 / AND I,INVABI`, :2959-2961) — ZABFLI=0, ZABPUL=1,
+// ZABTAN=2, ZABTRA=3 ("TRALER", our spiker), ZABFUS=4 (ALCOMN.MAC:845-849). So the
+// tolerance is a FUNCTION of type and wave, not one constant: it is half the CLOSING
+// speed, the player's charge plus the invader's own.
+//
+// TIMES8 (:560-578) returns it in X alongside the ×8 speed. The macro sign-extends from
+// 0xFF ("ALL SPEEDS ARE MINUS SO START SIGN EXTEND AT ALL-", :561-562), shifts a 16-bit
+// value left three times, then computes the range off the HIGH byte:
+//   TYA / EOR I,0FF / CLC / ADC I,PCVELO+1+1+2 / LSR / TAX   →   ((255 - hi) + 13) >> 1
+const PCVELO = 9  // ALCOMN.MAC:890, "PLAYER SHOT VELOCITY"
+function times8CollisionRange(rawSpeed: number): number {
+  const hi = ((rawSpeed * 8) & 0xffff) >>> 8   // high byte of speed×8, two's complement
+  return (255 - hi + (PCVELO + 1 + 1 + 2)) >> 1
+}
+
+/**
+ * The depth tolerance a player charge must be within to kill `kind` at `level`
+ * (ENSIZE, in depth units — 224 along-units span the well).
+ */
+export function enemyHitTolerance(kind: EnemyKind, level: number): number {
+  switch (kind) {
+    // ENSIZE+ZABFUS is the literal `<PCVELO+3>/2` = 6 (:545-546) — FIXED for every wave,
+    // and NARROWER than the flipper's 7. (Our old comment claimed the ROM's fuseball
+    // window was WIDER, and shipped 0.09 to match; the source says the opposite.)
+    case 'fuseball':
+      return (PCVELO + 3) / 2 / WARP_ALONG_SPAN
+    // ONE TIMES8(WINVIL) feeds ENSIZE+ZABFLI/ZABTAN/ZABPUL together (:530-538), so these
+    // three genuinely share one range: 7 at waves 1-16, 8 from wave 33. (The pulsar's own
+    // SPEED is overridden at :547-550 — but that is after :538 and never touches ENSIZE.)
+    case 'flipper':
+    case 'tanker':
+    case 'pulsar':
+      return times8CollisionRange(winvilForLevel(level)) / WARP_ALONG_SPAN
+    // The spiker gets its OWN range from its OWN speed slot, in a separate TIMES8 call
+    // (:520-524, `LDA WINVIL+ZABTRA ;SPINNER / JSR TIMES8 / STX ENSIZE+ZABTRA`).
+    case 'spiker':
+      return times8CollisionRange(winvilForLevel(level) + contourValue(TSPIIN, level)) / WARP_ALONG_SPAN
+    default:
+      return assertNever(kind, 'enemyHitTolerance kind')
+  }
 }
 
 // ── 4. TCHAMX (ALWELG.MAC:586-588) — WCHAMX, "MAX # ENEMY SHOTS -1". FIREIC searches slots

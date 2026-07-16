@@ -30,7 +30,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
-import { levelParams, SIM_STEP } from '../../src/core/rules'
+import { levelParams, SIM_STEP, BULLET_SPEED } from '../../src/core/rules'
 import { GameState, Enemy } from '../../src/core/state'
 import type { Nymph } from '../../src/core/state'
 import { tubeForLevel } from '../../src/core/geometry'
@@ -170,7 +170,10 @@ describe('tp1-6 — a tanker burst cannot overflow the board (KILINV -> ACTINV)'
     const carrier = makeEnemy('tanker', 9, 0.5, levelParams(5))
     carrier.fireCooldown = 1e9
     s.enemies = [...s.enemies, carrier]
-    s.bullets = [{ lane: 9, depth: 0.5 }]
+    // One charge-step rimward so it lands ON the carrier at COLLIS — see the same re-seat
+    // in tp1-5's split suite (tp1-16/W-046: ENSIZE=7 is narrower than the old 0.06, and a
+    // charge parked on its target is 9 along-units past it once MOVCHA has run).
+    s.bullets = [{ lane: 9, depth: 0.5 + BULLET_SPEED * FRAME }]
 
     s = stepGame(s, NEUTRAL, FRAME)
     expect(s.enemies.some((e) => e.kind === 'tanker'), 'the carrier died (fixture guard)').toBe(false)

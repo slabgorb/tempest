@@ -22,7 +22,7 @@ import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import {
   levelParams, SIM_STEP, PULSAR_NEAR_FAR_DEPTH, PLAYER_RIM_DEPTH,
-  TANKER_SPLIT_DEPTH, SPLIT_TOO_CLOSE_DEPTH,
+  TANKER_SPLIT_DEPTH, SPLIT_TOO_CLOSE_DEPTH, BULLET_SPEED,
 } from '../../src/core/rules'
 import { tubeForLevel } from '../../src/core/geometry'
 import { Input } from '../../src/core/input'
@@ -456,7 +456,11 @@ describe('tp1-5 — a split too close to the player produces NON-FLIPPING childr
     // EVERY split non-flipping.
     const s0 = base(3, 12)
     s0.enemies = [makeEnemy('tanker', 5, 0.50, levelParams(3), 'flipper')]
-    s0.bullets = [{ lane: 5, depth: 0.50 }]   // point-blank: it splits this frame
+    // Seated ONE charge-step rimward so it lands ON the tanker at COLLIS, which runs after
+    // MOVCHA (tp1-16/W-001). A charge parked exactly on its target is 9 along-units PAST it
+    // by the time anything checks — outside the ROM's ENSIZE=7 window, though the invented
+    // 0.06 used to catch it. Still a point-blank split at ~0.50; only the seat moved.
+    s0.bullets = [{ lane: 5, depth: 0.50 + BULLET_SPEED * FRAME }]
 
     const s = step(s0, 20)
     const kids = s.enemies.filter((e) => e.kind === 'flipper')

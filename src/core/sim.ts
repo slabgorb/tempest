@@ -12,7 +12,7 @@ import {
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   EYE_FLYIN_START, EYE_FLYIN_STEP, startWaveBonus,
   enemyBoltCapForLevel, initialSpikeHeightForLevel,
-  ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
+  ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET, enemyHitTolerance,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
@@ -378,7 +378,10 @@ function stepEnemyFire(s: GameState, dt: number): void {
   for (const e of s.enemies) {
     if (s.enemyBullets.length >= boltCap) break // per-wave hard cap
     if (!enemyCanShoot(e.kind, s.level)) continue
-    if (e.depth < ENEMY_FIRE_MIN_DEPTH || e.depth >= ENEMY_FIRE_MAX_DEPTH) continue
+    if (e.depth >= ENEMY_FIRE_MAX_DEPTH) continue   // FIREIC's only positional gate (W-021)
+    // …and it will not fire mid-flip: both legs must be on lines (`LDA X,INVAC1 /
+    // AND I,INVMOT / IFEQ`, ALWELG.MAC:2702-2704). W-021, the third half.
+    if (isJumping(e)) continue
     if ((e.fireCooldown ?? 0) > 0) continue
     if (nextFloat(s.fireRng) < enemyFireChance(s.enemyBullets.length)) {
       s.enemyBullets.push({ lane: e.lane, depth: e.depth })
@@ -442,11 +445,13 @@ function cullEnemyBullets(s: GameState): void {
 // before the rim; spikers never reach grab depth.
 const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
 
+// The CHARGE↔CHARGE range only — a player shot meeting an enemy bolt (CHACHA,
+// `STX CHACHA ;CHARGE CHARGE COLLISION RANGE`, ALWELG.MAC:529). This is NOT the
+// charge↔invader range: that one is ENSIZE, and lives in rules.ts as
+// `enemyHitTolerance` (W-046). The two were conflated behind this one constant.
+// (CHACHA is itself TIMES8(WCHARL).X, not a flat 0.06 — a live divergence, but its
+// own finding, not W-046's. Left as-is deliberately; see the Delivery Findings.)
 const HIT_DEPTH = 0.06
-// A fuseball's wider kill tolerance (story 6-15): ROM hit_tol[4]=6 is wider than
-// the default enemy tolerance (rev-3 §D l.265), so a bullet registers across a
-// larger depth gap — 1.5× the default.
-const FUSEBALL_HIT_DEPTH = 0.09
 
 function awardScore(s: GameState, points: number): void {
   const before = s.score
@@ -475,7 +480,7 @@ function resolveBulletHits(s: GameState): void {
       // refuses the kill outright once it reaches the rim, however it is moving. A
       // fuseball on the rim cannot be shot off it. Other kinds always hit.
       if (e.kind === 'fuseball' && (!e.vulnerable || e.depth >= 1)) continue
-      const tol = e.kind === 'fuseball' ? FUSEBALL_HIT_DEPTH : HIT_DEPTH
+      const tol = enemyHitTolerance(e.kind, s.level)   // ENSIZE, by type and wave (W-046)
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= tol) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
@@ -1000,11 +1005,16 @@ function stepPlaying(prev: GameState, s: GameState, input: Input, dt: number): v
   stepPlayer(s, input)
   stepFiring(s, input)
   stepZap(s, input)
-  stepBullets(s, dt)
-  stepEnemies(s, dt)
-  stepEnemyFire(s, dt)        // enemies decide to fire from their moved positions
-  stepEnemyBullets(s, dt)     // bolts (new and existing) ride down their lanes
-  resolveBulletHits(s)
+  // PLAY's order (ALWELG.MAC:869-878): MOVINV, MOVCHA, FIREIC, COLLIS. The invaders move
+  // first; then ONE MOVCHA loop moves ALL charges, ours and theirs (:2530 runs a single
+  // index sweep over both arrays); only then does FIREIC launch new bolts — which is why a
+  // newborn bolt sits still for its birth frame. We used to move player charges BEFORE the
+  // invaders, and fire before moving bolts, so every new bolt started one step down. W-001.
+  stepEnemies(s, dt)          // MOVINV
+  stepBullets(s, dt)          // MOVCHA — player charges…
+  stepEnemyBullets(s, dt)     // MOVCHA — …and invader bolts, after the invaders have moved
+  stepEnemyFire(s, dt)        // FIREIC — new bolts are born still, at the moved invader
+  resolveBulletHits(s)        // COLLIS
   resolveEnemyBulletHits(s)   // player shots can destroy enemy bolts
   resolveSpikeHits(s)
   resolveTankerArrivals(s)
