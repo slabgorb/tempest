@@ -167,10 +167,17 @@ export function startWaveBonus(wave: number): number {
   return START_WAVE_BONUS_LADDER[step]
 }
 
-// Superzapper active-window durations, in FRAMES (Story 10-2). The ROM's TIMAX
-// holds the first activation "active" ~13 frames and the second ~5, flashing the
-// well each frame and killing on a per-frame cadence (KILENE) across the window.
-export const ZAP_WINDOW_FIRST = 13
+// Superzapper active-window durations, in FRAMES. The ROM's TIMAX table
+// (ALWELG.MAC:3539) is COMPUTED, not the book's literal `.BYTE 00,13,05`:
+//   TIMAX[1] = CSUSTA + <8*<CSUINT+1>> = 3 + 8*2 = 19   (first press)
+//   TIMAX[2] = CSUSTA + <1*<CSUINT+1>> = 3 + 1*2 = 5    (second press)
+// with CSUSTA=3, CSUINT=1 (3490-3492). The well flashes each active frame; the
+// first press kills on KILENE's every-OTHER-frame cadence (see runZapFrame), and
+// the second press's single kill lands on its press frame. tp1-14 raised the
+// first window from the book's 13 to the ROM's 19 (B-001/W-043); the second is
+// unchanged (already correct). This is a FRAME count — the separate 28.44-fps
+// timebase (FR-014) is a game-wide concern, not modelled here.
+export const ZAP_WINDOW_FIRST = 19
 export const ZAP_WINDOW_SECOND = 5
 
 // --- Level-clear warp dive (Story 6-1) ---------------------------------------

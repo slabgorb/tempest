@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 969,
+      "line": 981,
       "verbatim": "  stepBullets(s, dt)"
     },
     "claim": "PLAY (ALWELG:869-878) runs MOVCUR, FIREPC, PROSUZ, MOVNYM, MOVINV, MOVCHA, FIREIC, COLLIS, PROEXP, ANALYZ. Our stepPlaying (sim.ts:630-644) runs stepPlayer, stepFiring, stepZap, stepBullets, stepEnemies, stepEnemyFire, stepEnemyBullets, resolve*. The first three slots match exactly (cursor, player fire, superzapper). After that: (a) we move player charges (stepBullets, line 633) BEFORE enemies; the arcade moves ALL charges (player and enemy, one MOVCHA loop) AFTER MOVINV, so an invader is at its new position when the bullet advances through it; (b) the arcade fires enemy charges (FIREIC) AFTER MOVCHA, so a newly launched enemy bolt sits still for its birth frame; we call stepEnemyFire then stepEnemyBullets, so our new bolt already moves one step on the frame it is born; (c) the arcade has no spawn step here at all — MOVNYM occupies that slot (see W-002).",
@@ -291,7 +291,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 808,
+      "line": 815,
       "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
     },
     "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
@@ -308,7 +308,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 284,
+      "line": 291,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, and in the same units: ROM GAME frames, converted to seconds only at the call site (sim.ts:223), where the divisor is wrong.",
@@ -325,7 +325,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 270,
+      "line": 277,
       "verbatim": "const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]"
     },
     "claim": "FIREIC (2705-2708) draws RANDOM and fires when RANDOM >= CHANCE[ESHCOU], where ESHCOU is the number of enemy shots already on screen. The thresholds 0, $E0, $F0, $FA, $FF give firing probabilities of 256/256 = 1.0, 32/256 = 0.125, 16/256 = 0.0625, 6/256 = 0.0234, 1/256 = 0.0039. Our ENEMY_FIRE_CHANCE is [1.0, 0.125, 0.0625, 0.023, 0.004], indexed the same way (sim.ts:229).",
@@ -342,7 +342,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 262,
+      "line": 269,
       "verbatim": "    case 'pulsar':  return level >= 60"
     },
     "claim": "FIREIC gates on the INVFIR ($40) bit of INVAC2 (2696-2698). TNEWI2 (1485-1489) sets that bit per type: flipper ZFIRYE, pulsar ZFIRNO, tanker ZFIRYE, spiker(TRALER) ZFIRYE, fuse ZFIRNO. NEWPUL (1434-1438) then ORs WPULFI into the pulsar's byte, and WPULFI comes from TWFULF/TWPULF — which has NO record below wave 60 (so it resolves to 0 via the TE default) and ZFIRYE for waves 60-99. Our enemyCanShoot returns true for flipper/tanker/spiker, level >= 60 for pulsar, false for fuseball.",
@@ -401,7 +401,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 239,
+      "line": 246,
       "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
     },
     "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
@@ -705,7 +705,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 710,
+      "line": 717,
       "verbatim": "  { t: 'TZ', start: 17, end: 32, vs: [5, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 2] },"
     },
     "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Since tp1-8 the introduction is these WPULMX/WFUSMX max tables that NYMCHA reads (pulsar max 0 below wave 17, fuse max 0 below wave 11) — the old `level >= 17` / `level >= 11` weighted-roll gates are gone; the introduction waves still match the ROM exactly.",
@@ -826,7 +826,8 @@
     "reasoning": "Ours can leave the board un-clearable by a zap that the arcade would clear. The 'declaw' intent (a zap must not manufacture enemies) is right, but the arcade achieves it by stripping the cargo, not by skipping the target. [REFUTATION] KILENE/EXIKIL (ALWELG.MAC:3542-3567) confirmed verbatim: EXIKIL unconditionally clears the INVCAR bits (AND I,^C<INVCAR>, INVCAR=3 per ALCOMN.MAC:860) on whatever invader KILENE's loop found first-alive (no type filter anywhere in the loop at 3549-3556), then JMP INCISQ starts the explosion -- so the ROM absolutely can and does kill tankers via superzap, it just strips carrier status first so no split occurs. This is the correct, precise reading. Checked our code directly: sim.ts:476 (runZapFrame, the sustained first-press cadence) and sim.ts:513 (killCount event) both filter (e) => e.kind !== 'tanker', confirmed verbatim. [CORRECTION] The claim 'ours spares them entirely' overstates scope. That's true only of the FIRST-press sustained wipe cadence (sim.ts:476/513), which our own code comments (sim.ts:485-487) already document as a deliberate choice ('Spares tankers... vaporises one non-tanker per active frame'). The SECOND press (stepZap's used-once->spent branch) calls nearestRimIndex(s, () => true) with no kind filter and zapKillAt never releases cargo -- so that shot already kills tankers without splitting them, matching the ROM's carrier-strip behavior. The real, narrower divergence is: the sustained multi-frame wipe should also be hitting tankers (cargo-stripped) instead of skipping them outright; the single-shot zap is already correct.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-14"
   },
   {
     "id": "W-043",
@@ -846,7 +847,8 @@
     "reasoning": "13 kills in 13 frames vs 8 kills in 19. Ours is both faster and deadlier; the arcade's staccato every-other-frame cadence is what makes the zap read as a sweep rather than a flash. Two constants plus one modulo. [REFUTATION] Re-opened ALWELG.MAC:3490-3492 (CSUMAX=2, CSUINT=1, CSUSTA=3) and :3539 (TIMAX byte table) verbatim as cited. Arithmetic checks out exactly: TIMAX[1] = CSUSTA+8*(CSUINT+1) = 3+16 = 19, TIMAX[2] = 3+2 = 5. PROSUZ increments SUZCNT to 1 before the first zap and to 2 before the second, and KILENE (3548-3562) indexes TIMAX with LDX SUZCNT/CMP X,TIMAX, so the windows really are 19 and 5 frames. Decoded KILENE's gate precisely: 'CMP I,CSUSTA / IFCS / AND I,CSUINT / IFEQ' means SUZTIM>=3 AND SUZTIM even — enumerating SUZTIM=1..19 gives exactly 8 even values >=3 (4,6,...,18), which is exactly what the '8*' in TIMAX is sizing, confirming the claim's own arithmetic. EXIKIL (3562) fires for exactly one invader per KILENE call — 'LDY WINVMX / BEGIN / LDA Y,INVAY / BNE EXIKIL / DEY / MIEND' scans DOWN by fixed slot index, not by depth/nearest-rim, so the 'slot order, not nearest-the-rim' characterization is correct. Checked our side: sim.ts runZapFrame (467-480) fires nearestRimIndex on EVERY active frame while the window (ZAP_WINDOW_FIRST=13 in rules.ts:35) counts down, confirming both the frame-count and per-frame-kill divergences as described. Attacked on unit grounds — irrelevant here since this is a pure frame-count/cadence comparison, not a seconds conversion, so the 60-vs-28.44 fps rebase does not touch this finding at all. Holds completely.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-14"
   },
   {
     "id": "W-044",
