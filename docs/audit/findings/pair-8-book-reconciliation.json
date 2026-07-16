@@ -323,7 +323,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 476,
+      "line": 480,
       "verbatim": "  if (chargesInFlight >= 8) return 'red'"
     },
     "claim": "Confirmed: the ROM's bullet-center color select (ALDISP.MAC:920-929) defaults to ZYELLO (plenty), promotes to ZBLUE once CHACOU >= NPCHARG-2 (=6, line 922), and to ZRED once CHACOU >= NPCHARG (=8, line 925) — exactly our thresholds (<6 yellow, 6-7 cyan, 8 red; glyphs.ts:292-296).",

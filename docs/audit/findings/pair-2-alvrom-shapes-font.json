@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 112,
+      "line": 116,
       "verbatim": "  [4, 1], [4, -1], [-2, 1], [1, 1], [-3, -1], [-3, 1], [1, -1], [-2, -1],"
     },
     "claim": "INVA1S (ALDISP.MAC 1907-1916) is an 8-vector chain in unit/perp-unit multipliers: (4,1) (4,-1) (-2,1) (1,1) (-3,-1) (-3,1) (1,-1) (-2,-1). FLIPPER_DELTAS is that exact sequence in that exact order. The deltas sum to (0,0), so the chain closes on itself — our fromDeltas()/closed:true reproduction is equivalent. Colour: ALCOMN.MAC 367 `FLICOL=RED`, applied at ALDISP.MAC 670 `LDA I,FLICOL`; flipperGlyph returns color:'red' (glyphs.ts 86).",
@@ -27,7 +27,7 @@
     },
     "ours": {
       "file": "src/shell/glyphs.ts",
-      "line": 421,
+      "line": 425,
       "verbatim": "  [[0, -2], [2, -1], [3, 4], [-3, -3], [-1, 0], [0, 2], [2, 1], [-3, -1]], // 1 (NCRS1)"
     },
     "claim": "All eight cursor chains agree vertex-for-vertex with CLAW_DELTAS: NCRS1 (0,-2)(2,-1)(3,4)(-3,-3)(-1,0)(0,2)(2,1)(-3,-1); NCRS2 (1,-2)(7,2)(-3,1)(2,-1)(-6,-1)(0,1)(2,1)(-3,-1); NCRS3 (2,-2)(6,2)...; NCRS4 (3,-2)(5,2)...; NCRS5 (5,-2)(3,2)...; NCRS6 (6,-2)(2,2)...; NCRS7 (7,-2)(1,2)...; NCRS8 opens with the beam-off move `VEC 3,1,0` (ALDISP.MAC 1988) then (3,-4)(2,1)(0,2)(-3,1)(2,-1)(0,-2)(-1,0)(-3,3) — which is exactly our graphic 8, post-MOVE. Colour: ALCOMN.MAC 360 `CURCOL=YELLOW`, set at ALDISP.MAC 602; CLAW_GLYPHS use color:'yellow' (glyphs.ts 263).",

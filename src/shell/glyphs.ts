@@ -91,8 +91,12 @@ function maxExtent(verts: readonly (readonly [number, number])[]): number {
 /** Clamp a picture/tier selector into a fixed ROM table. The ROM's tables have a
  *  fixed size and every caller indexes them in range, so this only ever fires on a
  *  caller bug — it clamps to the nearest real entry rather than wrapping (which
- *  would silently draw the WRONG picture) or returning undefined. */
+ *  would silently draw the WRONG picture) or returning undefined. Non-finite input
+ *  (NaN/±Infinity) resolves to 0: Math.trunc/min/max PROPAGATE NaN, so without this
+ *  the clamp would hand back NaN and the caller would index `undefined` — the exact
+ *  outcome this function exists to prevent. */
 function clampIndex(i: number, len: number): number {
+  if (!Number.isFinite(i)) return 0
   return Math.min(Math.max(Math.trunc(i), 0), len - 1)
 }
 
@@ -589,7 +593,9 @@ export function sparkGlyph(): Glyph {
 // "restore" a stagger: the ROM has none. (The audit's V-017 says otherwise; it read
 // the advances without walking the subroutines. See sprint/archive/tp1-19-session.md.)
 type LogoVec = readonly [number, number, 0 | 1] // dx, dy, lit(CB=6) | beam-off
-const LOGO_LETTERS: Readonly<Record<string, readonly LogoVec[]>> = {
+// `satisfies` (not a Record<string,…> annotation) so `keyof typeof` below narrows to
+// the five authored letters instead of widening to `string`.
+const LOGO_LETTERS = {
   // 1318-1320 — stem up, back to the left tip, crossbar right.
   T: [[0, 0x80, 1], [-0x50, 0, 0], [0xa0, 0, 1]],
   // 1322-1327 — top arm, descend-left, middle arm, jump back, descend-left, bottom arm.
@@ -600,9 +606,13 @@ const LOGO_LETTERS: Readonly<Record<string, readonly LogoVec[]>> = {
   P: [[-0x10, 0, 1], [0, 0x80, 1], [0x5c, 0, 1], [0x1a, -0x48, 1], [-0x76, 0, 1]],
   // 1344-1350 — the S's single serpentine chain.
   S: [[-0x10, -0x28, 1], [0x90, 0, 1], [0, 0x38, 1], [-0x70, 0x20, 1], [0x10, 0x28, 1], [0x64, 0, 1], [-0x0c, -0x20, 1]],
-}
-// [advance, letter] × 7 — TEMLIT's body after CNTR (ALVROM.MAC:1304-1317).
-const LOGO_SEQ: readonly (readonly [readonly [number, number], string])[] = [
+} satisfies Readonly<Record<string, readonly LogoVec[]>>
+// [advance, letter] × 7 — TEMLIT's body after CNTR (ALVROM.MAC:1304-1317). The
+// letter column is keyed to LOGO_LETTERS, so an unauthored letter is a COMPILE
+// error; typed `string` it would instead throw at import time, inside the
+// LOGO_RUNS IIFE, taking down all of glyphs.ts rather than just the logo.
+type LogoLetter = keyof typeof LOGO_LETTERS
+const LOGO_SEQ: readonly (readonly [readonly [number, number], LogoLetter])[] = [
   [[-0x1b0, 0x100], 'T'], [[0x60, 0], 'E'], [[0x24, 0], 'M'], [[0x34, 0], 'P'],
   [[0xf8, 0x48], 'E'], [[0x16, 0x28], 'S'], [[0x60, -0x60], 'T'],
 ]

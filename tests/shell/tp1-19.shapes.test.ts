@@ -80,8 +80,9 @@
 import { describe, it, expect } from 'vitest'
 import glyphSrc from '../../src/shell/glyphs.ts?raw'
 import renderSrc from '../../src/shell/render.ts?raw'
+import fxSrc from '../../src/shell/fx.ts?raw'
 import titleLogoSrc from '../../src/shell/titleLogo.ts?raw'
-import { charGlyph } from '../../src/shell/font'
+import { charGlyph, layoutText } from '../../src/shell/font'
 // NOTE (import-RED): logoGlyph / starPictureGlyph / fuseScoreGlyph / FUSE_SCORE_TIERS
 // do not exist yet — Dev adds them to glyphs.ts. Until then this file is RED at the
 // contract these tests describe.
@@ -111,19 +112,47 @@ function fingerprint(g: Glyph): string {
   )
 }
 
-/** Normalised radius multiset of a point cloud — invariant to uniform scale and to
- *  a Y flip, which is exactly the freedom a faithful port may take. */
-function normRadii(pts: Pt[]): number[] {
-  const rMax = Math.max(...pts.map(radius))
-  return pts.map((p) => radius(p) / rMax).sort((a, b) => a - b)
+// (A normalised-radius "cover" check lived here. It only asked whether each ROM
+// radius appeared SOMEWHERE in the port — which fabricated coordinates could satisfy,
+// and which said nothing about angles. expectSameShape below subsumes it: it compares
+// the clouds point-for-point in a canonical frame.)
+
+// ---------------------------------------------------------------------------
+// The implementation-vs-oracle comparison.
+//
+// THIS is what makes the suite bite. The ROM tables inside glyphs.ts are module-
+// private, so the transcriptions in this file are a SEPARATE copy. Asserting the
+// copy against itself proves nothing about the shipped code — the first cut of this
+// file did exactly that, and the whole suite passed with the logo reimplemented as
+// message-font text (found by the reviewer, mutation-tested). Every shape below is
+// now pinned by comparing the FUNCTION'S OUTPUT to the oracle, point for point.
+//
+// A port stays free to pick any uniform scale, any translation, and either Y
+// convention, so both clouds are normalised to a canonical frame (centre on the
+// bbox centre, divide by the bbox height) and the oracle is offered in both Y
+// orientations. Anything beyond that freedom — a different SHAPE — fails.
+// ---------------------------------------------------------------------------
+function canonicalCloud(pts: Pt[], flipY: boolean): string {
+  const xs = pts.map((p) => p.x)
+  const ys = pts.map((p) => p.y)
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+  const h = span(ys) || 1
+  return pts
+    .map((p) => `${round((p.x - cx) / h)},${round(((p.y - cy) / h) * (flipY ? -1 : 1))}`)
+    .sort()
+    .join(' | ')
 }
 
-/** Does every ROM radius appear in the port's radii (scale-invariant)? */
-function radiiCover(romPts: Pt[], gotPts: Pt[], tol = 0.03): { ok: boolean; miss: number[] } {
-  const rom = normRadii(romPts)
-  const got = normRadii(gotPts)
-  const miss = rom.filter((t) => !got.some((v) => Math.abs(v - t) <= tol))
-  return { ok: miss.length === 0, miss }
+/** The port's cloud must equal the ROM oracle's, up to scale/translation/Y-flip. */
+function expectSameShape(got: Pt[], oracle: Pt[], what: string): void {
+  const g = canonicalCloud(got, false)
+  const ok = g === canonicalCloud(oracle, false) || g === canonicalCloud(oracle, true)
+  if (!ok) {
+    // Surface a readable diff rather than two 800-char blobs.
+    expect(`${what}: ${g}`).toBe(`${what}: ${canonicalCloud(oracle, false)}`)
+  }
+  expect(ok, `${what} does not match the ROM oracle's geometry`).toBe(true)
 }
 
 // ===========================================================================
@@ -133,25 +162,68 @@ function radiiCover(romPts: Pt[], gotPts: Pt[], tol = 0.03): { ok: boolean; miss
 // --- V-017: TEMLIT, ALVROM.MAC:1297-1351 (CM=1 CD=1 CB=6) ------------------
 // The FIVE letter routines, as [dx, dy, lit] relative vectors (ALVROM.MAC:1318-1351).
 type Vec = readonly [number, number, 0 | 1]
-const LOGO_LETTERS: Readonly<Record<string, readonly Vec[]>> = {
+const LOGO_LETTERS = {
   T: [[0, 0x80, 1], [-0x50, 0, 0], [0xa0, 0, 1]], // 1318-1320
   E: [[-0x50, 0, 1], [-0x14, -0x40, 1], [0x70, 0, 1], [-0x70, 0, 0], [-0x14, -0x40, 1], [0x84, 0, 1]], // 1322-1327
   M: [[-0x20, 0, 1], [0x30, 0x80, 1], [0x10, 0, 1], [0x20, -0x58, 1], [0x20, 0x58, 1], [0x10, 0, 1], [0x30, -0x80, 1], [-0x20, 0, 1]], // 1329-1336
   P: [[-0x10, 0, 1], [0, 0x80, 1], [0x5c, 0, 1], [0x1a, -0x48, 1], [-0x76, 0, 1]], // 1338-1342
   S: [[-0x10, -0x28, 1], [0x90, 0, 1], [0, 0x38, 1], [-0x70, 0x20, 1], [0x10, 0x28, 1], [0x64, 0, 1], [-0x0c, -0x20, 1]], // 1344-1350
-}
+} satisfies Readonly<Record<string, readonly Vec[]>>
+type LogoLetter = keyof typeof LOGO_LETTERS
 // The TEMLIT body: after CNTR, an advance then a letter, ×7 (ALVROM.MAC:1303-1317).
-const LOGO_SEQ: readonly (readonly [readonly [number, number], string])[] = [
+const LOGO_SEQ: readonly (readonly [readonly [number, number], LogoLetter])[] = [
   [[-0x1b0, 0x100], 'T'], [[0x60, 0], 'E'], [[0x24, 0], 'M'], [[0x34, 0], 'P'],
   [[0xf8, 0x48], 'E'], [[0x16, 0x28], 'S'], [[0x60, -0x60], 'T'],
 ]
 const LOGO_WORD = LOGO_SEQ.map(([, l]) => l).join('') // 'TEMPEST'
 
+/** Map a cloud into the canonical frame used for every comparison below: centred on
+ *  its bbox centre, divided by its bbox height. Scale/translation drop out; `flipY`
+ *  offers the other Y convention. */
+function toCanon(pts: Pt[], flipY = false): Pt[] {
+  const xs = pts.map((p) => p.x)
+  const ys = pts.map((p) => p.y)
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+  const h = span(ys) || 1
+  return pts.map((p) => ({ x: (p.x - cx) / h, y: ((p.y - cy) / h) * (flipY ? -1 : 1) }))
+}
+
+/** The ink of ONE letter, cut out of logoGlyph()'s OWN output.
+ *
+ *  The x-window comes from the ORACLE's trace and is applied to the SHIPPED glyph in
+ *  the shared canonical frame — so if the glyph is not TEMLIT, the window catches the
+ *  wrong ink and the caller's assertions fail. (A Y flip cannot affect an x-window,
+ *  and an x mirror would already have failed `expectSameShape`.)
+ *
+ *  Only a letter with clear air either side is separable: the word's SECOND E is the
+ *  one (P ends at x=74, the E spans 84..216, S starts at 222). T and the first E
+ *  overlap, so they are not isolable this way. */
+function letterPts(letter: LogoLetter): Pt[] {
+  const traced = traceLogo()
+  const xr = (pts: Pt[]): readonly [number, number] =>
+    [Math.min(...pts.map((p) => p.x)), Math.max(...pts.map((p) => p.x))] as const
+  const ranges = traced.map((t) => xr(t.pts))
+  const i = traced.findIndex((t, k) => t.letter === letter &&
+    ranges.every((r, j) => j === k || r[1] < ranges[k][0] || r[0] > ranges[k][1]))
+  if (i < 0) throw new Error(`no cleanly isolable '${letter}' in TEMLIT — widen the window`)
+
+  // The letter's x-window, expressed in the oracle's canonical frame…
+  const offset = traced.slice(0, i).reduce((n, t) => n + t.pts.length, 0)
+  const canonWord = toCanon(traced.flatMap((t) => t.pts))
+  const canonLetter = canonWord.slice(offset, offset + traced[i].pts.length)
+  const lo = Math.min(...canonLetter.map((p) => p.x))
+  const hi = Math.max(...canonLetter.map((p) => p.x))
+
+  // …cut out of the shipped glyph, in that same frame.
+  return toCanon(allPoints(logoGlyph())).filter((p) => p.x >= lo - 1e-6 && p.x <= hi + 1e-6)
+}
+
 /** Walk TEMLIT exactly as the AVG would; returns each letter's placement + points. */
-function traceLogo(): { letter: string; origin: Pt; pts: Pt[] }[] {
+function traceLogo(): { letter: LogoLetter; origin: Pt; pts: Pt[] }[] {
   let x = 0
   let y = 0 // CNTR
-  const out: { letter: string; origin: Pt; pts: Pt[] }[] = []
+  const out: { letter: LogoLetter; origin: Pt; pts: Pt[] }[] = []
   for (const [[ax, ay], letter] of LOGO_SEQ) {
     x += ax
     y += ay
@@ -178,11 +250,38 @@ const MSTAR1_ROM: readonly Pt[] = [
   { x: 0x58, y: 0x50 }, { x: 0x8, y: 0x70 }, { x: -0x40, y: 0x68 }, { x: -0x78, y: 0x28 },
   { x: -0x70, y: -0x28 }, { x: -0x70, y: -0x68 },
 ]
-// Dot counts per picture. NOTE — the audit's [REFUTATION] gloss "MSTAR2/3/4 also
-// verified at 20 SCDOTs each" is WRONG: MSTAR3 has 21 (ALVROM.MAC:459-479, counted
-// directly). The finding's ORIGINAL "20-22 SCDOTs each" range is the accurate
-// framing. AC-2's "the ROM's 22 dots" names MSTAR1 specifically — do NOT force all
-// four to 22. [Filed as a session Delivery Finding.]
+// MSTAR2 — 20 dots, ALVROM.MAC:435-454.
+const MSTAR2_ROM: readonly Pt[] = [
+  { x: 0x8, y: 0x8 }, { x: -0x8, y: 0x10 }, { x: -0x18, y: -0x10 }, { x: 0x8, y: -0x28 },
+  { x: 0x28, y: -0x8 }, { x: 0x20, y: 0x20 }, { x: 0x8, y: 0x38 }, { x: -0x20, y: 0x30 },
+  { x: -0x40, y: 0x8 }, { x: -0x28, y: -0x40 }, { x: 0x34, y: -0x44 }, { x: 0x58, y: 0x18 },
+  { x: 0x38, y: 0x50 }, { x: -0x10, y: 0x68 }, { x: -0x58, y: 0x28 }, { x: -0x58, y: -0x30 },
+  { x: -0x38, y: -0x68 }, { x: 0x0, y: -0x78 }, { x: 0x60, y: -0x68 }, { x: 0x68, y: -0x30 },
+]
+// MSTAR3 — 21 dots (NOT 20 — see the correction below), ALVROM.MAC:459-479.
+const MSTAR3_ROM: readonly Pt[] = [
+  { x: 0x10, y: 0x10 }, { x: 0x0, y: 0x18 }, { x: -0x30, y: 0x8 }, { x: -0x18, y: -0x2c },
+  { x: 0x28, y: -0x18 }, { x: 0x30, y: 0x8 }, { x: 0x38, y: 0x38 }, { x: 0x0, y: 0x48 },
+  { x: -0x38, y: 0x28 }, { x: -0x40, y: -0x8 }, { x: -0x20, y: -0x58 }, { x: 0x20, y: -0x58 },
+  { x: 0x50, y: -0x30 }, { x: 0x60, y: 0x20 }, { x: 0x2c, y: 0x64 }, { x: -0x20, y: 0x68 },
+  { x: -0x64, y: 0x38 }, { x: -0x68, y: -0x8 }, { x: -0x60, y: -0x48 }, { x: -0x28, y: -0x78 },
+  { x: 0x40, y: -0x78 },
+]
+// MSTAR4 — 20 dots, ALVROM.MAC:484-503.
+const MSTAR4_ROM: readonly Pt[] = [
+  { x: -0x8, y: -0x10 }, { x: 0x20, y: -0x10 }, { x: 0x20, y: 0x18 }, { x: -0x18, y: 0x20 },
+  { x: -0x30, y: -0x10 }, { x: 0x10, y: -0x38 }, { x: 0x40, y: 0x0 }, { x: 0x20, y: 0x38 },
+  { x: -0x20, y: 0x48 }, { x: -0x50, y: 0x10 }, { x: -0x38, y: -0x40 }, { x: 0x18, y: -0x4c },
+  { x: 0x40, y: -0x38 }, { x: 0x68, y: 0x10 }, { x: 0x28, y: 0x58 }, { x: -0x38, y: 0x50 },
+  { x: -0x70, y: 0x18 }, { x: -0x68, y: -0x18 }, { x: -0x58, y: -0x78 }, { x: 0x40, y: -0x60 },
+]
+// All four, in STAR1:-STAR4: order (ALVROM.MAC:512-515).
+const MSTAR_ROM: readonly (readonly Pt[])[] = [MSTAR1_ROM, MSTAR2_ROM, MSTAR3_ROM, MSTAR4_ROM]
+// NOTE — the audit's [REFUTATION] gloss "MSTAR2/3/4 also verified at 20 SCDOTs each"
+// is WRONG: MSTAR3 has 21 (ALVROM.MAC:459-479, counted directly). The finding's
+// ORIGINAL "20-22 SCDOTs each" range is the accurate framing. AC-2's "the ROM's 22
+// dots" names MSTAR1 specifically — do NOT force all four to 22. [Filed as a session
+// Delivery Finding.]
 const MSTAR_DOT_COUNTS: readonly number[] = [22, 20, 21, 20]
 
 // --- V-022: FUSEX1/2/3, ALVROM.MAC:1096-1114 -------------------------------
@@ -205,58 +304,66 @@ describe('AC-1 logoGlyph — the ROM TEMLIT alphabet (V-017, ALVROM.MAC:1297)', 
     expect(allPoints(g).length, 'TEMLIT is ~40 vertices across 7 letters').toBeGreaterThanOrEqual(30)
   })
 
-  it('is NOT the message font: the logo E differs from the font\'s E', () => {
-    // The DEFECT is drawGlowText(ctx,'TEMPEST',…) → the ordinary ANVGAN message
-    // glyphs. TEMLIT's E is its own letterform (ALVROM.MAC:1322-1327): three
-    // horizontal arms of DIFFERENT lengths joined by descending diagonals, with no
-    // vertical spine at all. The message font's E is structurally unrelated.
-    const fontE = charGlyph('E')
-    const fontArmLens = fontE.strokes
-      .flatMap((s) => s.points.map((p) => p.x))
-    const fontW = span(fontArmLens.length ? fontArmLens : [0, 0])
-
-    // The ROM E's three arms are 80 / 112 / 132 — a 1.65× spread. A conventional
-    // font E has arms of near-equal length (a comb on a spine).
-    const romE = LOGO_LETTERS.E
-    expect(romE.length, 'TEMLIT E is 6 vectors (5 lit + 1 move)').toBe(6)
-    expect(fontW, 'the message font E must exist to be compared against').toBeGreaterThan(0)
-
-    // The port must not simply re-emit the font: the logo's point cloud must not be
-    // reproducible from charGlyph. Compare normalised radii of the logo's own E-ish
-    // extent against the font glyph — a faithful TEMLIT is a different shape.
-    const g = logoGlyph()
-    const gPts = allPoints(g)
-    const fPts = fontE.strokes.flatMap((s) => s.points.map((p) => ({ x: p.x, y: p.y })))
-    expect(fPts.length, 'font E has ink').toBeGreaterThan(0)
-    // The whole logo is one word — it cannot be a single font glyph.
-    expect(gPts.length).toBeGreaterThan(fPts.length)
+  it('IS TEMLIT: logoGlyph()\'s geometry matches the ROM oracle point-for-point', () => {
+    // THE test for AC-1. Everything else about the logo is a corollary of this.
+    // Compares the SHIPPED function's output against the independently-traced
+    // TEMLIT walk, up to uniform scale / translation / Y-flip. A logo rebuilt from
+    // the message font — the exact V-017 defect — cannot pass this.
+    expectSameShape(allPoints(logoGlyph()), traceLogo().flatMap((l) => l.pts), 'logoGlyph')
   })
 
-  it('the E is BACK-SLANTED — arms step consistently sideways as they descend', () => {
-    // ALVROM.MAC:1322-1327. Local trace (y-up): arms at y=0/-64/-128 with left ends
-    // -80/-100/-120 (a constant -20 step) and lengths 80/112/132. This monotone
-    // widening is the "stair-step" of the story title, and it survives a Y flip and
-    // any uniform scale — so a port may choose either Y convention.
-    let x = 0
-    let y = 0
-    const pts: Pt[] = [{ x, y }]
-    for (const [dx, dy] of LOGO_LETTERS.E) {
-      x += dx
-      y += dy
-      pts.push({ x, y })
+  it('is NOT the message font — the logo\'s ink is not reproducible from layoutText', () => {
+    // The DEFECT is drawGlowText(ctx,'TEMPEST',…) → the ordinary ANVGAN message
+    // glyphs. Pin it directly: whatever logoGlyph() returns must NOT be the shape
+    // the shared font produces for the same word.
+    const fontWord = layoutText('TEMPEST').strokes
+      .flatMap((s) => s.points.map((p) => ({ x: p.x, y: p.y })))
+    expect(fontWord.length, 'the shared font can lay out TEMPEST').toBeGreaterThan(0)
+    const logo = allPoints(logoGlyph())
+    const same = canonicalCloud(logo, false) === canonicalCloud(fontWord, false) ||
+      canonicalCloud(logo, false) === canonicalCloud(fontWord, true)
+    expect(same, 'the logo must be TEMLIT\'s own alphabet, NOT the message font').toBe(false)
+
+    // …and TEMLIT's E is structurally unlike the font's, in the one way that names
+    // this story: the BACK-SLANT. The message font's E is a comb on a vertical
+    // spine — its three arms all start at x=0 (verified: strokes (0,0)-(0,24)-(16,24),
+    // (12,12)-(0,12), (0,0)-(16,0), so every left end is 0). TEMLIT's E has no spine
+    // at all: its arms start at -80/-100/-120, stepping left as they descend.
+    const fontE = charGlyph('E').strokes.flatMap((s) => s.points.map((p) => ({ x: p.x, y: p.y })))
+    expect(fontE.length, 'font E has ink').toBeGreaterThan(0)
+    // Distinct left-edge starts per arm level: 1 for a spine, 3 for a back-slant.
+    const armLeftEnds = (pts: Pt[]): number[] => {
+      const levels = [...new Set(pts.map((p) => round(p.y)))].sort((a, b) => a - b)
+      return levels.map((lv) => Math.min(...pts.filter((p) => round(p.y) === lv).map((p) => p.x)))
     }
-    const levels = [...new Set(pts.map((p) => p.y))].sort((a, b) => b - a)
+    const distinct = (a: number[]): number => new Set(a.map((v) => round(v))).size
+    expect(distinct(armLeftEnds(fontE)), 'the font E is a comb on ONE spine').toBe(1)
+    expect(distinct(armLeftEnds(letterPts('E'))), 'TEMLIT\'s E arms each start further left').toBe(3)
+  })
+
+  it('the E is BACK-SLANTED in the SHIPPED glyph — arms step sideways as they descend', () => {
+    // ALVROM.MAC:1322-1327: arms at y=0/-64/-128, left ends -80/-100/-120 (a constant
+    // -20 step), lengths 80/112/132. Read off logoGlyph()'s OWN output (the second E
+    // of the word, isolated by x-window), not off this file's transcription — the
+    // earlier version walked the local constant and passed even when the shipped
+    // letterform was replaced with a symmetric stand-in.
+    const pts = letterPts('E')
+    const levels = [...new Set(pts.map((p) => round(p.y)))].sort((a, b) => a - b)
     expect(levels, 'the E has exactly three horizontal arm levels').toHaveLength(3)
-    const armLen = levels.map((lv) => span(pts.filter((p) => p.y === lv).map((p) => p.x)))
-    // Strictly monotone: 80 → 112 → 132.
-    expect(armLen[0]).toBeLessThan(armLen[1])
-    expect(armLen[1]).toBeLessThan(armLen[2])
-    // And the left edge steps by a CONSTANT amount per level (the stair-step).
-    const leftEnds = levels.map((lv) => Math.min(...pts.filter((p) => p.y === lv).map((p) => p.x)))
-    const step1 = leftEnds[1] - leftEnds[0]
-    const step2 = leftEnds[2] - leftEnds[1]
-    expect(step1, 'the arms step sideways, not straight down').not.toBe(0)
-    expect(step2, 'the step is constant — a linear back-slant').toBe(step1)
+
+    const armLen = levels.map((lv) => span(pts.filter((p) => round(p.y) === lv).map((p) => p.x)))
+    const leftEnds = levels.map((lv) => Math.min(...pts.filter((p) => round(p.y) === lv).map((p) => p.x)))
+    // Monotone widening 80 → 112 → 132 (order flips with the Y convention; either
+    // direction is a monotone run, a symmetric E is not).
+    const monotone = (a: number[]): boolean =>
+      a.every((v, i) => i === 0 || v > a[i - 1]) || a.every((v, i) => i === 0 || v < a[i - 1])
+    expect(monotone(armLen), `arms must widen monotonically, got ${armLen.map(round)}`).toBe(true)
+    expect(monotone(leftEnds), `the left edge must step one way, got ${leftEnds.map(round)}`).toBe(true)
+    // The step is CONSTANT — a linear back-slant, not a curve.
+    const s1 = round(leftEnds[1] - leftEnds[0])
+    const s2 = round(leftEnds[2] - leftEnds[1])
+    expect(s1, 'the arms step sideways, not straight down').not.toBe(0)
+    expect(Math.abs(s1 - s2), 'the step is constant — a linear back-slant').toBeLessThan(1e-3)
   })
 
   it('[CORRECTION 2] all seven letters sit on ONE straight baseline — the word is NOT stair-stepped', () => {
@@ -277,26 +384,27 @@ describe('AC-1 logoGlyph — the ROM TEMLIT alphabet (V-017, ALVROM.MAC:1297)', 
       expect(s.hi, `${s.letter} shares the common cap height`).toBe(384)
     }
 
-    // …and the PORT must land on one baseline too. Y-flip/scale invariant: the
-    // word's left end and right end must occupy the same vertical band.
-    const pts = allPoints(logoGlyph())
-    const xs = pts.map((p) => p.x)
-    const w = span(xs)
-    expect(w, 'the logo has horizontal extent').toBeGreaterThan(0)
-    const xMin = Math.min(...xs)
-    const xMax = Math.max(...xs)
-    const left = pts.filter((p) => p.x <= xMin + 0.18 * w)
-    const right = pts.filter((p) => p.x >= xMax - 0.18 * w)
-    expect(left.length, 'sampled the left end of the word').toBeGreaterThan(0)
-    expect(right.length, 'sampled the right end of the word').toBeGreaterThan(0)
-    const h = span(pts.map((p) => p.y))
-    const loL = Math.min(...left.map((p) => p.y))
-    const hiL = Math.max(...left.map((p) => p.y))
-    const loR = Math.min(...right.map((p) => p.y))
-    const hiR = Math.max(...right.map((p) => p.y))
-    // The ROM's first and last letters are both full-height Ts on the same band.
-    expect(Math.abs(loL - loR), 'left and right ends share a baseline (no stagger)').toBeLessThanOrEqual(0.1 * h)
-    expect(Math.abs(hiL - hiR), 'left and right ends share a cap height (no stagger)').toBeLessThanOrEqual(0.1 * h)
+    // …and the SHIPPED glyph must land on one baseline too. Cut each letter's window
+    // out of logoGlyph()'s own output (windows from the oracle) and require EVERY
+    // letter to span the full height — a stagger would leave some letter short.
+    const canonWord = toCanon(traced.flatMap((t) => t.pts))
+    const canonGlyph = toCanon(allPoints(logoGlyph()))
+    const H = span(canonGlyph.map((p) => p.y))
+    expect(H, 'the logo has vertical extent').toBeGreaterThan(0)
+    let offset = 0
+    for (const t of traced) {
+      const win = canonWord.slice(offset, offset + t.pts.length)
+      offset += t.pts.length
+      const lo = Math.min(...win.map((p) => p.x))
+      const hi = Math.max(...win.map((p) => p.x))
+      const ink = canonGlyph.filter((p) => p.x >= lo - 1e-6 && p.x <= hi + 1e-6)
+      expect(ink.length, `${t.letter}: the shipped glyph has ink in this letter's window`).toBeGreaterThan(0)
+      // Every TEMLIT letter is full cap height, so each window must span the word's
+      // whole height. (T/E windows overlap, which only ADDS ink — never removes it —
+      // so a short letter still fails.)
+      expect(span(ink.map((p) => p.y)), `${t.letter} must span the full cap height — no stagger`)
+        .toBeGreaterThan(0.98 * H)
+    }
   })
 
   it('[CORRECTION 1] the alphabet is FIVE letterforms reused across seven placements', () => {
@@ -343,9 +451,25 @@ describe('AC-2 starPictureGlyph — the ROM MSTAR1-4 authored dots (V-015, ALVRO
     }
   })
 
-  it('MSTAR1 carries the ROM\'s authored radii — a real transcription, not "some 22 points"', () => {
-    const { ok, miss } = radiiCover(MSTAR1_ROM as Pt[], allPoints(starPictureGlyph(0)))
-    expect(ok, `MSTAR1 missing normalised radii: ${miss.map(round).join(', ')}`).toBe(true)
+  it('every picture IS its ROM constellation — matched point-for-point, all four', () => {
+    // THE test for AC-2. Was previously a radii-cover check on MSTAR1 only, which
+    // fabricated coordinates could pass for 2/3/4 (found by the reviewer). Each
+    // picture's actual dots are now pinned against their own oracle.
+    MSTAR_ROM.forEach((rom, i) => {
+      expectSameShape(allPoints(starPictureGlyph(i)), rom as Pt[], `MSTAR${i + 1}`)
+    })
+  })
+
+  it('the four pictures share ONE scale — a plane must not resize when it recycles', () => {
+    // The ROM's pictures are authored at a common scale; normalising each to its own
+    // extent would make them jump size as a plane cycles between constellations.
+    const romRatio = MSTAR_ROM.map((r) => Math.max(...r.map(radius)))
+    const gotRatio = MSTAR_ROM.map((_, i) => Math.max(...allPoints(starPictureGlyph(i)).map(radius)))
+    // Relative sizes must be preserved: got[i]/got[0] === rom[i]/rom[0].
+    romRatio.forEach((_, i) => {
+      expect(gotRatio[i] / gotRatio[0], `MSTAR${i + 1} keeps its size relative to MSTAR1`)
+        .toBeCloseTo(romRatio[i] / romRatio[0], 5)
+    })
   })
 
   it('the dots are SCATTERED in depth, not the old unit-circle ring', () => {
@@ -465,7 +589,12 @@ describe('subsumed-but-already-done — V-014 / DA-006 regression guards', () =>
 
   it('DA-006: only the FIRST burst frame is dim (CB=07 → 0E), remediated_by tp1-3', () => {
     // Guard only — this story must not disturb it. There is no "shape half".
-    expect(renderSrc.length + glyphSrc.length, 'sources loaded').toBeGreaterThan(0)
+    // (This asserted `renderSrc.length + glyphSrc.length > 0` — a no-op wearing a
+    // regression test's name. Now it pins the actual off-by-one, mirroring the V-014
+    // guard above: CB=07 for EXPL1 only, CB=0E from EXPL2 on, so ONLY frame 0 is dim.)
+    expect(fxSrc, 'only frame 0 is dim — `frame < 2` was the DA-006 defect')
+      .toMatch(/brightness\s*=\s*frame\s*<\s*1\s*\?\s*ENEMY_DIM\s*:\s*ENEMY_BRIGHT/)
+    expect(fxSrc, 'the two-frame dim must stay gone').not.toMatch(/frame\s*<\s*2\s*\?\s*ENEMY_DIM/)
   })
 })
 
@@ -488,7 +617,13 @@ describe('tp1-19 rule coverage — boundary, purity, type-safety, determinism', 
   })
 
   it('the new logo/star/score vertex tables are readonly const data (TS lang-review #2)', () => {
-    expect(glyphSrc).toMatch(/readonly/)
+    // Scoped to THIS story's declarations. A bare /readonly/ matched anywhere in the
+    // 700-line file, so stripping readonly off the new tables still passed.
+    expect(glyphSrc, 'MSTAR is a readonly nested table').toMatch(/const MSTAR: readonly /)
+    expect(glyphSrc, 'FUSE_SCORE_TIERS is readonly').toMatch(/FUSE_SCORE_TIERS: readonly number\[\]/)
+    expect(glyphSrc, 'LOGO_SEQ is readonly').toMatch(/const LOGO_SEQ: readonly /)
+    expect(glyphSrc, 'the letter table is deeply readonly via satisfies')
+      .toMatch(/satisfies Readonly<Record<string, readonly LogoVec\[\]>>/)
   })
 
   it('all three new glyphs are deterministic across repeated calls (frame-exact)', () => {
@@ -498,9 +633,28 @@ describe('tp1-19 rule coverage — boundary, purity, type-safety, determinism', 
   })
 
   it('starPictureGlyph covers exactly the four ROM pictures (no 5th, no wrap-around lie)', () => {
-    // Map<K,V>.get()-style undefined handling (TS lang-review #4): an out-of-range
-    // picture index must not silently resolve to picture 0.
+    // TS lang-review #4 (out-of-range index → silent wrong value). This previously
+    // only called 0..3 and never exercised the clamp it claimed to guard.
     expect(MSTAR_DOT_COUNTS).toHaveLength(4)
     for (let i = 0; i < 4; i++) expect(starPictureGlyph(i).length).toBeGreaterThan(0)
+    // Out of range CLAMPS to the nearest real picture — it must not WRAP (picture 4
+    // showing MSTAR1's 22 dots would be a silent lie about which constellation it is).
+    expect(fingerprint(starPictureGlyph(4)), 'clamps up to MSTAR4').toBe(fingerprint(starPictureGlyph(3)))
+    expect(fingerprint(starPictureGlyph(-1)), 'clamps down to MSTAR1').toBe(fingerprint(starPictureGlyph(0)))
+    expect(fingerprint(starPictureGlyph(4)), 'does NOT wrap to MSTAR1').not.toBe(fingerprint(starPictureGlyph(0)))
+    // Non-finite must not reach the table: Math.trunc/min/max propagate NaN, so an
+    // unguarded clamp hands back NaN and the caller indexes `undefined`.
+    expect(() => starPictureGlyph(NaN), 'NaN must not throw').not.toThrow()
+    expect(starPictureGlyph(NaN).length, 'NaN resolves to a real picture').toBe(MSTAR_DOT_COUNTS[0])
+    expect(() => starPictureGlyph(Infinity)).not.toThrow()
+  })
+
+  it('fuseScoreGlyph clamps its tier the same way — never an empty or wrong number', () => {
+    expect(fingerprint(fuseScoreGlyph(3)), 'clamps up to the 250 tier').toBe(fingerprint(fuseScoreGlyph(2)))
+    expect(fingerprint(fuseScoreGlyph(-1)), 'clamps down to the 750 tier').toBe(fingerprint(fuseScoreGlyph(0)))
+    // NaN previously produced String(undefined) → 'undefined' → an all-blank glyph
+    // (the font has no lowercase), i.e. an invisible pop-up rather than a number.
+    expect(fuseScoreGlyph(NaN).length, 'NaN still draws a real number').toBeGreaterThan(0)
+    expect(fingerprint(fuseScoreGlyph(NaN))).toBe(fingerprint(fuseScoreGlyph(0)))
   })
 })
