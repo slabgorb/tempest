@@ -76,6 +76,12 @@ export const SPIN_SENSITIVITY = 0.15
 // same number... if a frame is 1/60 s. The bad base did not invent a divergence here.
 // It manufactured an AGREEMENT, and an agreement is the one thing nobody re-checks.
 export const BULLET_SPEED = (9 * ROM_FPS) / WARP_ALONG_SPAN  // 1.143 depth units/sec
+// A charge that has bitten a spike SLOWS to PCVELO-4 = 5 along-units/frame while it
+// burrows (MOVCHA: `LDY X,CHARCO / IFNE / SEC / SBC I,4`, ALWELG.MAC:2541-2544).
+export const SPIKE_BURROW_SPEED = (5 * ROM_FPS) / WARP_ALONG_SPAN  // 0.635 depth units/sec
+// A charge eats a spike over exactly two hit-frames, deactivating once its CHARCO
+// collision counter reaches 2 (LIFECT: `CMP I,2 / IFCS`, ALWELG.MAC:2618-2624).
+export const SPIKE_BURROW_HITS = 2
 export const MAX_BULLETS = 8
 // The grab line. It is not a threshold the ROM tunes — it is the RIM itself, and the
 // reason no byte could ever be found for it is that the kill check does not test depth.
@@ -133,7 +139,7 @@ export const SCORE_SPIKE_SEGMENT = 1    // LIFECT signals UPSCORE with TEMP0=1 (
 // wave instead of costing a life outright — reuniting the cap with the turnaround
 // at the ROM's single $20 (findings W-039 / B-006).
 export const SPIKE_MAX_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929, the ROM $20
-export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
+export const SPIKE_SHORTEN = 0.08       // SUPERSEDED by the tp1-15 burrow (W-047); the old flat trim, kept as the value the burrow test refutes
 export const EXTRA_LIFE_INTERVAL = 10000
 
 // ─── THE ADVANCED-START SKILL-STEP BONUS (tp1-13, S-015) ─────────────────────
@@ -167,10 +173,17 @@ export function startWaveBonus(wave: number): number {
   return START_WAVE_BONUS_LADDER[step]
 }
 
-// Superzapper active-window durations, in FRAMES (Story 10-2). The ROM's TIMAX
-// holds the first activation "active" ~13 frames and the second ~5, flashing the
-// well each frame and killing on a per-frame cadence (KILENE) across the window.
-export const ZAP_WINDOW_FIRST = 13
+// Superzapper active-window durations, in FRAMES. The ROM's TIMAX table
+// (ALWELG.MAC:3539) is COMPUTED, not the book's literal `.BYTE 00,13,05`:
+//   TIMAX[1] = CSUSTA + <8*<CSUINT+1>> = 3 + 8*2 = 19   (first press)
+//   TIMAX[2] = CSUSTA + <1*<CSUINT+1>> = 3 + 1*2 = 5    (second press)
+// with CSUSTA=3, CSUINT=1 (3490-3492). The well flashes each active frame; the
+// first press kills on KILENE's every-OTHER-frame cadence (see runZapFrame), and
+// the second press's single kill lands on its press frame. tp1-14 raised the
+// first window from the book's 13 to the ROM's 19 (B-001/W-043); the second is
+// unchanged (already correct). This is a FRAME count — the separate 28.44-fps
+// timebase (FR-014) is a game-wide concern, not modelled here.
+export const ZAP_WINDOW_FIRST = 19
 export const ZAP_WINDOW_SECOND = 5
 
 // --- Level-clear warp dive (Story 6-1) ---------------------------------------
@@ -234,16 +247,17 @@ export const EYE_FLYIN_STEP = 0x18    // 24 ROM units/frame (NEWAV2, ALWELG.MAC:
 // at the fire gate in sim.ts — NOT a flat 4. NICHARG=4 (ALCOMN.MAC:813) was only the ROM's
 // physical charge-array size; the old flat MAX_ENEMY_BULLETS conflated it with the live cap
 // (WCHAMX+1 = 2 at wave 1), doubling the arcade's early bolt pressure. W-019 / DA-002.
-// An enemy must be at least this far up the well ("along >= 0x30") before it may
-// fire — freshly spawned enemies near the far end stay silent.
-export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well
-// ...and stops firing once it reaches the arrival zone: an enemy at the rim is
-// grabbing/splitting, not shooting. This also keeps every bolt dodgeable — a
-// point-blank shot from the rim would leave the player no lane to rotate to.
-// (0.9 is its OWN number, not TANKER_SPLIT_DEPTH's — the comment here used to claim they
-// were equal, and they were, by coincidence, until the tanker's split moved to the ROM's
-// $20. They are separate rules: when a carrier bursts, and when an invader stops firing.)
-export const ENEMY_FIRE_MAX_DEPTH = 0.9   // at/after this an invader is grabbing/splitting, not shooting
+// FIREIC's ONE positional gate (ALWELG.MAC:2694-2695, `CMP I,ILINLIY+20 / IFCS`): an
+// invader may fire only while it is still at least $20 BELOW the rim — INVAY >=
+// ILINLIY+$20 = $30, i.e. depth <= (0xF0 - 0x30)/224. Past that it is grabbing or
+// splitting, not shooting. There is deliberately NO far-end counterpart: an invader that
+// hatched at the base of the well may fire on its very next frame (W-021).
+//
+// We used to enforce an invented far-end floor as well — ENEMY_FIRE_MIN_DEPTH = 0x30/0x100,
+// which silenced every fresh spawn for the first 19% of its climb and was scaled by 256
+// rather than the 224-unit well — and we capped at 0.9, letting invaders shoot across
+// 0.857-0.9 where the arcade has already stopped them. Both are gone.
+export const ENEMY_FIRE_MAX_DEPTH = (0xf0 - 0x30) / WARP_ALONG_SPAN  // 192/224 ≈ 0.857
 // A bolt's depth/sec beyond its level's invader speed. TCHARIN (ALWELG.MAC:600-601) is a
 // SINGLE TB record, byte -64, for every wave: WCHARL = WINVIL - 64, and TIMES8 scales both
 // identically, so the bolt is ALWAYS exactly |−64|/32 = 2.0 along-units/frame faster than the
@@ -631,6 +645,51 @@ const TSPIIN: readonly ContourRecord[] = [
 ]
 export function spikerSpeedForLevel(level: number): number {
   return invaderSpeedFromRaw(winvilForLevel(level) + contourValue(TSPIIN, level))
+}
+
+// ── ENSIZE (W-046) — the charge↔invader collision range, per invader TYPE.
+//
+// COLCHK is the governing check: `CMP Y,ENSIZE` (ALWELG.MAC:2963) where Y is the invader's
+// appearance index (`LDA Y,INVAC1 / AND I,INVABI`, :2959-2961) — ZABFLI=0, ZABPUL=1,
+// ZABTAN=2, ZABTRA=3 ("TRALER", our spiker), ZABFUS=4 (ALCOMN.MAC:845-849). So the
+// tolerance is a FUNCTION of type and wave, not one constant: it is half the CLOSING
+// speed, the player's charge plus the invader's own.
+//
+// TIMES8 (:560-578) returns it in X alongside the ×8 speed. The macro sign-extends from
+// 0xFF ("ALL SPEEDS ARE MINUS SO START SIGN EXTEND AT ALL-", :561-562), shifts a 16-bit
+// value left three times, then computes the range off the HIGH byte:
+//   TYA / EOR I,0FF / CLC / ADC I,PCVELO+1+1+2 / LSR / TAX   →   ((255 - hi) + 13) >> 1
+const PCVELO = 9  // ALCOMN.MAC:890, "PLAYER SHOT VELOCITY"
+function times8CollisionRange(rawSpeed: number): number {
+  const hi = ((rawSpeed * 8) & 0xffff) >>> 8   // high byte of speed×8, two's complement
+  return (255 - hi + (PCVELO + 1 + 1 + 2)) >> 1
+}
+
+/**
+ * The depth tolerance a player charge must be within to kill `kind` at `level`
+ * (ENSIZE, in depth units — 224 along-units span the well).
+ */
+export function enemyHitTolerance(kind: EnemyKind, level: number): number {
+  switch (kind) {
+    // ENSIZE+ZABFUS is the literal `<PCVELO+3>/2` = 6 (:545-546) — FIXED for every wave,
+    // and NARROWER than the flipper's 7. (Our old comment claimed the ROM's fuseball
+    // window was WIDER, and shipped 0.09 to match; the source says the opposite.)
+    case 'fuseball':
+      return (PCVELO + 3) / 2 / WARP_ALONG_SPAN
+    // ONE TIMES8(WINVIL) feeds ENSIZE+ZABFLI/ZABTAN/ZABPUL together (:530-538), so these
+    // three genuinely share one range: 7 at waves 1-16, 8 from wave 33. (The pulsar's own
+    // SPEED is overridden at :547-550 — but that is after :538 and never touches ENSIZE.)
+    case 'flipper':
+    case 'tanker':
+    case 'pulsar':
+      return times8CollisionRange(winvilForLevel(level)) / WARP_ALONG_SPAN
+    // The spiker gets its OWN range from its OWN speed slot, in a separate TIMES8 call
+    // (:520-524, `LDA WINVIL+ZABTRA ;SPINNER / JSR TIMES8 / STX ENSIZE+ZABTRA`).
+    case 'spiker':
+      return times8CollisionRange(winvilForLevel(level) + contourValue(TSPIIN, level)) / WARP_ALONG_SPAN
+    default:
+      return assertNever(kind, 'enemyHitTolerance kind')
+  }
 }
 
 // ── 4. TCHAMX (ALWELG.MAC:586-588) — WCHAMX, "MAX # ENEMY SHOTS -1". FIREIC searches slots

@@ -24,7 +24,7 @@ import type { GameEvent } from '../../src/core/events'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import type { Input } from '../../src/core/input'
 import { tubeForLevel } from '../../src/core/geometry'
-import { SPIKE_MAX_DEPTH, SPIKE_SHORTEN, SCORE_SPIKE_SEGMENT, EXTRA_LIFE_INTERVAL, levelParams } from '../../src/core/rules'
+import { SPIKE_MAX_DEPTH, SCORE_SPIKE_SEGMENT, EXTRA_LIFE_INTERVAL, levelParams } from '../../src/core/rules'
 
 const DT = 1 / 60
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -75,9 +75,10 @@ describe('spike-shot events (AC2: wire ROM cc51 to spike hits)', () => {
     s.bullets = [{ lane: 4, depth: 0.5 }] // depth <= spike height → a hit
     const out = stepGame(s, NEUTRAL, DT)
 
-    expect(out.spikes[4]).toBeCloseTo(SPIKE_MAX_DEPTH - SPIKE_SHORTEN, 5) // it really hit
+    // tp1-15/W-047: the charge cuts the tip to its OWN depth (not a flat SPIKE_SHORTEN).
+    expect(out.spikes[4]).toBeLessThan(SPIKE_MAX_DEPTH) // it really hit
     const hits = eventsOfType(out, 'spike-shot')
-    expect(hits).toHaveLength(1)
+    expect(hits).toHaveLength(1) // one bite this frame → one cue
     expect(hits[0].lane).toBe(4)
   })
 

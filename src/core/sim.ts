@@ -5,14 +5,14 @@ import { Tube, wrapLane, currentLane, tubeForLevel, warpEyeDest } from './geomet
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
-  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
+  SCORE_SPIKE_SEGMENT, SPIKE_BURROW_SPEED, SPIKE_BURROW_HITS, TANKER_SPLIT_DEPTH, LevelParams,
   SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   EYE_FLYIN_START, EYE_FLYIN_STEP, startWaveBonus,
   enemyBoltCapForLevel, initialSpikeHeightForLevel,
-  ENEMY_FIRE_MIN_DEPTH, ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET,
+  ENEMY_FIRE_MAX_DEPTH, ENEMY_BOLT_SPEED_OFFSET, enemyHitTolerance,
   enemyCanShoot, enemyFireChance, enemyFireHoldoffSeconds,
   ZAP_WINDOW_FIRST, ZAP_WINDOW_SECOND,
 } from './rules'
@@ -31,6 +31,7 @@ function cloneState(s: GameState): GameState {
     enemyBullets: s.enemyBullets.map((b) => ({ ...b })),
     enemies: s.enemies.map((e) => ({ ...e })),
     spikes: s.spikes.slice(),
+    spikeShattered: s.spikeShattered.slice(),
     // Fresh nymph objects, not a shared array: stepNymphs mutates py/lane in
     // place, and a shallow spawn copy would write those through to the caller.
     spawn: { nymphs: s.spawn.nymphs.map((n) => ({ ...n })) },
@@ -106,7 +107,18 @@ function stepFiring(s: GameState, input: Input): void {
 
 function stepBullets(s: GameState, dt: number): void {
   for (const b of s.bullets) {
-    b.depth -= BULLET_SPEED * dt
+    // A charge that has already bitten a spike burrows slowly (MOVCHA slows it
+    // PCVELO->PCVELO-4 once CHARCO is nonzero, ALWELG.MAC:2541-2544).
+    const speed = (b.spikeHits ?? 0) > 0 ? SPIKE_BURROW_SPEED : BULLET_SPEED
+    b.depth -= speed * dt
+    // A charge that reaches the far base (depth 0) on a spiked lane has passed
+    // through the whole spike, so it clears the line: LIFECT zeroes LINEY when the
+    // charge is at the base (CHARY >= ILINDDY >= LINEY, ALWELG.MAC:2598-2602). Gated on
+    // the LANE'S spike, not on `spikeHits`, so a fast free charge that jumps clean over
+    // a short spike (one 9/224 step from above-tip to past-base) still clears it — as
+    // the ROM does. Without this the burrow could only ever cut a spike to a positive
+    // stub, never shoot it clean, and resolveWarpSpikeHit crashes for any height > 0.
+    if (b.depth <= 0 && s.spikes[b.lane] > 0) s.spikes[b.lane] = 0
   }
   s.bullets = s.bullets.filter((b) => b.depth > 0)
 }
@@ -366,7 +378,10 @@ function stepEnemyFire(s: GameState, dt: number): void {
   for (const e of s.enemies) {
     if (s.enemyBullets.length >= boltCap) break // per-wave hard cap
     if (!enemyCanShoot(e.kind, s.level)) continue
-    if (e.depth < ENEMY_FIRE_MIN_DEPTH || e.depth >= ENEMY_FIRE_MAX_DEPTH) continue
+    if (e.depth >= ENEMY_FIRE_MAX_DEPTH) continue   // FIREIC's only positional gate (W-021)
+    // …and it will not fire mid-flip: both legs must be on lines (`LDA X,INVAC1 /
+    // AND I,INVMOT / IFEQ`, ALWELG.MAC:2702-2704). W-021, the third half.
+    if (isJumping(e)) continue
     if ((e.fireCooldown ?? 0) > 0) continue
     if (nextFloat(s.fireRng) < enemyFireChance(s.enemyBullets.length)) {
       s.enemyBullets.push({ lane: e.lane, depth: e.depth })
@@ -430,11 +445,13 @@ function cullEnemyBullets(s: GameState): void {
 // before the rim; spikers never reach grab depth.
 const GRABBER_KINDS: ReadonlySet<EnemyKind> = new Set<EnemyKind>(['flipper', 'fuseball', 'pulsar'])
 
+// The CHARGE↔CHARGE range only — a player shot meeting an enemy bolt (CHACHA,
+// `STX CHACHA ;CHARGE CHARGE COLLISION RANGE`, ALWELG.MAC:529). This is NOT the
+// charge↔invader range: that one is ENSIZE, and lives in rules.ts as
+// `enemyHitTolerance` (W-046). The two were conflated behind this one constant.
+// (CHACHA is itself TIMES8(WCHARL).X, not a flat 0.06 — a live divergence, but its
+// own finding, not W-046's. Left as-is deliberately; see the Delivery Findings.)
 const HIT_DEPTH = 0.06
-// A fuseball's wider kill tolerance (story 6-15): ROM hit_tol[4]=6 is wider than
-// the default enemy tolerance (rev-3 §D l.265), so a bullet registers across a
-// larger depth gap — 1.5× the default.
-const FUSEBALL_HIT_DEPTH = 0.09
 
 function awardScore(s: GameState, points: number): void {
   const before = s.score
@@ -463,7 +480,7 @@ function resolveBulletHits(s: GameState): void {
       // refuses the kill outright once it reaches the rim, however it is moving. A
       // fuseball on the rim cannot be shot off it. Other kinds always hit.
       if (e.kind === 'fuseball' && (!e.vulnerable || e.depth >= 1)) continue
-      const tol = e.kind === 'fuseball' ? FUSEBALL_HIT_DEPTH : HIT_DEPTH
+      const tol = enemyHitTolerance(e.kind, s.level)   // ENSIZE, by type and wave (W-046)
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= tol) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
@@ -493,15 +510,25 @@ function activateInvaders(enemies: Enemy[], spawned: Enemy[]): Enemy[] {
 }
 
 function resolveSpikeHits(s: GameState): void {
+  // The shattered flag is transient — lit only on the frame a charge bites
+  // (LINSTA is recomputed every frame in the ROM). Clear it, then re-set the hits.
+  s.spikeShattered.fill(false)
   const dead = new Set<number>()
   s.bullets.forEach((b, bi) => {
     const h = s.spikes[b.lane]
     if (h > 0 && b.depth <= h) {
-      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)
-      dead.add(bi)
+      // LIFECT (ALWELG.MAC:2589-2624): the charge BURROWS into the spike. Cut the
+      // tip to the charge's OWN position (LINEY <- CHARY, :2595-2602) — the spike
+      // recedes ahead of the bullet — flag the line SHATTERED (LINSTA D6, :2604-05),
+      // score 1 (TEMP0=1 via UPSCORE, :2606-2615), and spend the charge only once its
+      // CHARCO collision counter reaches 2 (:2618-2624). MOVCHA has already slowed it.
+      s.spikes[b.lane] = b.depth
+      s.spikeShattered[b.lane] = true
+      b.spikeHits = (b.spikeHits ?? 0) + 1
       awardScore(s, SCORE_SPIKE_SEGMENT)
       // Story 10-11: the authentic spike_shot cue (ROM cc51) plays on the hit.
       s.events.push({ type: 'spike-shot', lane: b.lane })
+      if (b.spikeHits >= SPIKE_BURROW_HITS) dead.add(bi)
     }
   })
   if (dead.size > 0) s.bullets = s.bullets.filter((_, i) => !dead.has(i))
@@ -677,28 +704,40 @@ function zapKillAt(s: GameState, idx: number): void {
 
 // One ACTIVE frame of a running zap window: flash the well, advance the kill
 // cadence, and tick the timer down. The FIRST window ('used-once' charge while
-// active) vaporises one non-tanker per frame (KILENE) until none remain; the
-// SECOND window ('spent') only flashes — its single kill already landed on the
-// press frame. The flash `color` cycles 0..7 like the ROM's QFRAME AND 7,
+// active) runs KILENE's GATED cadence (ALWELG.MAC:3542-3546): it vaporises ONE
+// enemy of ANY kind — tankers included, cargo stripped (EXIKIL clears INVCAR so
+// no split) — only on frames where SUZTIM >= CSUSTA(3) AND SUZTIM is even, i.e.
+// every OTHER frame from SUZTIM 4, at most 8 kills over the 19 active frames.
+// The SECOND window ('spent') only flashes — its single kill already landed on
+// the press frame. The flash `color` cycles 0..7 like the ROM's QFRAME AND 7,
 // derived here from the deterministic timer (the sim has no global frame counter).
 function runZapFrame(s: GameState): void {
   s.events.push({ type: 'superzapper-flash', color: s.player.zapTimer & 7 })
   if (s.player.superzapper === 'used-once') {
-    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')
-    if (idx >= 0) zapKillAt(s, idx)
+    // KILENE gate. SUZTIM is the 1-based active-frame index; zapTimer falls
+    // ZAP_WINDOW_FIRST..1, so SUZTIM is its complement. Kill when SUZTIM >=
+    // CSUSTA(3) AND (SUZTIM AND CSUINT(1)) == 0 (even) — a kill every OTHER frame.
+    // EXIKIL takes the first live invader of ANY kind (no type filter); zapKillAt
+    // scores it and never splits, matching the ROM's carrier-strip declaw.
+    const suztim = ZAP_WINDOW_FIRST + 1 - s.player.zapTimer
+    if (suztim >= 3 && (suztim & 1) === 0) {
+      const idx = nearestRimIndex(s, () => true)
+      if (idx >= 0) zapKillAt(s, idx)
+    }
   }
   s.player.zapTimer -= 1
 }
 
-// Superzapper: once per level, now MODELLED AS A MULTI-FRAME WINDOW (Story 10-2).
-// A press opens an active window that SELF-RUNS to completion — the player does
-// not hold the button, and input is ignored while a window is live.
-//   First press (full):  screen-clear over the longer window (~13 frames). Spares
-//     tankers, wipes all in-flight bolts on the press (10-1), and vaporises one
-//     non-tanker per active frame (KILENE) until none remain. Charge → used-once.
+// Superzapper: once per level, MODELLED AS A MULTI-FRAME WINDOW (Story 10-2,
+// tp1-14). A press opens an active window that SELF-RUNS to completion — the
+// player does not hold the button, and input is ignored while a window is live.
+//   First press (full):  over the 19-frame window (TIMAX[1]), KILENE vaporises up
+//     to 8 enemies of ANY kind on an every-OTHER-frame cadence — tankers included,
+//     cargo stripped so no split (EXIKIL) — and wipes all in-flight bolts on the
+//     press (10-1). Charge → used-once.
 //   Second press (used-once): one kill, the nearest the rim (max depth, ties →
-//     lowest index), on the press frame, then the shorter window (~5 frames)
-//     flashes out. Charge → spent.
+//     lowest index), on the press frame, then the shorter 5-frame window flashes
+//     out. Charge → spent. (Unchanged — already faithful, W-043.)
 //   Spent: inert until the next level rearms it. Targeting is fully deterministic.
 function stepZap(s: GameState, input: Input): void {
   // A live window runs autonomously; fresh input cannot retrigger it mid-flight.
@@ -966,11 +1005,16 @@ function stepPlaying(prev: GameState, s: GameState, input: Input, dt: number): v
   stepPlayer(s, input)
   stepFiring(s, input)
   stepZap(s, input)
-  stepBullets(s, dt)
-  stepEnemies(s, dt)
-  stepEnemyFire(s, dt)        // enemies decide to fire from their moved positions
-  stepEnemyBullets(s, dt)     // bolts (new and existing) ride down their lanes
-  resolveBulletHits(s)
+  // PLAY's order (ALWELG.MAC:869-878): MOVINV, MOVCHA, FIREIC, COLLIS. The invaders move
+  // first; then ONE MOVCHA loop moves ALL charges, ours and theirs (:2530 runs a single
+  // index sweep over both arrays); only then does FIREIC launch new bolts — which is why a
+  // newborn bolt sits still for its birth frame. We used to move player charges BEFORE the
+  // invaders, and fire before moving bolts, so every new bolt started one step down. W-001.
+  stepEnemies(s, dt)          // MOVINV
+  stepBullets(s, dt)          // MOVCHA — player charges…
+  stepEnemyBullets(s, dt)     // MOVCHA — …and invader bolts, after the invaders have moved
+  stepEnemyFire(s, dt)        // FIREIC — new bolts are born still, at the moved invader
+  resolveBulletHits(s)        // COLLIS
   resolveEnemyBulletHits(s)   // player shots can destroy enemy bolts
   resolveSpikeHits(s)
   resolveTankerArrivals(s)

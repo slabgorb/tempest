@@ -25,6 +25,8 @@ export interface Player {
 export interface Bullet {
   lane: number          // integer lane the bullet travels down
   depth: number         // 1 (near, just fired) → 0 (far)
+  spikeHits?: number    // CHARCO — spike bites so far (tp1-15/W-047); the charge burrows,
+                        // slowing and cutting the tip, and is spent at 2. Absent = 0.
 }
 
 // An enemy energy bolt (Story 6-5). Mirrors a Bullet but travels the OTHER way:
@@ -203,6 +205,10 @@ export interface GameState {
   enemyBullets: EnemyBullet[]        // enemy energy bolts in flight (6-5), capped at 4
   enemies: Enemy[]
   spikes: number[]      // per-lane spike height in depth units (0 = none)
+  // Per-lane TRANSIENT flag (tp1-15/DB-014, the ROM's LINSTA D6): a charge cut this
+  // lane's spike THIS frame, so the shell draws the yellow SPARK sparkle at the tip
+  // instead of the white dot. Reset every step; only ever true on a bite frame.
+  spikeShattered: boolean[]
   score: number
   lives: number
   // tp1-13 (S-015): the ROM's BONUS — points pending from an advanced-wave start
@@ -246,6 +252,7 @@ export function initialState(seed: number): GameState {
     enemyBullets: [],
     enemies: [],
     spikes: new Array(tube.laneCount).fill(0),
+    spikeShattered: new Array(tube.laneCount).fill(false),
     score: 0,
     lives: START_LIVES,
     startBonus: 0,        // set at level select; attract boots with no pending bonus (tp1-13)

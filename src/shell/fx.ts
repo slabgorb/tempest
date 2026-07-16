@@ -7,7 +7,8 @@
 import { GameState } from '../core/state'
 import type { GameEvent } from '../core/events'
 import { currentLane, project } from '../core/geometry'
-import { ROM_FPS } from '../core/rules'
+import { ROM_FPS, fuseballScore } from '../core/rules'
+import { FUSE_SCORE_TIERS } from './glyphs'
 
 interface Particle {
   x: number
@@ -62,7 +63,22 @@ export interface PlayerSpark {
   max: number
 }
 
-export type Explosion = EnemyBurst | PlayerSplat | PlayerSpark
+// The fuseball's score pop-up ("FUSE EXPLOSION", V-022): the ROM's FUSEX1/2/3 are
+// not explosion pictures at all — they are the WHITE score number that blooms where
+// a fuseball dies (PITAB FUSEX1,PTFUSX, ALVROM.MAC:2148). `tier` selects
+// 750/500/250; it mirrors what the sim actually awarded, so tp1-21's weighted roll
+// will move the pop-up with it for free. Drawn alongside the normal enemy burst —
+// the ROM shows both.
+export interface FuseScorePop {
+  kind: 'fuse-score'
+  x: number
+  y: number
+  tier: number // 0/1/2 → FUSE_SCORE_TIERS 750/500/250
+  life: number
+  max: number
+}
+
+export type Explosion = EnemyBurst | PlayerSplat | PlayerSpark | FuseScorePop
 
 export interface Fx {
   /**
@@ -103,6 +119,10 @@ const SPLAT_LIFE = SPLAT_FRAMES / ROM_FPS
 const SPLAT_PEAK_RADIUS = 30
 // The invader-collision SPARK1 cross is a brief static cue (DA-007).
 const SPARK_LIFE = 0.25
+// The fuseball score number lingers a beat longer than the burst under it, so the
+// number is still readable once the star has faded (V-022). The ROM cycles it off
+// with the rest of the picture list; we give it its own short life.
+const FUSE_SCORE_LIFE = 0.6
 
 export function createFx(): Fx {
   let parts: Particle[] = []
@@ -150,6 +170,18 @@ export function createFx(): Fx {
   // The invader-collision SPARK1 cross (DA-007) — a distinct static yellow cue.
   function spawnPlayerSpark(p: { x: number; y: number }): void {
     explosions.push({ kind: 'spark', x: p.x, y: p.y, life: SPARK_LIFE, max: SPARK_LIFE })
+  }
+
+  // The fuseball score pop-up (V-022). `depth` picks the tier through the SAME rule
+  // the sim scores with, so the number shown is the number awarded — when tp1-21
+  // replaces the depth band with the ROM's weighted roll, this follows it.
+  function spawnFuseScore(p: { x: number; y: number }, depth: number): void {
+    const tier = FUSE_SCORE_TIERS.indexOf(fuseballScore(depth))
+    if (tier < 0) return // a score the ROM has no picture for — draw nothing
+    explosions.push({
+      kind: 'fuse-score', x: p.x, y: p.y, tier,
+      life: FUSE_SCORE_LIFE, max: FUSE_SCORE_LIFE,
+    })
   }
 
   function detect(s: GameState, _dt: number, events: readonly GameEvent[] = []): void {
@@ -203,7 +235,10 @@ export function createFx(): Fx {
       // burst at the kill site. Event-driven so it fires for superzapper kills
       // too, not just bullet vanishes.
       if (e.type === 'enemy-death') {
-        spawnEnemyBurst(project(tube, e.lane, e.depth))
+        const at = project(tube, e.lane, e.depth)
+        spawnEnemyBurst(at)
+        // …and, for a fuseball only, the ROM's score number on top of it (V-022).
+        if (e.enemyType === 'fuseball') spawnFuseScore(at, e.depth)
       }
 
       // tp1-13 (S-013): a shot-down enemy bolt explodes like any kill — INCCSQ pairs

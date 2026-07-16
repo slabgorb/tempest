@@ -33,8 +33,13 @@ describe('AC — the warp starfield is anchored at the scene origin (world centr
     // The displaced form is `ctx.arc(cx + ux * r, cy + uy * r, …)`; the faithful
     // form places the picture about the origin the scene transform already
     // centres. Assert the offset form is gone and the origin form exists.
-    expect(renderSrc).not.toMatch(/cx\s*\+\s*ux\s*\*\s*r/)
-    expect(renderSrc).toMatch(/arc\(\s*ux\s*\*\s*r\s*,\s*uy\s*\*\s*r/)
+    //
+    // tp1-19 (V-015): the dots are now the ROM's own MSTAR picture, read from
+    // starPictureGlyph, so they read `p.x`/`p.y` instead of the old eyeballed
+    // `ux`/`uy` unit vectors. The anchoring this test guards is unchanged — only
+    // the names are — so the patterns below are matched name-agnostically.
+    expect(renderSrc).not.toMatch(/arc\(\s*cx\s*\+/)
+    expect(renderSrc).toMatch(/arc\(\s*\w+(?:\.\w+)?\s*\*\s*r\s*,\s*\w+(?:\.\w+)?\s*\*\s*r/)
   })
 })
 
