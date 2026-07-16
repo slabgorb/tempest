@@ -40,7 +40,7 @@
 // is in tests/shell/tp1-15.spike-shatter.test.ts; here we pin its core flag.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
-import { stepGame } from '../../src/core/sim'
+import { stepGame, makeEnemy } from '../../src/core/sim'
 import type { Input } from '../../src/core/input'
 import type { GameState } from '../../src/core/state'
 import {
@@ -49,6 +49,7 @@ import {
   WARP_ALONG_SPAN,
   SPIKE_SHORTEN,
   SCORE_SPIKE_SEGMENT,
+  levelParams,
 } from '../../src/core/rules'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
@@ -69,11 +70,16 @@ type WithShatter = { spikeShattered: boolean[] }
 const shattered = (s: GameState): boolean[] | undefined =>
   (s as Partial<WithShatter>).spikeShattered
 
-// A charge that has just reached the tip of a spike on LANE, nothing else in play.
+// A charge that has just reached the tip of a spike on LANE. A decoy flipper is
+// parked far away on the opposite side of the tube so the board is never empty —
+// otherwise checkLevelClear warps the level out from under the two-frame burrow
+// (the `enemies = []` trap). Parked deep (depth 0.05) on a distant lane, it neither
+// reaches the rim nor lane LANE in these few frames, and it fires nothing (below the
+// enemy-fire depth floor), so it cannot touch the charge, the spike, or the score.
 function spikeAndCharge(): GameState {
   const s = playingState(1)
   s.spawn = { nymphs: [] }
-  s.enemies = []
+  s.enemies = [makeEnemy('flipper', 10, 0.05, levelParams(1))]
   s.enemyBullets = []
   s.spikes[LANE] = H
   s.bullets = [{ lane: LANE, depth: H }]

@@ -5,7 +5,7 @@ import { Tube, wrapLane, currentLane, tubeForLevel, warpEyeDest } from './geomet
 import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
-  SCORE_SPIKE_SEGMENT, SPIKE_SHORTEN, TANKER_SPLIT_DEPTH, LevelParams,
+  SCORE_SPIKE_SEGMENT, SPIKE_BURROW_SPEED, SPIKE_BURROW_HITS, TANKER_SPLIT_DEPTH, LevelParams,
   SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
   PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   nymcha, MAX_SELECT_LEVEL,
@@ -31,6 +31,7 @@ function cloneState(s: GameState): GameState {
     enemyBullets: s.enemyBullets.map((b) => ({ ...b })),
     enemies: s.enemies.map((e) => ({ ...e })),
     spikes: s.spikes.slice(),
+    spikeShattered: s.spikeShattered.slice(),
     // Fresh nymph objects, not a shared array: stepNymphs mutates py/lane in
     // place, and a shallow spawn copy would write those through to the caller.
     spawn: { nymphs: s.spawn.nymphs.map((n) => ({ ...n })) },
@@ -106,7 +107,10 @@ function stepFiring(s: GameState, input: Input): void {
 
 function stepBullets(s: GameState, dt: number): void {
   for (const b of s.bullets) {
-    b.depth -= BULLET_SPEED * dt
+    // A charge that has already bitten a spike burrows slowly (MOVCHA slows it
+    // PCVELO->PCVELO-4 once CHARCO is nonzero, ALWELG.MAC:2541-2544).
+    const speed = (b.spikeHits ?? 0) > 0 ? SPIKE_BURROW_SPEED : BULLET_SPEED
+    b.depth -= speed * dt
   }
   s.bullets = s.bullets.filter((b) => b.depth > 0)
 }
@@ -493,15 +497,25 @@ function activateInvaders(enemies: Enemy[], spawned: Enemy[]): Enemy[] {
 }
 
 function resolveSpikeHits(s: GameState): void {
+  // The shattered flag is transient — lit only on the frame a charge bites
+  // (LINSTA is recomputed every frame in the ROM). Clear it, then re-set the hits.
+  s.spikeShattered.fill(false)
   const dead = new Set<number>()
   s.bullets.forEach((b, bi) => {
     const h = s.spikes[b.lane]
     if (h > 0 && b.depth <= h) {
-      s.spikes[b.lane] = Math.max(0, h - SPIKE_SHORTEN)
-      dead.add(bi)
+      // LIFECT (ALWELG.MAC:2589-2624): the charge BURROWS into the spike. Cut the
+      // tip to the charge's OWN position (LINEY <- CHARY, :2595-2602) — the spike
+      // recedes ahead of the bullet — flag the line SHATTERED (LINSTA D6, :2604-05),
+      // score 1 (TEMP0=1 via UPSCORE, :2606-2615), and spend the charge only once its
+      // CHARCO collision counter reaches 2 (:2618-2624). MOVCHA has already slowed it.
+      s.spikes[b.lane] = b.depth
+      s.spikeShattered[b.lane] = true
+      b.spikeHits = (b.spikeHits ?? 0) + 1
       awardScore(s, SCORE_SPIKE_SEGMENT)
       // Story 10-11: the authentic spike_shot cue (ROM cc51) plays on the hit.
       s.events.push({ type: 'spike-shot', lane: b.lane })
+      if (b.spikeHits >= SPIKE_BURROW_HITS) dead.add(bi)
     }
   })
   if (dead.size > 0) s.bullets = s.bullets.filter((_, i) => !dead.has(i))

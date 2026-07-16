@@ -108,7 +108,10 @@ describe('AC3 / B-016 — SCORE_SPIKE_SEGMENT is 1 (ALWELG.MAC:2606-2615, "ADD 1
 
     expect(s.bullets, 'the spike consumes the bullet').toHaveLength(0)
     expect(s.spikes[2]).toBeLessThan(0.6) // the spike was actually trimmed...
-    expect(s.score).toBe(1) // ...and the hit paid exactly ONE point, not three
+    // ...and each bite paid exactly SCORE_SPIKE_SEGMENT, never a multiplied 3-per-hit.
+    // tp1-15/W-047 turned the flash-kill into a two-frame BURROW: a charge now bites
+    // twice (+1 each), so one charge scores exactly 2 — not 1, and never 6.
+    expect(s.score).toBe(2 * SCORE_SPIKE_SEGMENT)
   })
 })
 

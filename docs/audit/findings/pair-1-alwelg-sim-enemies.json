@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 981,
+      "line": 995,
       "verbatim": "  stepBullets(s, dt)"
     },
     "claim": "PLAY (ALWELG:869-878) runs MOVCUR, FIREPC, PROSUZ, MOVNYM, MOVINV, MOVCHA, FIREIC, COLLIS, PROEXP, ANALYZ. Our stepPlaying (sim.ts:630-644) runs stepPlayer, stepFiring, stepZap, stepBullets, stepEnemies, stepEnemyFire, stepEnemyBullets, resolve*. The first three slots match exactly (cursor, player fire, superzapper). After that: (a) we move player charges (stepBullets, line 633) BEFORE enemies; the arcade moves ALL charges (player and enemy, one MOVCHA loop) AFTER MOVINV, so an invader is at its new position when the bullet advances through it; (b) the arcade fires enemy charges (FIREIC) AFTER MOVCHA, so a newly launched enemy bolt sits still for its birth frame; we call stepEnemyFire then stepEnemyBullets, so our new bolt already moves one step on the frame it is born; (c) the arcade has no spawn step here at all — MOVNYM occupies that slot (see W-002).",
@@ -193,7 +193,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 572,
+      "line": 586,
       "verbatim": "    (e) => GRABBER_KINDS.has(e.kind) && e.depth >= PLAYER_RIM_DEPTH && e.lane === pl"
     },
     "claim": "JKITST (1980-1993) tests INVAC1 for IFPL — the INVMOT ($80) bit clear, i.e. the invader is on its lines and NOT jumping — before it will compare INVAL1/INVAL2 against CURSL1/CURSL2 and kill the cursor. A jumping invader passing over the player's lane does not kill. Our resolvePlayerHits excludes flippers with `e.flipping` (sim.ts:390) for exactly this reason.",
@@ -291,7 +291,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 815,
+      "line": 821,
       "verbatim": "    fuseballSpeed: 2 * flipperSpeed,   // spd_fuzzball = 2 × spd_flipper (fastest enemy)"
     },
     "claim": "CONTOUR (539-544) loads WINVIL, does one ASL/ROL through the 16-bit pair and stores it as WFUSIL/WFUSIH — a literal doubling of the invader speed. JFUSEUP (2095-2104) adds WFUSIL/WFUSIH to the fuseball's position. Our fuseballSpeed = 2 * flipperSpeed.",
@@ -308,7 +308,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 291,
+      "line": 297,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "TCHARFR (582-585) is TA,1,20.,80.,-3 then T1,21.,64.,20. then T1,65.,99.,10. — wave 1 = 80 frames, decreasing 3 per wave to wave 20 = 23, then 20 for waves 21-64, then 10 for 65+. WCHARFR is reloaded into the invader's INVACT on every shot (2719-2720). Our enemyFireHoldoffFrames returns 80 at L1, 80-3*(level-1) for L2..L20 (=23 at L20), 20 for L21-64, 10 for L65+ — identical, and in the same units: ROM GAME frames, converted to seconds only at the call site (sim.ts:223), where the divisor is wrong.",
@@ -325,7 +325,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 277,
+      "line": 283,
       "verbatim": "const ENEMY_FIRE_CHANCE: readonly number[] = [1.0, 0.125, 0.0625, 0.023, 0.004]"
     },
     "claim": "FIREIC (2705-2708) draws RANDOM and fires when RANDOM >= CHANCE[ESHCOU], where ESHCOU is the number of enemy shots already on screen. The thresholds 0, $E0, $F0, $FA, $FF give firing probabilities of 256/256 = 1.0, 32/256 = 0.125, 16/256 = 0.0625, 6/256 = 0.0234, 1/256 = 0.0039. Our ENEMY_FIRE_CHANCE is [1.0, 0.125, 0.0625, 0.023, 0.004], indexed the same way (sim.ts:229).",
@@ -342,7 +342,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 269,
+      "line": 275,
       "verbatim": "    case 'pulsar':  return level >= 60"
     },
     "claim": "FIREIC gates on the INVFIR ($40) bit of INVAC2 (2696-2698). TNEWI2 (1485-1489) sets that bit per type: flipper ZFIRYE, pulsar ZFIRNO, tanker ZFIRYE, spiker(TRALER) ZFIRYE, fuse ZFIRNO. NEWPUL (1434-1438) then ORs WPULFI into the pulsar's byte, and WPULFI comes from TWFULF/TWPULF — which has NO record below wave 60 (so it resolves to 0 via the TE default) and ZFIRYE for waves 60-99. Our enemyCanShoot returns true for flipper/tanker/spiker, level >= 60 for pulsar, false for fuseball.",
@@ -401,7 +401,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 246,
+      "line": 252,
       "verbatim": "export const ENEMY_FIRE_MIN_DEPTH = 0x30 / 0x100   // ≈ 0.188 of the well"
     },
     "claim": "FIREIC's only positional gate is INVAY >= ILINLIY+$20 = $30 (2694-2695, 'INVADER LOW ENOUGH?'), i.e. the invader must be at least $20 units BELOW the rim. In our depth convention (depth = ($F0 - Y)/224) that is depth <= (240-48)/224 = 0.857. There is NO minimum-distance-from-the-far-end check: an invader that hatched one frame ago at the bottom of the well may fire immediately if its INVACT timer is up. We enforce BOTH an invented far-end floor (ENEMY_FIRE_MIN_DEPTH = 0.188, sim.ts:227) and a near cap of 0.9 rather than 0.857. FIREIC also refuses to fire while the invader is mid-jump (INVMOT set, 2702-2704) — we have no such rule.",
@@ -609,7 +609,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 324,
+      "line": 328,
       "verbatim": "    makeEnemy(t.contains, wrapLane(tube, t.lane + 1), depth, params),"
     },
     "claim": "KILINV computes the first child's line as INVAL1 - 1 (2331-2333) and the second's as that value + 2 (2352-2355), both masked to 0F — so the two children land on the lanes either side of the dead carrier and nothing is left on its own lane. Our splitTanker emits children on wrapLane(lane-1) and wrapLane(lane+1).",
@@ -705,7 +705,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 717,
+      "line": 723,
       "verbatim": "  { t: 'TZ', start: 17, end: 32, vs: [5, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 4, 2] },"
     },
     "claim": "WPULMX's first record starts at wave 17 (663) and WPULMI's at wave 17 (659); with no earlier record the CONTOUR scan falls through to TE and yields 0, so the pulsar max is 0 below wave 17. WFUSMX's first record is T1,11.,16.,1 (672) and WFUSMI's is the same (667), so the fuseball max is 0 below wave 11. Since tp1-8 the introduction is these WPULMX/WFUSMX max tables that NYMCHA reads (pulsar max 0 below wave 17, fuse max 0 below wave 11) — the old `level >= 17` / `level >= 11` weighted-roll gates are gone; the introduction waves still match the ROM exactly.",
@@ -861,7 +861,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 79,
+      "line": 85,
       "verbatim": "export const MAX_BULLETS = 8"
     },
     "claim": "NPCHARG = 8 player charge slots (NICHARG = 4 more for enemy shots). FIREPC (2661-2681) scans slots NPCHARG-1..0 for a vacancy and simply does nothing if all eight are busy. Our MAX_BULLETS = 8, enforced the same way in stepFiring (sim.ts:96).",
@@ -899,7 +899,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 433,
+      "line": 437,
       "verbatim": "const HIT_DEPTH = 0.06"
     },
     "claim": "COLCHK compares |charge Y - invader Y| against ENSIZE indexed by the invader's TYPE (2963-2964). ENSIZE for the fuseball is set literally to (PCVELO+3)/2 = 6 (545-546). For flippers, tankers and pulsars it is computed by TIMES8 (570-577) as ((255 - hi) + 13) >> 1 where hi is the high byte of speed*8 — which evaluates to 7 at waves 1-16 and 8 at waves 33+. In our depth units (224 along-units = depth 1.0) that is 0.031-0.036 for a flipper and 0.027 for a fuseball. Our HIT_DEPTH is 0.06 (13.4 units, ~1.9x too generous) and our FUSEBALL_HIT_DEPTH is 0.09 (20 units, ~3.3x too generous). Our comment at sim.ts:288-291 asserts the ROM's fuseball tolerance is WIDER than the default; the source shows it is NARROWER (6 vs 7).",
@@ -926,7 +926,8 @@
     "reasoning": "Different mechanism, different feel (the arcade's bullet burrows into the spike), and different economy: 3 points per shot vs ~2, and 0.08 depth per shot vs ~0.045. Not a headline issue, but SPIKE_SHORTEN is nearly 2x the ROM's, which — with W-039's 0.75 cap — is why our spikes are so much easier to clear. [REFUTATION] Re-opened LIFECT (ALWELG.MAC:2589-2624) and MOVCHA (2530-2554) verbatim, including the exact cited line 2602 'STA Y,LINEY ;YES. UPDATE LINE ENEMY TO'. Decoded the slow-down: MOVCHA's 'ADC I,PCVELO / LDY X,CHARCO / IFNE / SEC / SBC I,4' means the charge advances by PCVELO=9 normally but by PCVELO-4=5 once CHARCO is nonzero (i.e., after its first spike contact) — matches claim exactly. Decoded LIFECT: it fires once per frame while the charge's Y is at/past the line's tip (CMP Y,LINEY / IFCS), stores the charge's own Y into LINEY (the general-case path; a narrow edge case at CHARY>=ILINDDY zeroes it instead, immaterial here), increments CHARCO, awards exactly 1 point via UPSCORE (TEMP0=1, TEMP1=TEMP2=0), then deactivates the charge only once CHARCO reaches 2 (2618-2624, 'CMP I,2 / IFCS'). Traced through a concrete sequence: frame with CHARCO 0->1 does not deactivate; the charge then advances by only 5 (slowed) and immediately re-triggers LIFECT next frame (since LINEY was just set equal to the prior CHARY and the charge moved forward), CHARCO 1->2, deactivates same frame. So exactly two 1-point hits per bullet, confirmed, and the finding's own '~2 points'/'~10 units' hedging is appropriately cautious rather than falsely precise. Checked our side at sim.ts:333-343 (resolveSpikeHits) verbatim: instant bullet kill on first contact, flat SPIKE_SHORTEN=0.08 removed, flat SCORE_SPIKE_SEGMENT=3 awarded — exactly as claimed, a different mechanism (single flash-kill vs multi-frame burrow) with different economy (3 vs ~2 points). Holds.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-15"
   },
   {
     "id": "W-048",

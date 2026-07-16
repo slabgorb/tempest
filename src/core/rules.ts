@@ -76,6 +76,12 @@ export const SPIN_SENSITIVITY = 0.15
 // same number... if a frame is 1/60 s. The bad base did not invent a divergence here.
 // It manufactured an AGREEMENT, and an agreement is the one thing nobody re-checks.
 export const BULLET_SPEED = (9 * ROM_FPS) / WARP_ALONG_SPAN  // 1.143 depth units/sec
+// A charge that has bitten a spike SLOWS to PCVELO-4 = 5 along-units/frame while it
+// burrows (MOVCHA: `LDY X,CHARCO / IFNE / SEC / SBC I,4`, ALWELG.MAC:2541-2544).
+export const SPIKE_BURROW_SPEED = (5 * ROM_FPS) / WARP_ALONG_SPAN  // 0.635 depth units/sec
+// A charge eats a spike over exactly two hit-frames, deactivating once its CHARCO
+// collision counter reaches 2 (LIFECT: `CMP I,2 / IFCS`, ALWELG.MAC:2618-2624).
+export const SPIKE_BURROW_HITS = 2
 export const MAX_BULLETS = 8
 // The grab line. It is not a threshold the ROM tunes — it is the RIM itself, and the
 // reason no byte could ever be found for it is that the kill check does not test depth.
@@ -133,7 +139,7 @@ export const SCORE_SPIKE_SEGMENT = 1    // LIFECT signals UPSCORE with TEMP0=1 (
 // wave instead of costing a life outright — reuniting the cap with the turnaround
 // at the ROM's single $20 (findings W-039 / B-006).
 export const SPIKE_MAX_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0.929, the ROM $20
-export const SPIKE_SHORTEN = 0.08       // depth a single bullet trims off a spike
+export const SPIKE_SHORTEN = 0.08       // SUPERSEDED by the tp1-15 burrow (W-047); the old flat trim, kept as the value the burrow test refutes
 export const EXTRA_LIFE_INTERVAL = 10000
 
 // ─── THE ADVANCED-START SKILL-STEP BONUS (tp1-13, S-015) ─────────────────────
