@@ -22,8 +22,11 @@ describe('spikes', () => {
     s.bullets = [{ lane: 2, depth: 0.5 }]
     const out = stepGame(s, NEUTRAL, 1 / 60)
     expect(out.spikes[2]).toBeLessThan(0.5)
-    expect(out.bullets).toHaveLength(0)
     expect(out.score).toBe(SCORE_SPIKE_SEGMENT)
+    // The charge's full lifecycle — it BURROWS (survives the first bite, cuts the
+    // tip to its own position, spends after two bites) — is pinned in
+    // tp1-15.spike-burrow.test.ts. This sibling no longer asserts the old
+    // flash-kill (`out.bullets` empty after one frame): tp1-15 (W-047) replaced it.
   })
 
   it('leaves spikes in other lanes alone', () => {

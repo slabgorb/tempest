@@ -208,7 +208,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 315,
+      "line": 337,
       "verbatim": "    const a = project(s.tube, lane, 0)"
     },
     "claim": "An 'enemy line' (spike) runs from the FAR end of its lane to its tip. FIXSTU (ALDISP.MAC:3100-3128) builds the far endpoint by averaging the screen coords of far rim points i and i+1 (LIFSXL[X] + LIFSXL[Y], Y = (X+1) & 0x0F, then >>1) — i.e. the lane centre at the far ring. TIPACT (ALDISP.MAC:3160-3186) then takes PYL = LINEY[i] (the spike's height, 0 = inactive, ALDISP.MAC:3162-3163), sets PXL/PZL = LINEXM[i]/LINEZM[i] (the pre-computed mid-point between grid lines i and i+1, built at ALDISP.MAC:2534-2552), projects it with WORSCR, and FCONNECs a vector from the far point to it. We do exactly this: a = project(tube, lane, 0) (the far lane-centre) to b = project(tube, lane, h) (render.ts:256-260). Same two endpoints, same lane-centre convention, same 'grows from the far end toward the rim' direction — and, per DB-005, through the same projection curve.",
@@ -225,7 +225,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 310,
+      "line": 332,
       "verbatim": "  ctx.strokeStyle = '#39ff14'"
     },
     "claim": "DSPENL emits ENLFIX in REVERSE byte order (ALDISP.MAC:3024-3031 counts X down from 3), so VGLIST receives 05, 68, 40, 80. VGSTAT stores the colour index as the LSB and 0x60|flags as the MSB (ALVGUT.MAC:226-230), so 05/68 is 'STAT colour = 5'. Colour 5 = GREEN (ALCOMN.MAC: GREEN=5); the source's own comment at ALDISP.MAC:3095 names it CSTATGREEN. 40/80 is the CNTR opcode (VGCNTR, ALVGUT.MAC:239-240). The tip: when the line is not shattered, WHITIP writes 'STAT colour = WHITE' then a JSRL to the DOT picture (ALDISP.MAC:3208-3219, `LDA I,WHITE ;COLOR (SET STAT WHITE)`). Ours: green line #39ff14 (render.ts:251) with a single white dot at b (render.ts:263-266). Match.",
@@ -244,7 +244,8 @@
     "claim": "LINSTA[i] carries a per-line status byte (ALCOMN.MAC:910: 'D7=1:NEW NEAR PT.; D6=1=SHATTERED'). When bit 6 is set, TIPACT does NOT draw the white dot — it calls CASCAL to derive a depth-appropriate VG scale for the tip, then splices in a JSRL to one of the SPARKLE pictures chosen at random: `LDA RANDOM / AND I,2 / CLC / ADC I,PTSPAR` (ALDISP.MAC:3193-3206), i.e. PTSPAR or PTSPAR+2. So a spike being shot shows a scaled, flickering sparkle at its tip for that frame. Our spikes have no shattered state at all — s.spikes[lane] is a bare number and the tip is unconditionally a 2px white dot (render.ts:263-266).",
     "reasoning": "Purely cosmetic, but it is the visual feedback that tells the player a spike is taking damage — without it, shooting a spike reads as nothing happening until it shortens. Needs a transient per-lane flag in GameState (set on spike hit, cleared on the next step), which is why it is not a shell-only change.",
     "recommendation": "fix",
-    "size": "s"
+    "size": "s",
+    "remediated_by": "tp1-15"
   },
   {
     "id": "DB-015",

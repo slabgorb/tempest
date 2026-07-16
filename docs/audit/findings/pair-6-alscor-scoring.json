@@ -10,7 +10,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 118,
+      "line": 124,
       "verbatim": "// Board depth (MAX_HIGH_SCORES) now lives in @arcade/shared/highscore — the"
     },
     "claim": "The 1981 board keeps exactly 8 ranked entries (NHISCO=8 sizes INITAL to 3*8=24 bytes and HSCORL/M/H to 8 slots throughout ALSCOR.MAC's HISCHK/INIINI). Our shared high-score module keeps 10, and its own doc-comment calls that \"the classic 10-deep arcade ladder\" — Tempest's classic ladder is 8-deep, not 10.",
@@ -44,7 +44,7 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 179,
+      "line": 181,
       "verbatim": "export interface HighScoreEntryState {"
     },
     "claim": "ITIMHI=60 (ALSCOR.MAC:36) is HEX in this assembler — decimal literals carry a trailing period ('SECOND\t=20.', ALCOMN.MAC:87; 'CMP I,10.', ALWELG.MAC:571), cf. B-021 — so ITIMHI = 0x60 = 96, not 60. It seeds TIMHIS (INTLDR, ALSCOR.MAC:745-746), which GETINI decrements once per 32 GAME frames (`LDA QFRAME / AND I,1F / IFEQ ... DEC TIMHIS`, ALSCOR.MAC:768-772) and aborts entry (CNOTFOU) at zero: 96 * 32 = 3072 game frames, which at the ROM's 256/9 = 28.44 fps (FR-001) is ~108 seconds before an idle player's initials entry is auto-cancelled. `HighScoreEntryState` (src/core/state.ts:106-108) carries only `{ initials: string }` — no countdown field anywhere in state.ts or sim.ts — so our entry screen waits indefinitely for input.",
@@ -63,7 +63,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 83,
+      "line": 84,
       "verbatim": "  const initials = stepNameEntry(s.entry.initials, key, MAX_INITIALS)"
     },
     "claim": "The ROM's initial-selection cursor (GINICO/GETINI, ALSCOR.MAC:781-789) cycles a value 0-26 where 0-25 map through the ASCVG table to 'A'-'Z' and 26 (CBLANK) is an explicit blank/space glyph — 27 selectable symbols per character slot, and unfilled/default initials are seeded as blank (`LDA I,CBLANK` in HISCHK, ALSCOR.MAC:629-631). Our `stepNameEntry` regex `/^[a-zA-Z]$/` accepts only the 26 letters; there is no blank/space keystroke, and an unfilled slot is simply absent from the string rather than a stored blank character.",
@@ -82,7 +82,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 54,
+      "line": 55,
       "verbatim": "const MAX_INITIALS = 3"
     },
     "claim": "The ROM reserves exactly 3 initial-bytes per ranked entry (3*NHISCO where NHISCO=8), and our entry buffer caps at MAX_INITIALS=3 — the classic 3-character arcade initials convention is preserved exactly."
@@ -98,7 +98,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 741,
+      "line": 769,
       "verbatim": "  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)"
     },
     "claim": "RQRDSP (ALSCOR.MAC:1074-1096) walks MSGTAB = {MRATE,MPRMOV,MPRFIR / MNOVIC,MEXPER,MLEVEL / MHOLE,MBONUS} (lines 1227-1229) to build the \"RATE YOURSELF\" / RANK screen with NOVICE and EXPERT flanking the level chooser. Our drawSelect() (render.ts:697-711) renders the same shape: 'RATE YOURSELF' + 'RANK' header (700-701), 'SELECT START LEVEL' chooser, 'NOVICE' at W*0.17 and 'EXPERT' at W*0.83 (708-709) flanking it — the concept and message set survive even though the presentation differs (see SC-011)."
@@ -114,7 +114,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 739,
+      "line": 767,
       "verbatim": "  // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED."
     },
     "claim": "MSGS (ALSCOR.MAC:423-467) derives each message's actual display color from a per-message byte in MSGLBS (`LDA X,MSGLBS ... LSR*4 ... JSR NWCOLO`), but MSGLBS itself is only declared `.GLOBL` here — its data table is defined in a different module, not in ALSCOR.MAC, ALEARO.MAC, or ALCOMN.MAC. Our render.ts comment asserts a specific split (\"RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED\") that this pair's primary source cannot confirm or refute.",
@@ -132,7 +132,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 137,
+      "line": 143,
       "verbatim": "export const EXTRA_LIFE_INTERVAL = 10000"
     },
     "claim": "BLIFIN is a 1-byte RAM variable (not a compile-time constant) that BOLOUT displays via 3-digit BCD output captioned \"OUTPUT 10K & 20K\" (ALSCOR.MAC:966-979) — i.e. its value is operator-set via the cabinet's game-play options, with no fixed default anywhere in ALSCOR.MAC/ALCOMN.MAC. `EXTRA_LIFE_INTERVAL = 10000` in rules.ts is a single, permanent, non-configurable value.",
@@ -150,7 +150,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 118,
+      "line": 124,
       "verbatim": "// Board depth (MAX_HIGH_SCORES) now lives in @arcade/shared/highscore — the"
     },
     "claim": "INIINI (ALSCOR.MAC:513-536) seeds all 8 initial-triples from SCOINI's ASCVG string (\"HEB PJM LDS TFD HPM RRR SED DJE\") and seeds every HSCORL/M/H byte to 1 (lines 546-550) whenever the EAROM reads as blank/corrupt — a freshly-initialized board is never actually empty, it has 8 placeholder rows. Our `load()` returns `[]` whenever localStorage has no entry, so a fresh browser board has zero rows until a real qualifying score is inserted.",
@@ -169,7 +169,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 120,
+      "line": 126,
       "verbatim": "export const SCORE_FLIPPER = 150"
     },
     "claim": "ALSCOR.MAC/ALEARO.MAC/ALCOMN.MAC contain no table of per-enemy-type point values and no fuseball-depth-band or spike-shortening point logic (grepped for FLIP/TANK/SPIK/PULS/FUSE and every plausible point literal — none). Even bonus-score computation is external: BONSCO is only declared `.GLOBL` and invoked (`JSR BONSCO` at BODSPL, ALSCOR.MAC:1250-1251) — ALSCOR.MAC receives a computed score and displays/accumulates/persists it; it does not decide per-kill values. Our SCORE_FLIPPER/SCORE_TANKER/SCORE_SPIKER/SCORE_PULSAR/SCORE_FUSEBALL_BASE+STEP/SCORE_SPIKE_SEGMENT constants (rules.ts:21-27) all live in the awarding side, which this pair's primary source does not cover.",
@@ -187,7 +187,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 744,
+      "line": 772,
       "verbatim": "    ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,"
     },
     "claim": "XPOTAB holds 5 screen X-offsets (ALSCOR.MAC:1226); RQRDSP's inner loop (`LDX I,4 / STX INDEX1 ... MIEND`, ALSCOR.MAC:1133-1179) draws LEVEL#, BONUS points and HOLE for 5 candidate levels side-by-side, scrolling the window left/right as the spinner (CURSL1) approaches LEFSID/RITSID. Our drawSelect() renders exactly one level at a time — `s.select.selectedLevel` — with no adjacent-candidates preview.",

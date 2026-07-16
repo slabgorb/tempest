@@ -304,9 +304,31 @@ export function drawTube(
   }
 }
 
+// SPARK1 / SPARK2 (ALVROM.MAC:672-697): the two yellow four-dot sparkles a SHATTERED
+// spike tip shows — four dots on the AXES (SPARK1) or the DIAGONALS (SPARK2) at ±0x10,
+// alternated at random to twinkle. The projected ±16 radius and twinkle rate are
+// render tunables (the ROM's CASCAL depth-scales them); the topology is the fidelity.
+const SPIKE_SPARK_AXES: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+const SPIKE_SPARK_DIAGONALS: ReadonlyArray<readonly [number, number]> = [[1, 1], [1, -1], [-1, 1], [-1, -1]]
+const SPIKE_SPARK_RADIUS = 3.5    // px — the projected ±0x10 sparkle offset
+const SPIKE_SPARK_TWINKLE_HZ = 15 // SPARK1<->SPARK2 alternation
+
+function drawSpikeSparkle(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  const dots =
+    Math.floor(renderTime * SPIKE_SPARK_TWINKLE_HZ) % 2 === 0 ? SPIKE_SPARK_AXES : SPIKE_SPARK_DIAGONALS
+  ctx.fillStyle = '#ffe600'
+  ctx.shadowColor = '#ffe600'
+  ctx.shadowBlur = 8
+  for (const [dx, dy] of dots) {
+    ctx.beginPath()
+    ctx.arc(x + dx * SPIKE_SPARK_RADIUS, y + dy * SPIKE_SPARK_RADIUS, 1.8, 0, Math.PI * 2)
+    ctx.fill()
+  }
+}
+
 export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
-  // Spike line is GREEN in the authentic ROM (Story 10-7); the white tip dot below
-  // is the ROM JADOT cap and stays white.
+  // Spike line is GREEN in the authentic ROM (Story 10-7); the tip dot below is the
+  // ROM JADOT white cap — replaced by the yellow SPARK sparkle while it is shattered.
   ctx.strokeStyle = '#39ff14'
   ctx.shadowColor = '#39ff14'
   for (let lane = 0; lane < s.spikes.length; lane++) {
@@ -317,12 +339,18 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
     ctx.lineWidth = 2
     ctx.shadowBlur = 10
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
-    // Single white tip dot (Story 6-8): authentic ROM cap (JADOT: VCTR 0,0) —
-    // one white point, no flicker. Supersedes the earlier purple barb.
-    ctx.fillStyle = '#ffffff'
-    ctx.shadowColor = '#ffffff'
-    ctx.shadowBlur = 8
-    ctx.beginPath(); ctx.arc(b.x, b.y, 2.0, 0, Math.PI * 2); ctx.fill()
+    if (s.spikeShattered[lane]) {
+      // A charge is biting this spike this frame (LINSTA D6): the ROM swaps the white
+      // cap for a random SPARK1/SPARK2 sparkle (TIPACT, ALDISP.MAC:3188-3210).
+      drawSpikeSparkle(ctx, b.x, b.y)
+    } else {
+      // Single white tip dot (Story 6-8): authentic ROM cap (JADOT: VCTR 0,0) —
+      // one white point, no flicker. Supersedes the earlier purple barb.
+      ctx.fillStyle = '#ffffff'
+      ctx.shadowColor = '#ffffff'
+      ctx.shadowBlur = 8
+      ctx.beginPath(); ctx.arc(b.x, b.y, 2.0, 0, Math.PI * 2); ctx.fill()
+    }
   }
 }
 
