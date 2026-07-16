@@ -67,7 +67,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 211,
+      "line": 218,
       "verbatim": "export const WARP_AVOID_SPIKES_SECONDS = 0.5"
     },
     "claim": "'SECOND\t=20.\t\t\t;FRAMES/SECOND' (ALCOMN.MAC:87, redeclared identically at ALEXEC.MAC:312) sits under the header ';TIMING FOR PAUSE STATE' (ALCOMN.MAC:85) and is used in exactly one role: as the reload unit for countdown timers. Every use is a pause load - 'LDA I,4*SECOND\t\t;LONGER PAUSE' (ALEXEC.MAC:330), 2*SECOND (333, 402), 1*SECOND (355), 0*SECOND (387), 'LDA I,SECOND\t\t;RESTART FRACTIONAL SECONDS TIMER' (ALWELG.MAC:219) - plus QUASEC = SECOND/4 (ALCOMN.MAC:88), used once, at 'LDA I,6*QUASEC\t\t;WARNING DELAY' (ALWELG.MAC:3164). It appears NOWHERE in MAINLN, ALHARD's IRQ, or any speed table: it never gates the loop and cannot set the frame rate. It is the author's ASSUMED frames-per-second for authoring pause durations, and it is inconsistent with his own ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581) and with the machine (FR-001). The one place it reaches our code is WARP_AVOID_SPIKES_SECONDS: 6*QUASEC = 30 frames, which at the real 28.44 fps is 1.055 s - not the 1.5 s WD-009 derived from SECOND=20, and not the 0.5 s we ship (which is 30/60).",
@@ -87,7 +87,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 284,
+      "line": 291,
       "verbatim": "export function enemyFireHoldoffFrames(level: number): number {"
     },
     "claim": "The skill-contour table header reads ';FRAMES UNTIL INVADER CAN FIRE (28 PER SECOND)' (ALWELG.MAC:581), immediately above TCHARFR (582) whose first record is '\t.BYTE TA,1,20.,80.,-3' (583). 28 per second is 256/9 = 28.44 rounded - an independent, in-source corroboration of the loop cadence derived in FR-001, written by the author beside the very numbers he was tuning. Our enemyFireHoldoffFrames (rules.ts:97-102) reproduces that table exactly: 80 at wave 1, -3/wave to 23 at wave 20, 20 for 21-64, 10 for 65+.",
@@ -279,7 +279,8 @@
     "reasoning": "B-001 (BOOK_WAS_WRONG, 19 not 13) and B-019/W-043 (the every-other-frame KILENE cadence) all hold - they compare frame counts and are base-independent. Only B-001's parenthetical '~0.317s at 60Hz' and B-002's implicit endorsement of the 5-frame window as a matching DURATION are wrong. Recorded because the superzapper is the clearest case where the fix is BOTH a frame count (13 -> 19, plus the every-other-frame kill gate) AND the timebase: applying only the frame-count fix would still leave the zap a third of its arcade length. [REFUTATION] ALWELG.MAC:3539 verbatim matches exactly. Confirmed CSUSTA=3 (line 3492) and CSUINT=1 (line 3491), both shipped (INISUZ/PROSUZ/KILENE, all in ALWELG.MAC, not a decoy module). Computed TIMAX by hand: byte[1]=CSUSTA+8*(CSUINT+1)=3+16=19, byte[2]=CSUSTA+1*(CSUINT+1)=3+2=5 — matches the claimed {0,19,5,0,0} exactly. Traced PROSUZ (lines 3499-3537): SUZCNT increments 0->1 on first press (indexing TIMAX[1]=19) and 1->2 on second press (indexing TIMAX[2]=5), confirmed via 'CMP X,TIMAX' indexed addressing consistent with this file's addressing idiom used throughout (e.g. 'LDA X,INVAY'). PROSUZ is called once per game frame via PLAY's mainline, itself gated at 28.444fps — so 19 frames = 19/28.444 = 0.668s and 5 frames = 5/28.444 = 0.176s, both match the claim precisely. Verified our code: ZAP_WINDOW_FIRST=13, ZAP_WINDOW_SECOND=5 (rules.ts:35-36), and runZapFrame/stepZap (sim.ts:473-531) are called exactly once per stepGame call, itself ticked at the fixed STEP=1/60 (loop.ts:9) — so ours run 13/60=0.217s and 5/60=0.083s. Ratios 0.668/0.217=3.08x and 0.176/0.083=2.12x match the claimed '3.1x' and '2.1x' almost exactly. [CORRECTION] None.",
     "recommendation": "fix",
     "size": "s",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-14"
   },
   {
     "id": "FR-015",

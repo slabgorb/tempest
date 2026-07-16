@@ -677,28 +677,40 @@ function zapKillAt(s: GameState, idx: number): void {
 
 // One ACTIVE frame of a running zap window: flash the well, advance the kill
 // cadence, and tick the timer down. The FIRST window ('used-once' charge while
-// active) vaporises one non-tanker per frame (KILENE) until none remain; the
-// SECOND window ('spent') only flashes — its single kill already landed on the
-// press frame. The flash `color` cycles 0..7 like the ROM's QFRAME AND 7,
+// active) runs KILENE's GATED cadence (ALWELG.MAC:3542-3546): it vaporises ONE
+// enemy of ANY kind — tankers included, cargo stripped (EXIKIL clears INVCAR so
+// no split) — only on frames where SUZTIM >= CSUSTA(3) AND SUZTIM is even, i.e.
+// every OTHER frame from SUZTIM 4, at most 8 kills over the 19 active frames.
+// The SECOND window ('spent') only flashes — its single kill already landed on
+// the press frame. The flash `color` cycles 0..7 like the ROM's QFRAME AND 7,
 // derived here from the deterministic timer (the sim has no global frame counter).
 function runZapFrame(s: GameState): void {
   s.events.push({ type: 'superzapper-flash', color: s.player.zapTimer & 7 })
   if (s.player.superzapper === 'used-once') {
-    const idx = nearestRimIndex(s, (e) => e.kind !== 'tanker')
-    if (idx >= 0) zapKillAt(s, idx)
+    // KILENE gate. SUZTIM is the 1-based active-frame index; zapTimer falls
+    // ZAP_WINDOW_FIRST..1, so SUZTIM is its complement. Kill when SUZTIM >=
+    // CSUSTA(3) AND (SUZTIM AND CSUINT(1)) == 0 (even) — a kill every OTHER frame.
+    // EXIKIL takes the first live invader of ANY kind (no type filter); zapKillAt
+    // scores it and never splits, matching the ROM's carrier-strip declaw.
+    const suztim = ZAP_WINDOW_FIRST + 1 - s.player.zapTimer
+    if (suztim >= 3 && (suztim & 1) === 0) {
+      const idx = nearestRimIndex(s, () => true)
+      if (idx >= 0) zapKillAt(s, idx)
+    }
   }
   s.player.zapTimer -= 1
 }
 
-// Superzapper: once per level, now MODELLED AS A MULTI-FRAME WINDOW (Story 10-2).
-// A press opens an active window that SELF-RUNS to completion — the player does
-// not hold the button, and input is ignored while a window is live.
-//   First press (full):  screen-clear over the longer window (~13 frames). Spares
-//     tankers, wipes all in-flight bolts on the press (10-1), and vaporises one
-//     non-tanker per active frame (KILENE) until none remain. Charge → used-once.
+// Superzapper: once per level, MODELLED AS A MULTI-FRAME WINDOW (Story 10-2,
+// tp1-14). A press opens an active window that SELF-RUNS to completion — the
+// player does not hold the button, and input is ignored while a window is live.
+//   First press (full):  over the 19-frame window (TIMAX[1]), KILENE vaporises up
+//     to 8 enemies of ANY kind on an every-OTHER-frame cadence — tankers included,
+//     cargo stripped so no split (EXIKIL) — and wipes all in-flight bolts on the
+//     press (10-1). Charge → used-once.
 //   Second press (used-once): one kill, the nearest the rim (max depth, ties →
-//     lowest index), on the press frame, then the shorter window (~5 frames)
-//     flashes out. Charge → spent.
+//     lowest index), on the press frame, then the shorter 5-frame window flashes
+//     out. Charge → spent. (Unchanged — already faithful, W-043.)
 //   Spent: inert until the next level rearms it. Targeting is fully deterministic.
 function stepZap(s: GameState, input: Input): void {
   // A live window runs autonomously; fresh input cannot retrigger it mid-flight.
