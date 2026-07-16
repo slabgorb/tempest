@@ -312,6 +312,47 @@ describe('AC-1 logoGlyph — the ROM TEMLIT alphabet (V-017, ALVROM.MAC:1297)', 
     expectSameShape(allPoints(logoGlyph()), traceLogo().flatMap((l) => l.pts), 'logoGlyph')
   })
 
+  it('keeps TEMLIT\'s beam-off SPLIT: 11 lit strokes, none bridging two letters', () => {
+    // expectSameShape compares a SORTED POINT SET, so stroke connectivity is
+    // invisible to it: returning the same vertices as ONE merged polyline
+    // (LOGO_RUNS.flat()) passed every test here while drawing 10 spurious
+    // inter-letter joins up to 258 units — twice the 128 cap height (found by the
+    // reviewer, mutation-tested). Beam-on vs beam-off is the core semantic of the
+    // vector data this story ports, and this file already pins it for the star
+    // dots (points.length === 1); pin the logo's split the same way.
+    //
+    // The oracle knows the split: each letter is one lit run plus one more per
+    // mid-letter beam-off (T's crossbar jump-back, E's arm jump-back).
+    const expectSplit = LOGO_SEQ.map(([, l]) => 1 + LOGO_LETTERS[l].filter(([, , lit]) => lit === 0).length)
+    expect(expectSplit, 'oracle self-check: T=2 E=2 M=1 P=1 E=2 S=1 T=2').toEqual([2, 2, 1, 1, 2, 1, 2])
+    const g = logoGlyph()
+    expect(g, 'TEMLIT splits into 11 lit runs at every beam-off').toHaveLength(11)
+
+    // No stroke may bridge letters: every stroke's x-extent must fit inside ONE
+    // letter's oracle x-window, in the shared canonical frame. A faithful stroke's
+    // points are a subset of its letter's, so it always fits; a merged polyline
+    // spans the word and fits nowhere. (A Y flip cannot affect an x-window, and an
+    // x mirror already fails expectSameShape above.)
+    const traced = traceLogo()
+    const canonWord = toCanon(traced.flatMap((t) => t.pts))
+    let wOff = 0
+    const windows = traced.map((t) => {
+      const win = canonWord.slice(wOff, wOff + t.pts.length)
+      wOff += t.pts.length
+      return [Math.min(...win.map((p) => p.x)), Math.max(...win.map((p) => p.x))] as const
+    })
+    const canonGlyph = toCanon(allPoints(g))
+    let gOff = 0
+    g.forEach((stroke, i) => {
+      const pts = canonGlyph.slice(gOff, gOff + stroke.points.length)
+      gOff += stroke.points.length
+      const lo = Math.min(...pts.map((p) => p.x))
+      const hi = Math.max(...pts.map((p) => p.x))
+      const fits = windows.some(([wl, wh]) => lo >= wl - 1e-6 && hi <= wh + 1e-6)
+      expect(fits, `stroke ${i} x-extent [${round(lo)}, ${round(hi)}] must sit inside one letter`).toBe(true)
+    })
+  })
+
   it('is NOT the message font — the logo\'s ink is not reproducible from layoutText', () => {
     // The DEFECT is drawGlowText(ctx,'TEMPEST',…) → the ordinary ANVGAN message
     // glyphs. Pin it directly: whatever logoGlyph() returns must NOT be the shape
