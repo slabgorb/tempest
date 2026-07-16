@@ -33,7 +33,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
-import { levelParams, ROM_FPS } from '../../src/core/rules'
+import { levelParams, ROM_FPS, enemyHitTolerance } from '../../src/core/rules'
 import type { GameState, Enemy } from '../../src/core/state'
 import type { Input } from '../../src/core/input'
 
@@ -175,28 +175,38 @@ describe('spiker far-end conversion when nothing is pending (story 6-15)', () =>
 // stronger statement than either test here, because it is falsifiable by the very
 // behaviour these two demanded.
 //
-// (The wider kill window below is 6-15's OTHER fuseball AC, and it stands untouched.)
+// (6-15's OTHER fuseball AC — the kill window below — was RE-SEATED by tp1-16, which
+//  found the primary source runs it the other way round. Same treatment, same reason.)
 
-// ── AC 2b: fuseball has the wider hit_tol[4]=6 kill window ────────────────────
+// ── AC 2b (INVERTED by tp1-16): the fuseball kill window is NARROWER ──────────
 
-describe('fuseball wider hit tolerance (story 6-15)', () => {
-  // hit_tol[4]=6 (§D l.265) is WIDER than the default enemy tolerance: a bullet
-  // registers on a (vulnerable) fuseball across a larger depth gap than it would
-  // on, say, a flipper. We isolate the spatial window from temporal drift by
-  // stepping with dt → 0, so neither the bullet nor the enemy moves measurably
-  // and the hit is decided purely by the initial depth offset.
+describe('fuseball hit tolerance is narrower than the default (story 6-15, corrected by tp1-16)', () => {
+  // 6-15 took "hit_tol[4]=6" from the book-derived rev-3 extract (§D l.265) and ASSUMED 6
+  // was WIDER than the default — its own note conceded "the rev-3 default hit_tol is not in
+  // the extracted notes" and asked a later Dev to "confirm the exact ratio against the
+  // disassembly". tp1-16 did, against Theurer's source. The tolerance is ENSIZE, indexed by
+  // invader TYPE at COLCHK (`CMP Y,ENSIZE`, ALWELG.MAC:2963):
   //
-  // NOTE (TEA assumption — see session Design Deviations): the rev-3 default
-  // hit_tol is not in the extracted notes, so this pins the RELATIONSHIP
-  // (fuseball window strictly wider than the default ~0.06) rather than an exact
-  // fuseball depth. The probe offset 0.07 sits just beyond today's shared 0.06
-  // window; Dev/Reviewer should confirm the exact ratio against the disassembly.
+  //   fuseball  ENSIZE+ZABFUS = literal <PCVELO+3>/2 = 6   (:545-546) — fixed, every wave
+  //   flipper   ENSIZE+ZABFLI = TIMES8(WINVIL).X  = 7      (:530-538) — 7 at waves 1-16
+  //
+  // 6 is NARROWER than 7. The assumption was backwards, and the shipped constants were
+  // backwards with it (FUSEBALL_HIT_DEPTH = 0.09 vs HIT_DEPTH = 0.06). That is W-046, and
+  // both constants are now gone — the window comes from `enemyHitTolerance`.
+  //
+  // The INTENT is preserved exactly: a fuseball-SPECIFIC window, decided at the sim level,
+  // isolated from temporal drift by stepping with dt → 0 so neither the bullet nor the
+  // enemy moves measurably and the hit is decided purely by the initial depth offset.
+  // Only the DIRECTION of the inequality changed.
   const TINY = 1e-9
   const BULLET_DEPTH = 0.5
-  const WIDE_OFFSET = 0.07 // just beyond the default 0.06 → only a wider window catches it
-  const NARROW_OFFSET = 0.05 // inside the default window → everyone is hit
+  const FUSE_TOL = enemyHitTolerance('fuseball', 1)    // 6/224 ≈ 0.0268
+  const FLIPPER_TOL = enemyHitTolerance('flipper', 1)  // 7/224 ≈ 0.0313
+  // Strictly between the two windows: outside the fuseball's, still inside the flipper's.
+  const BETWEEN_OFFSET = (FUSE_TOL + FLIPPER_TOL) / 2
+  const INSIDE_BOTH_OFFSET = FUSE_TOL / 2
 
-  function killedAtOffset(enemy: Enemy, offset: number): boolean {
+  function killedAtOffset(enemy: Enemy): boolean {
     const s = isolated(5, /* spawnRemaining */ 0)
     s.player.lane = 0 // park the Claw off the action lane
     s.enemies = [enemy]
@@ -204,25 +214,27 @@ describe('fuseball wider hit tolerance (story 6-15)', () => {
     const out = stepGame(s, NEUTRAL, TINY)
     return !out.enemies.some((e) => e.kind === enemy.kind)
   }
-
-  it('kills a vulnerable fuseball at a gap that is too wide for the default window', () => {
-    const fuseball: Enemy = {
-      ...makeEnemy('fuseball', 6, BULLET_DEPTH + WIDE_OFFSET, levelParams(1)), jitterTimer: 999, vulnerable: true,
-    }
-    expect(killedAtOffset(fuseball, WIDE_OFFSET)).toBe(true)
+  const vulnerableFuseAt = (offset: number): Enemy => ({
+    ...makeEnemy('fuseball', 6, BULLET_DEPTH + offset, levelParams(1)), jitterTimer: 999, vulnerable: true,
   })
 
-  it('does NOT kill a flipper at that same wide gap (the widening is fuseball-specific)', () => {
-    // Guards against a lazy fix that widens the GLOBAL HIT_DEPTH for everyone.
-    const flipper: Enemy = makeEnemy('flipper', 6, BULLET_DEPTH + WIDE_OFFSET, levelParams(1))
-    expect(killedAtOffset(flipper, WIDE_OFFSET)).toBe(false)
+  it('the fuseball window is strictly NARROWER than the flipper’s (ENSIZE 6 < 7)', () => {
+    expect(FUSE_TOL).toBeLessThan(FLIPPER_TOL)
   })
 
-  it('still kills a vulnerable fuseball inside the default window (not made narrower)', () => {
-    const fuseball: Enemy = {
-      ...makeEnemy('fuseball', 6, BULLET_DEPTH + NARROW_OFFSET, levelParams(1)), jitterTimer: 999, vulnerable: true,
-    }
-    expect(killedAtOffset(fuseball, NARROW_OFFSET)).toBe(true)
+  it('does NOT kill a vulnerable fuseball across a gap the flipper’s window still catches', () => {
+    expect(killedAtOffset(vulnerableFuseAt(BETWEEN_OFFSET))).toBe(false)
+  })
+
+  it('kills a flipper across that same gap (the narrowing is fuseball-specific)', () => {
+    // The complement of the test above, and the reason both must exist: this one guards
+    // against a lazy fix that shrinks the window for EVERY kind, which would pass the
+    // fuseball assertion on its own.
+    expect(killedAtOffset(makeEnemy('flipper', 6, BULLET_DEPTH + BETWEEN_OFFSET, levelParams(1)))).toBe(true)
+  })
+
+  it('still kills a vulnerable fuseball well inside its own window', () => {
+    expect(killedAtOffset(vulnerableFuseAt(INSIDE_BOTH_OFFSET))).toBe(true)
   })
 })
 

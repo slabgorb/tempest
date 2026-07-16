@@ -123,7 +123,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 1021,
+      "line": 1031,
       "verbatim": "const DEMO_MAX_LEVEL = 8  // random start level 1..8 (\"RANDOM AND 7\")"
     },
     "claim": "Confirmed: ALWELG.MAC:242-243 draws 'LDA RANDOM' then 'AND I,7', masking to the range 0-7 (8 values), matching our DEMO_MAX_LEVEL=8 (used as nextInt(rng,8) -> 0..7, then +1 for the 1-indexed level).",
@@ -140,7 +140,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 1020,
+      "line": 1030,
       "verbatim": "const DEMO_LIVES = 1      // the attract demo gets a single life (book: attract admin)"
     },
     "claim": "Confirmed: ALWELG.MAC:240-241 ('LDY I,1' / 'STY LIVES1') sets the attract demo to exactly 1 life, matching DEMO_LIVES=1.",
@@ -263,7 +263,7 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 856,
+      "line": 902,
       "verbatim": "  const tier = Math.min(2, Math.max(0, Math.floor(depth * 3))) // 0,1,2"
     },
     "claim": "Our fuseballScore() derives the 250/500/750 tier from the fuseball's DEPTH at time of kill (Math.floor(depth*3), rules.ts:200-203). The ROM's INCFS2 instead rolls RANDO2 AND 7 (0-7, ALWELG.MAC:2754-2755); if the roll is >=3 (5 of 8 outcomes) it forces tier 0, otherwise it keeps the roll (0, 1, or 2) directly as the tier (ALWELG.MAC:2756-2759) — i.e. P(tier0)=6/8=75%, P(tier1)=1/8, P(tier2)=1/8, entirely independent of where onscreen the fuseball died. The point VALUES (250/500/750, see B-014) are correct, but the selection MECHANISM is not depth-based at all — it is a heavily tier-0-weighted coin flip.",
