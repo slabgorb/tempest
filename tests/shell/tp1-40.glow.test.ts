@@ -135,12 +135,6 @@ describe('tp1-40 AC-3 — glowStrokePasses layers the halo without blur', () => 
 // A minimal recording ctx: enough surface for a dot blit by EITHER mechanism —
 // the sprite drawImage (DOM available) or the unblurred fill fallback (node).
 // Records that no live shadow blur was set either way.
-interface DotRec {
-  readonly ctx: CanvasRenderingContext2D
-  readonly drawImages: number
-  readonly fills: number
-  readonly blursSet: number[]
-}
 
 function makeDotCtx(): {
   ctx: CanvasRenderingContext2D
