@@ -1,33 +1,24 @@
 // tests/shell/render.tube-glow.test.ts
 //
-// Story SH2-9: tempest conforms to @arcade/shared/glow WITHOUT regressing tube
-// depth. This is the regression-sensitive tail of the SH glow-extraction epic —
-// a reviewer could approve the flat games (SH2-8) yet reject tempest — so it
-// carries an explicit visual-parity gate. These tests pin the migration contract
-// AND the "don't flatten it" guarantee.
+// Tube glow contract — REWRITTEN by story tp1-40 (THE GLOW TAX), superseding
+// the SH2-9 suite that lived here.
 //
-// TEA (Imperator Furiosa) test-design decisions — see session "Design Deviations":
+// SH2-9's real point was "migrate the glow WITHOUT flattening the tube": the
+// far->near spoke gradients, the dim far ring vs bright near rim, the halo. That
+// intent survives intact below. What tp1-40 REMOVES is SH2-9's pinned MECHANISM
+// — the @arcade/shared/glow envelope and its live shadow-blur ramp (6/8/18) —
+// because the Architect's investigation proved live shadow blur is a
+// per-primitive GPU Gaussian pass and the single cause of production's 8-34 fps
+// (session tp1-40; A/B with blur no-op'd runs a locked 60). The blur RADII stay
+// meaningful as inputs (glowStrokePasses(blur, …) scales the halo reach from
+// them); they are simply no longer canvas shadow state. This supersession is
+// logged as a Design Deviation in the tp1-40 session file.
 //
-//  • WIRING is asserted against render.ts source via Vite `?raw`, matching the
-//    house pattern for module-private render wiring (render.warp-dispatch /
-//    render.bullet-color): drawTube is module-driven canvas code, so "is it wired
-//    to the shared primitive?" is a source-level seam.
+// House pattern preserved from the original suite: WIRING via `?raw` source,
+// DEPTH via a recording ctx driving the real drawTube() (DOM-free, node-safe).
 //
-//  • DEPTH PRESERVATION is asserted BEHAVIOURALLY by driving the real drawTube()
-//    through a lightweight recording ctx. drawTube is DOM-free (it never touches
-//    the phosphor scratch canvas / document), so — unlike render() — a recording
-//    ctx is safe in vitest's `node` env. Source text cannot prove the far->near
-//    gradient stops, the 6/8/18 blur ramp, or the far-ring halo colour survive
-//    the migration; a recording ctx can. For a story whose whole reason to exist
-//    is "don't silently flatten the tube", that behavioural coverage is the point.
-//    (The `?raw`-only pattern was chosen because render()+phosphor need a real
-//    canvas; that blocker does not apply to the pure-drawing drawTube.)
-//
-//  • The far ring's glow colour is INHERITED (drawTube leaves shadowColor at the
-//    level colour set by the spoke loop, while stroking a dim blue). We pin that
-//    inherited-halo behaviour so the naive glowPolyline migration (which would
-//    default shadowColor to the dim-blue stroke) is caught as a regression. See
-//    the Delivery Finding flagging this subtlety for Dev/Reviewer.
+// All behavioral tests fail today (drawTube still blurs, has no layered
+// passes, draws its dots with live blur). Valid RED.
 
 import { describe, it, expect } from 'vitest'
 import renderSrc from '../../src/shell/render.ts?raw'
@@ -36,9 +27,9 @@ import { makeCircleTube } from '../../src/core/geometry'
 import type { GameState } from '../../src/core/state'
 
 // ── A minimal recording CanvasRenderingContext2D ────────────────────────────
-// Captures the timeline of shadowBlur assignments and a snapshot of the glow
-// state at each stroke(), plus the gradients handed out. Only the members
-// drawTube touches are implemented; everything else is a no-op.
+// Captures every shadowBlur assignment, a snapshot of stroke state (style,
+// width, alpha) at each stroke(), gradient creations, and dot draws (fill /
+// drawImage) so the blit path is observable whichever mechanism serves it.
 
 interface GradStub {
   readonly _grad: true
@@ -48,9 +39,9 @@ interface GradStub {
 
 interface StrokeSnap {
   readonly strokeStyle: unknown
-  readonly shadowColor: unknown
-  readonly shadowBlur: number
   readonly lineWidth: number
+  readonly globalAlpha: number
+  readonly shadowBlur: number
 }
 
 interface RecCtx {
@@ -58,6 +49,7 @@ interface RecCtx {
   readonly blurTimeline: number[]
   readonly strokes: StrokeSnap[]
   readonly gradients: GradStub[]
+  readonly dots: { fills: number; drawImages: number }
 }
 
 function isGrad(v: unknown): v is GradStub {
@@ -68,6 +60,7 @@ function makeRecCtx(): RecCtx {
   const blurTimeline: number[] = []
   const strokes: StrokeSnap[] = []
   const gradients: GradStub[] = []
+  const dots = { fills: 0, drawImages: 0 }
   let shadowBlur = 0
 
   const rec: Record<string, unknown> = {
@@ -95,7 +88,12 @@ function makeRecCtx(): RecCtx {
     lineTo(): void {},
     closePath(): void {},
     arc(): void {},
-    fill(): void {},
+    fill(): void {
+      dots.fills += 1
+    },
+    drawImage(): void {
+      dots.drawImages += 1
+    },
     save(): void {},
     restore(): void {},
     translate(): void {},
@@ -106,9 +104,9 @@ function makeRecCtx(): RecCtx {
     stroke(): void {
       strokes.push({
         strokeStyle: rec.strokeStyle,
-        shadowColor: rec.shadowColor,
-        shadowBlur,
         lineWidth: rec.lineWidth as number,
+        globalAlpha: rec.globalAlpha as number,
+        shadowBlur,
       })
     },
   }
@@ -122,14 +120,15 @@ function makeRecCtx(): RecCtx {
     },
   })
 
-  return { ctx: rec as unknown as CanvasRenderingContext2D, blurTimeline, strokes, gradients }
+  return { ctx: rec as unknown as CanvasRenderingContext2D, blurTimeline, strokes, gradients, dots }
 }
 
-// The tube-glow constants drawTube must preserve (the per-element blur ramp and
-// the far->near gradient stops). Named here so the tests read as a spec.
-const SPOKE_BLUR = 8
-const FAR_RING_BLUR = 6
-const NEAR_RING_BLUR = 18
+// The tube identity drawTube must preserve — the CORE (crisp) stroke of each
+// element. The halo around each is layered passes now; its exact widths/alphas
+// are Dev-tuned, so the tests pin structure (wider + dimmer) not values.
+const SPOKE_CORE_WIDTH = 2
+const FAR_RING_CORE_WIDTH = 1.5
+const NEAR_RING_CORE_WIDTH = 3.5
 const GRADIENT_FAR_STOP = 'rgba(255,255,255,0.04)' // dim white at the far rim
 const FAR_RING_STROKE = 'rgba(150,190,255,0.28)' // dim blue far ring
 const LEVEL_COLOR = '#abcdef' // sentinel level colour passed into drawTube
@@ -143,41 +142,48 @@ function drawTestTube(): RecCtx {
   return rec
 }
 
-// ── AC1: strokes via @arcade/shared/glow (wiring) ───────────────────────────
+// ── Wiring: the glow tax is gone from the tube (tp1-40 AC-1/AC-3) ────────────
 
-describe('drawTube wiring — strokes via @arcade/shared/glow (SH2-9 AC1)', () => {
-  it('imports the shared glow primitive', () => {
-    expect(renderSrc).toMatch(/from\s*['"]@arcade\/shared\/glow['"]/)
+describe('drawTube wiring — tempest-local layered glow, no shared blur envelope', () => {
+  it('no longer imports @arcade/shared/glow (its contract IS live blur)', () => {
+    expect(renderSrc).not.toMatch(/from\s*['"]@arcade\/shared\/glow['"]/)
   })
 
-  it('uses withGlow for the gradient spoke stroke', () => {
-    expect(renderSrc).toMatch(/\bwithGlow\s*\(/)
-  })
-
-  it('uses glowPolyline where a plain glow stroke suffices (the rings)', () => {
-    expect(renderSrc).toMatch(/\bglowPolyline\s*\(/)
-  })
-
-  it('drops the local strokePoly set/draw boilerplate (replaced by glowPolyline)', () => {
-    // "no local duplicate of the state-set/reset boilerplate remains" — strokePoly
-    // was drawTube's private re-implementation of glowPolyline's path logic and is
-    // used nowhere else, so it must be gone.
-    expect(renderSrc).not.toMatch(/function\s+strokePoly\b/)
+  it('imports the tempest-local glow helper instead', () => {
+    expect(renderSrc).toMatch(/from\s*['"]\.\/glow['"]/)
   })
 })
 
-// ── AC2: far->near gradient + blur ramp preserved (regression guard) ─────────
+// ── The tax itself: zero live blur while the tube draws (tp1-40 AC-1) ────────
 
-describe('drawTube depth preserved — far->near gradient + 6/8/18 ramp (SH2-9 AC2)', () => {
-  it('strokes EVERY spoke with a far->near CanvasGradient (no flattening)', () => {
+describe('drawTube pays no glow tax — no live shadow blur at any stroke', () => {
+  it('never strokes with a non-zero shadowBlur', () => {
     const rec = drawTestTube()
-    const spokeStrokes = rec.strokes.filter((snap) => isGrad(snap.strokeStyle))
-    // One gradient spoke per boundary — if any spoke were flattened to a solid
-    // colour this count would drop below the lane count.
-    expect(spokeStrokes.length).toBe(4)
+    const blurred = rec.strokes.filter((s) => s.shadowBlur !== 0)
+    expect(
+      blurred.length,
+      'every blurred stroke is a per-primitive GPU Gaussian pass — the lag',
+    ).toBe(0)
   })
 
-  it('preserves the spoke gradient stops: dim-white far rim -> level colour near rim', () => {
+  it('never even assigns a non-zero shadowBlur (resets to 0 are fine)', () => {
+    const rec = drawTestTube()
+    expect(rec.blurTimeline.filter((v) => v !== 0)).toEqual([])
+  })
+})
+
+// ── Depth preserved: SH2-9's guarantee, carried forward (tp1-40 AC-3) ────────
+
+describe('drawTube depth preserved — far->near gradient + element identity', () => {
+  it('strokes every spoke with a far->near CanvasGradient (no flattening)', () => {
+    const rec = drawTestTube()
+    const spokeGrads = new Set(rec.strokes.map((s) => s.strokeStyle).filter(isGrad))
+    expect(spokeGrads.size).toBe(4)
+  })
+
+  it('creates ONE gradient per spoke, reused across its passes (no per-pass churn)', () => {
+    // This is a perf story: a layered spoke that mints a fresh gradient for
+    // every halo pass would triple the per-frame gradient churn it came to fix.
     const rec = drawTestTube()
     const depthGradients = rec.gradients.filter(
       (g) =>
@@ -190,77 +196,58 @@ describe('drawTube depth preserved — far->near gradient + 6/8/18 ramp (SH2-9 A
     expect(depthGradients.length).toBe(4)
   })
 
-  it('preserves the spoke blur/width (blur 8, width 2, glows the level colour)', () => {
+  it('keeps each spoke\'s crisp core: gradient stroke at width 2, full alpha', () => {
     const rec = drawTestTube()
-    const spokeStrokes = rec.strokes.filter((snap) => isGrad(snap.strokeStyle))
-    for (const snap of spokeStrokes) {
-      expect(snap.shadowBlur).toBe(SPOKE_BLUR)
-      expect(snap.lineWidth).toBe(2)
-      expect(snap.shadowColor).toBe(LEVEL_COLOR)
-    }
+    const cores = rec.strokes.filter(
+      (s) => isGrad(s.strokeStyle) && s.lineWidth === SPOKE_CORE_WIDTH && s.globalAlpha === 1,
+    )
+    expect(cores.length).toBe(4)
   })
 
-  it('preserves the far ring: dim-blue stroke, blur 6, width 1.5, INHERITED level-colour halo', () => {
+  it('keeps the far ring core: dim-blue stroke at width 1.5', () => {
     const rec = drawTestTube()
-    // The subtle trap: drawTube strokes the far ring dim blue but its glow colour
-    // is the level colour inherited from the spoke loop. A naive glowPolyline that
-    // omits an explicit `color` would default the halo to the dim-blue stroke —
-    // a silent regression. Pin the inherited halo. (Flagged as a Delivery Finding.)
-    const far = rec.strokes.filter((snap) => snap.strokeStyle === FAR_RING_STROKE)
     expect(
-      far.some(
-        (snap) =>
-          snap.shadowBlur === FAR_RING_BLUR &&
-          snap.lineWidth === 1.5 &&
-          snap.shadowColor === LEVEL_COLOR,
+      rec.strokes.some(
+        (s) => s.strokeStyle === FAR_RING_STROKE && s.lineWidth === FAR_RING_CORE_WIDTH,
       ),
-      'far ring must keep blur 6 / width 1.5 and its inherited level-colour halo',
+      'the dim far ring must survive — losing it flattens the tube',
     ).toBe(true)
   })
 
-  it('preserves the near ring: level-colour stroke, blur 18, width 3.5', () => {
+  it('keeps the near ring core: level-colour stroke at width 3.5, full alpha', () => {
     const rec = drawTestTube()
-    const near = rec.strokes.filter((snap) => snap.strokeStyle === LEVEL_COLOR)
     expect(
-      near.some(
-        (snap) =>
-          snap.shadowBlur === NEAR_RING_BLUR &&
-          snap.lineWidth === 3.5 &&
-          snap.shadowColor === LEVEL_COLOR,
+      rec.strokes.some(
+        (s) =>
+          s.strokeStyle === LEVEL_COLOR &&
+          s.lineWidth === NEAR_RING_CORE_WIDTH &&
+          s.globalAlpha === 1,
       ),
-      'near ring must keep the bright rim: level colour, blur 18, width 3.5',
+      'the bright near rim must survive at its width',
     ).toBe(true)
   })
 
-  it('keeps the whole 6/8/18 blur ramp in play on the tube strokes', () => {
+  it('layers a halo: wider, dimmer passes accompany the cores', () => {
     const rec = drawTestTube()
-    const blursUsed = new Set(rec.strokes.map((snap) => snap.shadowBlur))
-    for (const b of [FAR_RING_BLUR, SPOKE_BLUR, NEAR_RING_BLUR]) {
-      expect(blursUsed.has(b), `blur ${b} must remain in the tube ramp`).toBe(true)
-    }
+    // The glow is layered strokes now. Floor: each tube element (4 spokes, far
+    // ring, near ring) contributes at least one wider-than-core low-alpha pass.
+    const halos = rec.strokes.filter((s) => s.globalAlpha < 1 && s.lineWidth > SPOKE_CORE_WIDTH)
+    expect(
+      halos.length,
+      'a tube with no wide low-alpha passes has lost its neon halo entirely',
+    ).toBeGreaterThanOrEqual(6)
+    // And specifically the near rim still BLOOMS (its old blur-18 halo was the
+    // brightest thing on screen): a pass wider than its 3.5 core, dimmed.
+    expect(
+      rec.strokes.some((s) => s.lineWidth > NEAR_RING_CORE_WIDTH && s.globalAlpha < 1),
+    ).toBe(true)
   })
-})
 
-// ── withGlow reset contract: no leaking shadowBlur ──────────────────────────
-
-describe('drawTube no longer leaks shadowBlur — withGlow reset contract (SH2-9)', () => {
-  it('resets shadowBlur to 0 after every tube glow stroke (6/8/18)', () => {
+  it('still draws the rim dots + vanishing glow, all blur-free (tp1-40 AC-2)', () => {
     const rec = drawTestTube()
-    const { blurTimeline } = rec
-    // The entire point of the shared primitive: a glow draw sets shadowBlur, then
-    // restores it to 0 so the blur never bleeds into the next draw. The pre-migration
-    // drawTube hand-sets the ramp and NEVER resets — so every 6/8/18 is followed by
-    // the next non-zero blur, and this fails until drawTube routes through
-    // withGlow/glowPolyline.
-    for (const b of [SPOKE_BLUR, FAR_RING_BLUR, NEAR_RING_BLUR]) {
-      const indices = blurTimeline.flatMap((v, i) => (v === b ? [i] : []))
-      expect(indices.length, `blur ${b} should appear in the timeline`).toBeGreaterThan(0)
-      for (const i of indices) {
-        expect(
-          blurTimeline[i + 1],
-          `shadowBlur ${b} must be reset to 0 immediately after the glow stroke`,
-        ).toBe(0)
-      }
-    }
+    // 4 rim vertex sparks + the closed-tube vanishing-point glow: ≥5 dot draws,
+    // by sprite blit (drawImage) or unblurred fill — either is acceptable here;
+    // the sprite cache is pinned behaviourally in tp1-40.glow.test.ts.
+    expect(rec.dots.fills + rec.dots.drawImages).toBeGreaterThanOrEqual(5)
   })
 })

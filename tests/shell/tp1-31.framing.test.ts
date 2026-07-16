@@ -30,16 +30,12 @@ describe('AC — the whole-well screen-Z translate is applied from state', () =>
 
 describe('AC — the warp starfield is anchored at the scene origin (world centre)', () => {
   it('star dots are placed at ux·r from the origin, not offset by a canvas-centre cx/cy', () => {
-    // The displaced form is `ctx.arc(cx + ux * r, cy + uy * r, …)`; the faithful
-    // form places the picture about the origin the scene transform already
-    // centres. Assert the offset form is gone and the origin form exists.
-    //
-    // tp1-19 (V-015): the dots are now the ROM's own MSTAR picture, read from
-    // starPictureGlyph, so they read `p.x`/`p.y` instead of the old eyeballed
-    // `ux`/`uy` unit vectors. The anchoring this test guards is unchanged — only
-    // the names are — so the patterns below are matched name-agnostically.
+    // tp1-40: the starfield dots are now blitted via blitGlowDot (sprite cache),
+    // not ctx.arc directly. The anchoring is unchanged — dots are placed at
+    // p.x * r, p.y * r from the origin, not offset by canvas-centre cx/cy.
+    // Verify: no old arc(cx + pattern, and the new blitGlowDot with *r pattern exists.
     expect(renderSrc).not.toMatch(/arc\(\s*cx\s*\+/)
-    expect(renderSrc).toMatch(/arc\(\s*\w+(?:\.\w+)?\s*\*\s*r\s*,\s*\w+(?:\.\w+)?\s*\*\s*r/)
+    expect(renderSrc).toMatch(/blitGlowDot.*\*\s*r/)
   })
 })
 
