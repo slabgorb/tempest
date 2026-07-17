@@ -16,7 +16,7 @@ import {
   type Glyph, type GlyphColor, type PaletteColor,
 } from './glyphs'
 import { layoutText, CELL_H } from './font'
-import { WARP_STARFIELD_GATE, ROM_FPS, EYE_FLYIN_START } from '../core/rules'
+import { WARP_STARFIELD_GATE, ROM_FPS, EYE_FLYIN_START, MAX_SELECT_LEVEL } from '../core/rules'
 
 // The Superzapper strobe ramp (Story 10-15): eight hues the well flashes through
 // while a zap is active, indexed by the core's flash counter. The per-level WELL
@@ -797,11 +797,14 @@ function drawAttract(
 function drawSelect(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
-  // Authentic skill-select framing (Story 10-9): the ROM's RATE YOURSELF / RANK
-  // screen with a NOVICE→EXPERT skill ladder flanking the chooser. Colors come
-  // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED.
+  // Authentic skill-select framing (Story 10-9): the ROM's RATE YOURSELF screen
+  // with a NOVICE→EXPERT skill ladder flanking the chooser. Colors come from the
+  // 1981 Messages table — RATE YOURSELF is GREEN, the rank line/NOVICE/EXPERT RED.
+  // tp1-20 (V-036): the RANK message's English literal is the full sentence
+  // 'RANKING FROM 1 TO ' (ALLANG.MAC:141 ERANK, trailing space real) onto which
+  // the game appends the top selectable level — never a bare four-letter caption.
   drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, 40, '#39ff14', 22)
-  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)
+  drawGlowText(ctx, `RANKING FROM 1 TO ${MAX_SELECT_LEVEL}`, W / 2, H * 0.13 + 38, 16, GLYPH_HEX.red, 8)
   drawGlowText(ctx, 'SELECT START LEVEL', W / 2, H * 0.3, 26, color, 14)
   drawGlowText(
     ctx, `START LEVEL  ${String(s.select.selectedLevel).padStart(2, '0')}`, W / 2, H * 0.5,
@@ -810,23 +813,26 @@ function drawSelect(
   // Skill ladder flanking the chooser: NOVICE (easiest) … EXPERT (hardest).
   drawGlowText(ctx, 'NOVICE', W * 0.17, H * 0.5, 18, '#ff2f4f', 8)
   drawGlowText(ctx, 'EXPERT', W * 0.83, H * 0.5, 18, '#ff2f4f', 8)
-  drawGlowText(ctx, 'SPIN OR ARROW KEYS TO CHANGE', W / 2, H * 0.72, 16, 'rgba(150,190,255,0.7)', 6)
+  // tp1-20 (V-033/V-034): the ROM's own prompts, verbatim, in their fixed
+  // Messages-table colours — PRMOV is TURQOI at full opacity (ALLANG.MAC:70/:126),
+  // PRFIR is YELLOW (ALLANG.MAC:71/:131) — replacing the invented browser hints.
+  drawGlowText(ctx, 'SPIN KNOB TO CHANGE', W / 2, H * 0.72, 16, GLYPH_HEX.cyan, 6)
   const blink = 0.5 + 0.5 * Math.sin(renderTime * 4)
   ctx.globalAlpha = blink
-  drawGlowText(ctx, 'PRESS START / ENTER TO BEGIN', W / 2, H * 0.72 + 32, 18, color, 12)
+  drawGlowText(ctx, 'PRESS FIRE TO SELECT', W / 2, H * 0.72 + 32, 18, GLYPH_HEX.yellow, 12)
   ctx.globalAlpha = 1
 }
 
 function drawEntry(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
-  drawGlowText(ctx, 'NEW HIGH SCORE', W / 2, H * 0.2, 44, color, 24)
+  // tp1-20 (V-035): the ROM's entry heading is ENTER YOUR INITIALS in RED
+  // (ALLANG.MAC:69 MESS ENTER,RED / :121 EENTER) — the celebration banner the
+  // heading used to carry was invented.
+  drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.2, 28, GLYPH_HEX.red, 16)
   const entry = s.entry
-  if (!entry) {
-    // Defensive: 'highscore' mode should always carry an entry.
-    drawGlowText(ctx, 'ENTER YOUR INITIALS', W / 2, H * 0.5, 24, CLAW_COLOR, 14)
-    return
-  }
+  // Defensive: 'highscore' mode should always carry an entry.
+  if (!entry) return
   drawGlowText(
     ctx, `SCORE  ${String(s.score).padStart(6, '0')}`, W / 2, H * 0.34,
     22, '#cfe3ff', 10,
@@ -880,20 +886,18 @@ function drawHud(
   ctx: CanvasRenderingContext2D, s: GameState, W: number, H: number, color: string,
 ): void {
   ctx.shadowBlur = 0
-  // HUD readouts: 22px score/level/hi numbers; 13px captions in bright steel-blue
-  // (the thin vector stroke is fragile small) with a touch of glow. Anchored to the
-  // top edge (vAlign 'top') so the numbers tuck under the screen edge as before.
-  const LABEL_COLOR = 'rgba(175,210,255,0.9)'
+  // HUD readouts (tp1-20, V-018): the ROM's SCORES template fixes each field's
+  // colour — GREEN score, GREEN hi-score, BLUE level (ALVROM.MAC:1958/1979/1987)
+  // — and draws only digits and life icons; the cabinet had no caption strings.
+  // Anchored to the top edge (vAlign 'top') so the numbers tuck under the screen
+  // edge as before.
   // Score (left).
-  vecText(ctx, String(s.score).padStart(6, '0'), 26, 22, 22, color, 12, 'left', 'top')
-  vecText(ctx, 'SCORE', 26, 50, 13, LABEL_COLOR, 5, 'left', 'top')
+  vecText(ctx, String(s.score).padStart(6, '0'), 26, 22, 22, GLYPH_HEX.green, 12, 'left', 'top')
   // Level (right).
-  vecText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, 22, color, 12, 'right', 'top')
-  vecText(ctx, 'LEVEL', W - 26, 50, 13, LABEL_COLOR, 5, 'right', 'top')
+  vecText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, 22, GLYPH_HEX.blue, 12, 'right', 'top')
   // High score (top center): the leading board entry, or 0 when the board is empty.
   const hi = s.highScoreTable.length ? s.highScoreTable[0].score : 0
-  vecText(ctx, String(hi).padStart(6, '0'), W / 2, 22, 22, color, 12, 'center', 'top')
-  vecText(ctx, 'HI-SCORE', W / 2, 50, 13, LABEL_COLOR, 5, 'center', 'top')
+  vecText(ctx, String(hi).padStart(6, '0'), W / 2, 22, 22, GLYPH_HEX.green, 12, 'center', 'top')
   // Remaining lives as little Claw-icon glyphs (the player ship in miniature).
   for (let i = 0; i < s.lives; i++) {
     drawClawIcon(ctx, 36 + i * 26, H - 30, 18)

@@ -176,8 +176,11 @@ describe('Story 10-9 AC2 — RATE YOURSELF skill-select ladder', () => {
     expect(classify(bannerColorArg(renderSrc, 'RATE YOURSELF'))).toBe('green')
   })
 
-  it('colors the rank labels (RANK/NOVICE/EXPERT) RED per the Messages table', () => {
-    expect(classify(bannerColorArg(renderSrc, 'RANK'))).toBe('red')
+  it('colors the rank labels (NOVICE/EXPERT) RED per the Messages table', () => {
+    // tp1-20 (V-036): the bare 'RANK' caption was replaced by the ROM's full
+    // 'RANKING FROM 1 TO n' sentence — its RED pin lives in
+    // tp1-20.hud-messages.test.ts (bannerColorArg cannot read the template-literal
+    // text argument that sentence needs).
     expect(classify(bannerColorArg(renderSrc, 'NOVICE'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'EXPERT'))).toBe('red')
   })
@@ -212,12 +215,13 @@ describe('Story 10-9 AC3 — between-wave BONUS / TIME banners', () => {
 describe('Story 10-9 AC4 — colors follow the Messages table (cross-check)', () => {
   // Each banner's family, asserted together, is the AC4 contract: the right
   // authentic color per the ROM message table, not an arbitrary palette pick.
-  it('SUPERZAPPER=blue · RATE YOURSELF/BONUS/TIME=green · RANK/NOVICE/EXPERT=red', () => {
+  it('SUPERZAPPER=blue · RATE YOURSELF/BONUS/TIME=green · NOVICE/EXPERT=red', () => {
+    // The RANK line's pin moved to tp1-20.hud-messages.test.ts with the string
+    // itself (now the ROM's 'RANKING FROM 1 TO n' sentence, still red).
     expect(classify(bannerColorArg(renderSrc, 'SUPERZAPPER RECHARGE'))).toBe('blue')
     expect(classify(bannerColorArg(renderSrc, 'RATE YOURSELF'))).toBe('green')
     expect(classify(bannerColorArg(renderSrc, 'BONUS'))).toBe('green')
     expect(classify(bannerColorArg(renderSrc, 'TIME'))).toBe('green')
-    expect(classify(bannerColorArg(renderSrc, 'RANK'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'NOVICE'))).toBe('red')
     expect(classify(bannerColorArg(renderSrc, 'EXPERT'))).toBe('red')
   })
