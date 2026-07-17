@@ -352,15 +352,14 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 891,
-      "verbatim": "  vecText(ctx, String(s.level).padStart(2, '0'), W - 26, 22, 22, color, 12, 'right', 'top')"
+      "line": 900,
+      "verbatim": "  vecText(ctx, String(hi).padStart(6, '0'), W / 2, 22, 22, GLYPH_HEX.green, 12, 'center', 'top')"
     },
     "claim": "The SCORES template (ALVROM.MAC 1955-2017) fixes the colour of every HUD field: `CSTAT GREEN` before the 6-digit player score (1958), `CSTAT YELLOW` before the row of LIFE0 life icons (1971-1977), `CSTAT GREEN` before the 6-digit high score (1979), `CSTAT BLUE` before the 2-digit LEVEL (1987-1989), `CSTAT GREEN` before the 3 hi-score initials (1990-1994). Ours draws score, level AND hi-score in the level-cycling `color` (render.ts 787/790/794) and adds three captions the ROM has no glyphs for — 'SCORE', 'LEVEL', 'HI-SCORE' (render.ts 788/791/795) — in a steel-blue that is not a palette colour. The ROM also places the high score directly under player 1's score with the level below it, not centred at the top.",
     "reasoning": "Every HUD number changing hue with the level is a modern flourish; the ROM's fixed green/yellow/blue coding is how the player reads the panel. The captions are pure invention. [REFUTATION] Re-opened ALVROM.MAC 1955-1994: CSTAT GREEN before SCP1SC (score, 1958-1962), CSTAT YELLOW before SCP1LI (life icons, 1971-1972), CSTAT GREEN before SCHISC (hi-score, 1979-1980), CSTAT BLUE before SCLEVL (level, 1987-1988), CSTAT GREEN before SCHIIN (initials, 1990-1992) — the finding's colour-per-field table is verbatim correct, and the template only ever calls JSRL CHAR. / JSRL LIFE0 (digit and life-icon glyphs), never a text-drawing routine, so 'no glyphs for SCORE/LEVEL/HI-SCORE captions' holds. Checked our side is governing: render.ts:917 computes `color = LEVEL_COLORS[(s.level-1) % LEVEL_COLORS.length]` (the per-level cycling hue) and drawHud (called at line 1014 with that same `color`) uses it for the score number (787), level number (790) AND hi-score number (794) alike — confirmed by tracing the call chain, not just the isolated snippet. The three captions 'SCORE'/'LEVEL'/'HI-SCORE' at 788/791/795 use LABEL_COLOR = 'rgba(175,210,255,0.9)', a translucent steel-blue absent from the 8-colour arcade palette. No macro or unit trap applies (plain colour/text citations). Holds against every attack angle.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED",
-    "remediated_by": "tp1-20"
+    "verdict": "CONFIRMED"
   },
   {
     "id": "V-019",
