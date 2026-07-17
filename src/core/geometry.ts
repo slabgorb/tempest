@@ -326,6 +326,65 @@ export function warpDiveTube(tube: Tube, progress: number): Tube {
   return { ...tube, far, farRatio: R / denom }
 }
 
+// tp1-38 (WD-012 full fidelity): THE RIM-FLY-OFF — the DESCENT's moving-eye well.
+// MOVCUD advances the eye with the cursor (ALWELG.MAC:1049-1057), so with dive
+// progress p the eye sits at EY = -H + 224p and CASCAL scales every point by
+// 1/(PY - EY) (ALDISP.MAC:1449-1464). The rim is FIXED at PY = 0x10, so its
+// scale (16+H)/((16+H)-224p) EXPANDS, diverges as the rim crosses the eye at
+// p* = (16+H)/224, and past p* the rim is BEHIND the camera — the ROM aborts
+// such lines outright (ONELN2 "LDA EYH / IFPL ;IF LINE WOULD BE BEHIND EYE /
+// LDA PYL / CMP EYL / IFCC / RTS ;THEN ABORT LINE", ALDISP.MAC:1550-1558).
+// In R-terms (R = (16+H)/(240+H); 224 = span, so H never needs recovering):
+//   rho = R - p(1-R)  ∝ (16+H - 224p)   — the rim's remaining lead on the eye
+//   D   = 1 - p(1-R)  ∝ (240+H - 224p)  — the floor's
+//   rim scale R/rho · far scale R/D (the same absolute far path warpDiveTube
+//   already traces — tp1-33's far law was exact) · far/near ratio rho/D.
+// `rimBehindEye` is ONELN2's signal for the shell. Once flagged, the returned
+// "near" ring parks at the EYE-PLANE CLIP RING — the deepest still-visible
+// along-depth, d = warpEyeClipDepth - WARP_EYE_CLIP_MARGIN. Since p + d_eye ≡
+// 1/(1-R), that ring's scale R/(margin·(1-R)) is progress-independent and lies
+// far outside the ±360 phosphor box on every well: the rim has visually left
+// the screen, every coordinate stays finite (the true rim scale is singular AT
+// p*), and the projective pipeline stays EXACT for interior points when the
+// caller re-parameterises depths onto the truncated span (render does this for
+// the spikes). The FLY-IN must NOT use this seam: NEWAV2 parks its eye at
+// -1536, and ONELN2's IFPL disarms the cull for a negative eye — warpDiveTube
+// (near-ring-fixed, above) remains the fly-in's transform.
+export interface WarpDescentTube extends Tube {
+  readonly rimBehindEye: boolean
+}
+
+// Drawn lines stop this far (in along-depth) short of the eye plane, where the
+// projection divide is singular.
+export const WARP_EYE_CLIP_MARGIN = 0.02
+
+// The along-depth where the eye plane sits during the descent: points deeper
+// than this are behind the camera (PY < EY). Greater than 1 while the rim is
+// still ahead of the eye (p < p*); shrinks toward R/(1-R) at the bottom.
+export function warpEyeClipDepth(tube: Tube, progress: number): number {
+  const R = tube.farRatio
+  return (1 - progress * (1 - R)) / (1 - R)
+}
+
+export function warpDescentTube(tube: Tube, progress: number): WarpDescentTube {
+  const R = tube.farRatio
+  const D = 1 - progress * (1 - R)
+  const rho = R - progress * (1 - R)
+  const rimBehindEye = rho <= 1e-6
+  const kNear = rimBehindEye ? R / (WARP_EYE_CLIP_MARGIN * (1 - R)) : R / rho
+  const k = (1 - progress) / D
+  // (near0 - VP) = (near0 - far0)/(1 - R): per-vertex, no VP recovery needed.
+  const near = tube.near.map((n, i) => ({
+    x: n.x + ((kNear - 1) * (n.x - tube.far[i].x)) / (1 - R),
+    y: n.y + ((kNear - 1) * (n.y - tube.far[i].y)) / (1 - R),
+  }))
+  const far = tube.far.map((f, i) => ({
+    x: tube.near[i].x + (f.x - tube.near[i].x) * k,
+    y: tube.near[i].y + (f.y - tube.near[i].y) * k,
+  }))
+  return { ...tube, near, far, farRatio: R / D / kNear, rimBehindEye }
+}
+
 // tp1-37 (WD-018): the per-well eye DESTINATION for the NEWAV2 fly-in. INIWLS sets
 // EYLDES = -HOLEYL[wellID] (two's complement of the eye-Y, ALDISP.MAC:2470-2475), so
 // the destination is -H. H is the same per-well eye-Y baked into farRatio = (16+H)/
