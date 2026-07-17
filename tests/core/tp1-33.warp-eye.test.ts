@@ -53,6 +53,17 @@
 //   per-well vanishing point. These pins recover R_eff signature-agnostically from
 //   the returned ring geometry (as tp1-9 does), plus a labelled subset that pins the
 //   explicit `warpDiveTube` signature.
+//
+//   ── SCOPE NOTE added by tp1-38 ──
+//   The full ROM model ALSO sweeps the near rim past the advancing eye and
+//   off-screen (the rim crosses the eye at p* = (16+H)/224 — see
+//   tp1-38.warp-rim-flyoff.test.ts). That DESCENT behaviour lives in a separate
+//   seam, `warpDescentTube`; THIS near-ring-fixed transform remains in service as
+//   the FLY-IN's frame (NEWAV2 parks the eye at −1536, and ONELN2's behind-eye
+//   cull is disarmed while the eye is negative — "LDA EYH / IFPL",
+//   ALDISP.MAC:1550-1552 — so the fly-in must never fly the rim off). This
+//   file's pins are therefore PERMANENT keep-behavior guards for that seam, and
+//   AC4 below guards exactly the property the fly-in depends on.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import {
@@ -197,7 +208,7 @@ describe('tp1-33 AC3 — the eye advances the FULL 224 span: at the bottom EVERY
   })
 })
 
-describe('tp1-33 AC4 — the Claw is FIXED: the near ring (rim) does not move during the dive', () => {
+describe('tp1-33 AC4 — warpDiveTube holds the near ring FIXED (the fly-in frame; see tp1-38 scope note)', () => {
   it('the near ring is byte-identical across the whole descent (the Claw rides it, unmoved)', () => {
     for (const w of WELL) {
       const base = tubeForLevel(w.level)
