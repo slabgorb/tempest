@@ -117,14 +117,16 @@ export function createPhosphor(): Phosphor {
     actx.drawImage(scratch, 0, 0)
     actx.globalAlpha = 1
     // 3) Blit the glowing accumulator onto the main canvas additively, shaking
-    // the whole image as one (CSS-px shake → device px). Identity transform: the
-    // accumulator is already at device resolution.
+    // the whole image as one (CSS-px shake → device px). The destination rect is
+    // the FULL main canvas: since tp1-40 the scene buffers may render at a capped
+    // dpr below the canvas's, so the blit scales the accumulator up to fit. When
+    // the dprs match this is exactly the old identity blit.
     const sx = (Math.random() - 0.5) * shake * dpr
     const sy = (Math.random() - 0.5) * shake * dpr
     mainCtx.setTransform(1, 0, 0, 1, 0, 0)
     mainCtx.globalCompositeOperation = 'lighter'
     mainCtx.globalAlpha = 1
-    mainCtx.drawImage(accum, sx, sy)
+    mainCtx.drawImage(accum, sx, sy, mainCtx.canvas.width, mainCtx.canvas.height)
   }
 
   function clear(): void {

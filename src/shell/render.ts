@@ -1,7 +1,7 @@
 // src/shell/render.ts
 import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
-import { withGlow, glowPolyline } from '@arcade/shared/glow'
+import { glowStrokePasses, blitGlowDot, glowSprite, cappedDpr } from './glow'
 import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube, warpEyeDest } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat, PlayerSpark, FuseScorePop } from './fx'
@@ -92,6 +92,58 @@ function arcAbout(
   return { pos: { x: pivot.x + Math.cos(a) * r, y: pivot.y + Math.sin(a) * r }, swing: dA }
 }
 
+// The layered glow envelope (tp1-40). Same GlowStyle shape the shared module
+// used, same call sites — but the halo is now wider low-alpha UNBLURRED passes
+// under 'lighter' (glowStrokePasses), never a live canvas shadow. `draw` builds
+// the path and strokes it; it is invoked once per pass, so it must be a pure
+// path+stroke thunk (every call site here is). Halo passes stroke in
+// `style.color` (the old shadowColor semantics — a gradient can't tint a halo);
+// the core pass strokes the real `style.stroke` at full ambient alpha. Each
+// pass alpha MULTIPLIES the caller's ambient globalAlpha (drawWarp's faded
+// streaks keep their fade), and both alpha and blend mode are restored on exit.
+interface GlowStyle {
+  stroke: string | CanvasGradient
+  width: number
+  blur: number
+  color?: string
+}
+
+function withGlow(ctx: CanvasRenderingContext2D, style: GlowStyle, draw: () => void): void {
+  const passes = glowStrokePasses(style.blur, style.width)
+  const halo = style.color ?? (typeof style.stroke === 'string' ? style.stroke : '#ffffff')
+  const baseAlpha = ctx.globalAlpha
+  const mode = ctx.globalCompositeOperation
+  for (let i = 0; i < passes.length; i++) {
+    const pass = passes[i]
+    const isCore = i === passes.length - 1
+    ctx.strokeStyle = isCore ? style.stroke : halo
+    ctx.lineWidth = pass.width
+    ctx.globalAlpha = baseAlpha * pass.alpha
+    if (!isCore) ctx.globalCompositeOperation = 'lighter'
+    draw()
+    if (!isCore) ctx.globalCompositeOperation = mode
+  }
+  ctx.globalAlpha = baseAlpha
+}
+
+// Stroke a glowing polyline through `pts` — the drop-in for the shared
+// glowPolyline this file used to import, riding the layered envelope above.
+function glowPolyline(
+  ctx: CanvasRenderingContext2D,
+  pts: ReadonlyArray<readonly [number, number]>,
+  style: GlowStyle,
+  close = false,
+): void {
+  if (pts.length === 0) return
+  withGlow(ctx, style, () => {
+    ctx.beginPath()
+    ctx.moveTo(pts[0][0], pts[0][1])
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1])
+    if (close) ctx.closePath()
+    ctx.stroke()
+  })
+}
+
 // Stroke an authentic glyph (Story 6-8) at (cx,cy), scaled and rotated into
 // place. A single-point sub-stroke renders as a dot (e.g. the spike tip / bolt
 // cross). `override` recolours every sub-stroke (the pulsar's cyan<->white
@@ -106,21 +158,21 @@ function strokeGlyph(
   ctx.scale(scale, scale)
   const lw = 2 / scale
   const dot = 1.8 / scale
+  // The glyph's glow reach was authored in SCREEN px (the old shadow radius was
+  // pre-transform); divide by scale like the line width so it stays that size.
+  const glowReach = blur / scale
   for (const stroke of glyph) {
     const hex = GLYPH_HEX[override ?? stroke.color]
-    ctx.strokeStyle = hex
-    ctx.fillStyle = hex
-    ctx.shadowColor = hex
-    ctx.shadowBlur = blur
-    ctx.lineWidth = lw
     if (stroke.points.length === 1) {
       const p = stroke.points[0]
-      ctx.beginPath(); ctx.arc(p.x, p.y, dot, 0, Math.PI * 2); ctx.fill()
+      blitGlowDot(ctx, hex, p.x, p.y, dot)
     } else {
-      ctx.beginPath()
-      stroke.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
-      if (stroke.closed) ctx.closePath()
-      ctx.stroke()
+      withGlow(ctx, { stroke: hex, width: lw, blur: glowReach }, () => {
+        ctx.beginPath()
+        stroke.points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+        if (stroke.closed) ctx.closePath()
+        ctx.stroke()
+      })
     }
   }
   ctx.restore()
@@ -197,18 +249,15 @@ export function drawStarfield(ctx: CanvasRenderingContext2D, level: number): voi
     const r = starReachFraction(plane.z) * reach
     const size = 0.6 + t * 1.8
     const hex = paletteHex(starColor(level, i))
-    ctx.fillStyle = hex
-    ctx.shadowColor = hex
     ctx.globalAlpha = 0.25 + t * 0.7
-    ctx.shadowBlur = 4 + t * 8
     // The picture's dots are normalised to the largest MSTAR's extent, so scaling by
     // the plane's reach expands the whole authored constellation outward as it dives
-    // — the dots keep their own radii instead of riding one circle.
+    // — the dots keep their own radii instead of riding one circle. Sprite blits
+    // (tp1-40): this loop peaked at ~160 blurred fills per warp frame, the single
+    // densest glow-tax site in the game.
     for (const dot of starPictureGlyph(plane.picture)) {
       const p = dot.points[0]
-      ctx.beginPath()
-      ctx.arc(p.x * r, p.y * r, size, 0, Math.PI * 2)
-      ctx.fill()
+      blitGlowDot(ctx, hex, p.x * r, p.y * r, size)
     }
   })
   ctx.globalAlpha = 1
@@ -262,13 +311,9 @@ export function drawTube(
     ctx, tube.near.map((p) => [p.x, p.y] as [number, number]),
     { stroke: color, width: 3.5, blur: 18 }, tube.closed,
   )
-  // Rim vertex sparks.
-  ctx.fillStyle = '#ffffff'
-  ctx.shadowBlur = 12
+  // Rim vertex sparks (sprite blits, tp1-40).
   for (const p of tube.near) {
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2)
-    ctx.fill()
+    blitGlowDot(ctx, '#ffffff', p.x, p.y, 1.6)
   }
   // Highlight the player's lane spokes (boundary-safe for open tubes).
   const ia = bIndex(tube, playerLane)
@@ -277,12 +322,13 @@ export function drawTube(
   const b = tube.near[ib]
   const fa = tube.far[ia]
   const fb = tube.far[ib]
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-  ctx.lineWidth = 2
-  ctx.shadowColor = '#fff'
-  ctx.shadowBlur = 10
-  ctx.beginPath(); ctx.moveTo(fa.x, fa.y); ctx.lineTo(a.x, a.y); ctx.stroke()
-  ctx.beginPath(); ctx.moveTo(fb.x, fb.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+  const laneStyle: GlowStyle = { stroke: 'rgba(255,255,255,0.35)', width: 2, blur: 10, color: '#fff' }
+  withGlow(ctx, laneStyle, () => {
+    ctx.beginPath(); ctx.moveTo(fa.x, fa.y); ctx.lineTo(a.x, a.y); ctx.stroke()
+  })
+  withGlow(ctx, laneStyle, () => {
+    ctx.beginPath(); ctx.moveTo(fb.x, fb.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+  })
   // Vanishing-point glow. tp1-31: since tp1-9 the far ring converges on the
   // PER-WELL vanishing point, not the origin — anchor the glow on the far
   // ring's own centre (its centroid tracks the VP displacement) so it sits in
@@ -293,13 +339,8 @@ export function drawTube(
     for (const p of tube.far) { gx += p.x; gy += p.y }
     gx /= tube.far.length
     gy /= tube.far.length
-    ctx.fillStyle = color
-    ctx.shadowColor = color
-    ctx.shadowBlur = 24
     ctx.globalAlpha = 0.5
-    ctx.beginPath()
-    ctx.arc(gx, gy, 5 + Math.sin(renderTime * 3) * 1.5, 0, Math.PI * 2)
-    ctx.fill()
+    blitGlowDot(ctx, color, gx, gy, 5 + Math.sin(renderTime * 3) * 1.5)
     ctx.globalAlpha = 1
   }
 }
@@ -316,29 +357,22 @@ const SPIKE_SPARK_TWINKLE_HZ = 15 // SPARK1<->SPARK2 alternation
 function drawSpikeSparkle(ctx: CanvasRenderingContext2D, x: number, y: number): void {
   const dots =
     Math.floor(renderTime * SPIKE_SPARK_TWINKLE_HZ) % 2 === 0 ? SPIKE_SPARK_AXES : SPIKE_SPARK_DIAGONALS
-  ctx.fillStyle = '#ffe600'
-  ctx.shadowColor = '#ffe600'
-  ctx.shadowBlur = 8
   for (const [dx, dy] of dots) {
-    ctx.beginPath()
-    ctx.arc(x + dx * SPIKE_SPARK_RADIUS, y + dy * SPIKE_SPARK_RADIUS, 1.8, 0, Math.PI * 2)
-    ctx.fill()
+    blitGlowDot(ctx, '#ffe600', x + dx * SPIKE_SPARK_RADIUS, y + dy * SPIKE_SPARK_RADIUS, 1.8)
   }
 }
 
 export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
   // Spike line is GREEN in the authentic ROM (Story 10-7); the tip dot below is the
   // ROM JADOT white cap — replaced by the yellow SPARK sparkle while it is shattered.
-  ctx.strokeStyle = '#39ff14'
-  ctx.shadowColor = '#39ff14'
   for (let lane = 0; lane < s.spikes.length; lane++) {
     const h = s.spikes[lane]
     if (h <= 0) continue
     const a = project(s.tube, lane, 0)
     const b = project(s.tube, lane, h)
-    ctx.lineWidth = 2
-    ctx.shadowBlur = 10
-    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+    withGlow(ctx, { stroke: '#39ff14', width: 2, blur: 10 }, () => {
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+    })
     if (s.spikeShattered[lane]) {
       // A charge is biting this spike this frame (LINSTA D6): the ROM swaps the white
       // cap for a random SPARK1/SPARK2 sparkle (TIPACT, ALDISP.MAC:3188-3210).
@@ -346,10 +380,7 @@ export function drawSpikes(ctx: CanvasRenderingContext2D, s: GameState): void {
     } else {
       // Single white tip dot (Story 6-8): authentic ROM cap (JADOT: VCTR 0,0) —
       // one white point, no flicker. Supersedes the earlier purple barb.
-      ctx.fillStyle = '#ffffff'
-      ctx.shadowColor = '#ffffff'
-      ctx.shadowBlur = 8
-      ctx.beginPath(); ctx.arc(b.x, b.y, 2.0, 0, Math.PI * 2); ctx.fill()
+      blitGlowDot(ctx, '#ffffff', b.x, b.y, 2.0)
     }
   }
 }
@@ -365,11 +396,9 @@ function drawBullets(ctx: CanvasRenderingContext2D, s: GameState): void {
   for (const b of s.bullets) {
     const p = project(s.tube, b.lane, b.depth)
     const tail = project(s.tube, b.lane, Math.min(1, b.depth + 0.05))
-    ctx.strokeStyle = '#eaffff'
-    ctx.shadowColor = '#7fdfff'
-    ctx.shadowBlur = 14
-    ctx.lineWidth = 2.5
-    ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(p.x, p.y); ctx.stroke()
+    withGlow(ctx, { stroke: '#eaffff', width: 2.5, blur: 14, color: '#7fdfff' }, () => {
+      ctx.beginPath(); ctx.moveTo(tail.x, tail.y); ctx.lineTo(p.x, p.y); ctx.stroke()
+    })
     strokeGlyph(ctx, playerBulletGlyph(tint), p.x, p.y, 0.45 + b.depth * 0.35, renderTime * 5, 14)
   }
 }
@@ -471,10 +500,10 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, s: GameState, e: Enemy)
         const f1 = tube.far[i1]
         const n0 = tube.near[i0]
         const n1 = tube.near[i1]
+        // A translucent additive quad needs no halo of its own (tp1-40): its
+        // edges sit on the lane's already-glowing spokes.
         ctx.globalAlpha = 0.12 + beat * 0.16
         ctx.fillStyle = GLYPH_HEX[color]
-        ctx.shadowColor = GLYPH_HEX[color]
-        ctx.shadowBlur = 16
         ctx.beginPath()
         ctx.moveTo(f0.x, f0.y); ctx.lineTo(f1.x, f1.y)
         ctx.lineTo(n1.x, n1.y); ctx.lineTo(n0.x, n0.y)
@@ -499,57 +528,24 @@ export function drawPlayer(ctx: CanvasRenderingContext2D, s: GameState): void {
   // and glows it. playerClawGlyph(roll) selects the authentic NCRS shape.
   strokeGlyph(ctx, playerClawGlyph(roll), anchor.x, anchor.y, scale, rotation, 18)
   // Bright white muzzle-tip spark at the claw centre.
-  ctx.fillStyle = '#fff'
-  ctx.shadowColor = '#fff'
-  ctx.shadowBlur = 14
-  ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 2.6, 0, Math.PI * 2); ctx.fill()
+  blitGlowDot(ctx, '#fff', anchor.x, anchor.y, 2.6)
   ctx.globalAlpha = 1
 }
 
-// Cached additive glow sprites for particles (perf). Each particle USED to be a
-// live `ctx.shadowBlur` fill — a per-particle Gaussian blur, the single most
-// expensive Canvas 2D primitive, run 100+ times a frame during bursts and at
-// device resolution inside the phosphor buffer. That is what made explosions
-// lag. Instead we bake the soft neon dot into an offscreen sprite ONCE per
-// colour and `drawImage` it per particle: a near-free bitmap blit under the same
-// 'lighter' blend. Same look, a fraction of the cost. Purely shell eye candy —
-// no sim impact. The particle palette is a tiny fixed set (spark cyan/gold,
-// spike-crash blue/white), so the cache never grows unbounded. Built lazily so
-// merely importing this module never touches the DOM (mirrors phosphor).
-const GLOW_SPRITE_SIZE = 64 // offscreen sprite resolution; scaled down on draw
-const glowSpriteCache = new Map<string, HTMLCanvasElement>()
-
-function glowSprite(color: string): HTMLCanvasElement {
-  const cached = glowSpriteCache.get(color)
-  if (cached) return cached
-  const s = GLOW_SPRITE_SIZE
-  const r = s / 2
-  const spr = document.createElement('canvas')
-  spr.width = s
-  spr.height = s
-  const g = spr.getContext('2d')!
-  // Radial falloff: an opaque core out to 25% radius, then fading to a fully
-  // transparent edge — a bright centre with a soft halo, the old shadowBlur
-  // look. RGB fading toward the transparent stop only dims the halo, which is
-  // exactly right under additive ('lighter') blending.
-  const grad = g.createRadialGradient(r, r, 0, r, r, r)
-  grad.addColorStop(0, color)
-  grad.addColorStop(0.25, color)
-  grad.addColorStop(1, 'rgba(0,0,0,0)')
-  g.fillStyle = grad
-  g.fillRect(0, 0, s, s)
-  glowSpriteCache.set(color, spr)
-  return spr
-}
-
+// Particles blit the cached additive glow sprite — the pattern that first
+// proved live shadow-blur was the lag (it ran 100+ Gaussian fills a frame
+// during bursts before being baked). tp1-40 moved the sprite cache to ./glow
+// and extended it to EVERY glowing dot in the scene; particles keep their own
+// sizing curve here (they shrink as they fade).
 function drawParticles(ctx: CanvasRenderingContext2D, fx: Fx): void {
   for (const p of fx.particles) {
     const t = Math.max(0, p.life / p.max)
     // Blit the cached glow scaled to roughly the old footprint (core 1.4–3.2px +
-    // ~10px shadowBlur ≈ a ~10-unit glow reach), shrinking as the particle fades.
+    // a ~10-unit glow reach), shrinking as the particle fades.
     const size = 6 + t * 14
     ctx.globalAlpha = t
-    ctx.drawImage(glowSprite(p.color), p.x - size / 2, p.y - size / 2, size, size)
+    const spr = glowSprite(p.color)
+    if (spr) ctx.drawImage(spr, p.x - size / 2, p.y - size / 2, size, size)
   }
   ctx.globalAlpha = 1
 }
@@ -564,17 +560,15 @@ function drawEnemyBurst(ctx: CanvasRenderingContext2D, ex: EnemyBurst): void {
   const len = ENEMY_BURST_BASE_LEN * ex.scale
   const tail = Math.max(0.35, ex.life / ex.max) // gentle fade in the final frame
   ctx.globalAlpha = (ex.brightness / 15) * tail
-  ctx.strokeStyle = ENEMY_BURST_COLOR
-  ctx.shadowColor = ENEMY_BURST_COLOR
-  ctx.shadowBlur = 8
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  for (let i = 0; i < ex.spokes; i++) {
-    const a = (i / ex.spokes) * Math.PI * 2
-    ctx.moveTo(ex.x, ex.y)
-    ctx.lineTo(ex.x + Math.cos(a) * len, ex.y + Math.sin(a) * len)
-  }
-  ctx.stroke()
+  withGlow(ctx, { stroke: ENEMY_BURST_COLOR, width: 1.5, blur: 8 }, () => {
+    ctx.beginPath()
+    for (let i = 0; i < ex.spokes; i++) {
+      const a = (i / ex.spokes) * Math.PI * 2
+      ctx.moveTo(ex.x, ex.y)
+      ctx.lineTo(ex.x + Math.cos(a) * len, ex.y + Math.sin(a) * len)
+    }
+    ctx.stroke()
+  })
 }
 
 // The ROM player-death SPLAT (V-013/DA-009): one closed ragged tri-colour ring
@@ -660,30 +654,22 @@ function vecText(
   glowTrace(ctx, trace, color, blur, Math.max(1, sizePx / 18))
 }
 
-// Stroke a traced path as glowing vectors: two additive blurred passes, then the
-// crisp core on top. Shared by the message-font text above and the ROM logo picture
-// below, which needs the same glow at an arbitrary hex hue (the rainbow's per-pass
-// colour) rather than a GlyphColor name.
+// Stroke a traced path as glowing vectors: layered additive halo passes, then
+// the crisp core on top (tp1-40 — the passes used to be blurred; the two-halo/
+// one-core STRUCTURE is unchanged). Shared by the message-font text above and
+// the ROM logo picture below, which needs the same glow at an arbitrary hex hue
+// (the rainbow's per-pass colour) rather than a GlyphColor name.
 function glowTrace(
   ctx: CanvasRenderingContext2D,
   trace: () => void, color: string, blur: number, lineWidth: number,
 ): void {
   ctx.save()
-  ctx.lineWidth = lineWidth
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
-  ctx.strokeStyle = color
-  ctx.shadowColor = color
-  if (blur > 0) {
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.shadowBlur = blur * 1.5
-    trace(); ctx.stroke()
-    ctx.shadowBlur = blur * 0.8
-    trace(); ctx.stroke()
-    ctx.globalCompositeOperation = 'source-over'
-  }
-  ctx.shadowBlur = 0
-  trace(); ctx.stroke()
+  withGlow(ctx, { stroke: color, width: lineWidth, blur }, () => {
+    trace()
+    ctx.stroke()
+  })
   ctx.restore()
 }
 
@@ -859,11 +845,9 @@ function drawEntry(
       drawGlowText(ctx, typed, x, y, 64, color, 12)
     } else if (active) {
       drawGlowText(ctx, '_', x, y, 64, CLAW_COLOR, 22)
-      ctx.strokeStyle = CLAW_COLOR
-      ctx.shadowColor = CLAW_COLOR
-      ctx.shadowBlur = 14
-      ctx.lineWidth = 3
-      ctx.beginPath(); ctx.moveTo(x - 26, y + 44); ctx.lineTo(x + 26, y + 44); ctx.stroke()
+      withGlow(ctx, { stroke: CLAW_COLOR, width: 3, blur: 14 }, () => {
+        ctx.beginPath(); ctx.moveTo(x - 26, y + 44); ctx.lineTo(x + 26, y + 44); ctx.stroke()
+      })
     } else {
       drawGlowText(ctx, '_', x, y, 64, 'rgba(150,190,255,0.4)', 0)
     }
@@ -952,8 +936,6 @@ function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): v
   const speed = 1.5 + progress * 4
   const streaks = 3
   const segLen = 0.14
-  ctx.strokeStyle = color
-  ctx.shadowColor = color
   for (let i = 0; i < tube.far.length; i++) {
     const f = tube.far[i]
     const n = tube.near[i]
@@ -961,10 +943,12 @@ function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): v
       const t = (((renderTime * speed + k / streaks) % 1) + 1) % 1
       const a = lerpP(f, n, t)
       const b = lerpP(f, n, Math.min(1, t + segLen))
+      // The streak's fade rides the ambient globalAlpha; withGlow multiplies
+      // its pass alphas into it and restores it (tp1-40).
       ctx.globalAlpha = 0.15 + t * 0.6
-      ctx.lineWidth = 1 + t * 2.5
-      ctx.shadowBlur = 6 + t * 12
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+      withGlow(ctx, { stroke: color, width: 1 + t * 2.5, blur: 6 + t * 12 }, () => {
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+      })
     }
   }
   ctx.globalAlpha = 1
@@ -976,10 +960,7 @@ function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): v
   // expands past it.
   const { anchor, scale, rotation, roll } = clawTransform(tube, s.player.lane)
   strokeGlyph(ctx, playerClawGlyph(roll), anchor.x, anchor.y, scale, rotation, 18)
-  ctx.fillStyle = '#fff'
-  ctx.shadowColor = '#fff'
-  ctx.shadowBlur = 14
-  ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 2.6, 0, Math.PI * 2); ctx.fill()
+  blitGlowDot(ctx, '#fff', anchor.x, anchor.y, 2.6)
   ctx.globalAlpha = 1
 }
 
@@ -1032,7 +1013,12 @@ export function render(
   // into the persistence accumulator as an EMA, and blit that onto the main
   // canvas. Static geometry stays sharp; fast movers trail. The screen shake is
   // applied by composite() to the whole accumulated image.
-  const pctx = phosphor.beginScene(W, H, dpr)
+  //
+  // tp1-40 (AC-4): the SCENE renders at a capped dpr — all the per-pixel
+  // compositing work lives in these buffers, and the production trace showed
+  // the GPU saturating at display dpr. composite() scales the accumulator back
+  // up to the main canvas, which keeps its full dpr for HUD/text crispness.
+  const pctx = phosphor.beginScene(W, H, cappedDpr(dpr))
   // Superzapper well-color flash (Story 10-15): while a zap is active the FX
   // layer surfaces the core's `superzapper-flash` index (QFRAME AND 7) as
   // `fx.zapFlash`; tint the whole well/web with that flash hue so it strobes
