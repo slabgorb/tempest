@@ -2,7 +2,7 @@
 import { GameState, Enemy } from '../core/state'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import { glowStrokePasses, blitGlowDot, glowSprite, cappedDpr } from './glow'
-import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube, warpEyeDest } from '../core/geometry'
+import { Tube, Point, currentLane, project, laneWidth, flipPivot, clawTransform, warpDiveTube, warpDescentTube, warpEyeClipDepth, WARP_EYE_CLIP_MARGIN, warpEyeDest } from '../core/geometry'
 import { isJumping, jumpProgress } from '../core/enemies/interpreter'
 import { Fx, EnemyBurst, PlayerSplat, PlayerSpark, FuseScorePop } from './fx'
 import { createPhosphor, phosphorAlpha } from './phosphor'
@@ -305,15 +305,21 @@ export function drawTube(
     ctx, tube.far.map((p) => [p.x, p.y] as [number, number]),
     { stroke: 'rgba(150,190,255,0.28)', width: 1.5, blur: 6, color }, tube.closed,
   )
-  // Near ring (bright rim). Stroke === halo === level colour, so GlowStyle.color's
-  // default (?? stroke) already resolves to the level colour.
-  glowPolyline(
-    ctx, tube.near.map((p) => [p.x, p.y] as [number, number]),
-    { stroke: color, width: 3.5, blur: 18 }, tube.closed,
-  )
-  // Rim vertex sparks (sprite blits, tp1-40).
-  for (const p of tube.near) {
-    blitGlowDot(ctx, '#ffffff', p.x, p.y, 1.6)
+  // tp1-38 (WD-012): once the dive carries the rim behind the eye, the ROM aborts
+  // its lines (ONELN2, ALDISP.MAC:1550-1558) — skip the rim stroke and its sparks.
+  // The spokes above still stream outward to the eye-plane clip ring.
+  const rimGone = 'rimBehindEye' in tube && tube.rimBehindEye === true
+  if (!rimGone) {
+    // Near ring (bright rim). Stroke === halo === level colour, so GlowStyle.color's
+    // default (?? stroke) already resolves to the level colour.
+    glowPolyline(
+      ctx, tube.near.map((p) => [p.x, p.y] as [number, number]),
+      { stroke: color, width: 3.5, blur: 18 }, tube.closed,
+    )
+    // Rim vertex sparks (sprite blits, tp1-40).
+    for (const p of tube.near) {
+      blitGlowDot(ctx, '#ffffff', p.x, p.y, 1.6)
+    }
   }
   // Highlight the player's lane spokes (boundary-safe for open tubes).
   const ia = bIndex(tube, playerLane)
@@ -933,16 +939,20 @@ function drawHud(
 // applies that zoom to the tube). Speed streaks rush outward along every spoke for
 // the dive sensation; spikes stay drawn (by the caller) so the spike crash reads.
 function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): void {
-  const tube = s.tube
+  // tp1-38: `s` here is the UNMAPPED state — this is the STATIC well, never the
+  // warpDescentTube view whose rim flies off. The Claw rides CURSY: (CURSY − EY)
+  // ≡ 16+H is invariant (MOVCUD advances both by CURSVL, ALWELG.MAC:1024-1057),
+  // so its anchor is the static rim's — exactly clawTransform on this tube.
+  const staticTube = s.tube
   const progress = Math.max(0, Math.min(1, s.warp.progress))
 
   // Speed streaks along each spoke, faster and brighter as the warp progresses.
   const speed = 1.5 + progress * 4
   const streaks = 3
   const segLen = 0.14
-  for (let i = 0; i < tube.far.length; i++) {
-    const f = tube.far[i]
-    const n = tube.near[i]
+  for (let i = 0; i < staticTube.far.length; i++) {
+    const f = staticTube.far[i]
+    const n = staticTube.near[i]
     for (let k = 0; k < streaks; k++) {
       const t = (((renderTime * speed + k / streaks) % 1) + 1) % 1
       const a = lerpP(f, n, t)
@@ -958,11 +968,12 @@ function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): v
   ctx.globalAlpha = 1
 
   // The Claw is CONSTANT during the dive — rim-anchored and fixed, exactly as in
-  // normal play (drawPlayer). clawTransform(tube, lane) is progress-independent
-  // (geometry.claw-transform.test.ts), so the camera-with-the-Claw invariant holds:
-  // the Claw neither shrinks nor slides toward the vanishing point as the well
-  // expands past it.
-  const { anchor, scale, rotation, roll } = clawTransform(tube, s.player.lane)
+  // normal play (drawPlayer). clawTransform on the STATIC tube is
+  // progress-independent (geometry.claw-transform.test.ts), so the
+  // camera-with-the-Claw invariant holds: the Claw neither shrinks nor slides
+  // toward the vanishing point as the well expands past it — even after the rim
+  // itself has flown off (tp1-38).
+  const { anchor, scale, rotation, roll } = clawTransform(staticTube, s.player.lane)
   strokeGlyph(ctx, playerClawGlyph(roll), anchor.x, anchor.y, scale, rotation, 18)
   blitGlowDot(ctx, '#fff', anchor.x, anchor.y, 2.6)
   ctx.globalAlpha = 1
@@ -1035,15 +1046,17 @@ export function render(
   // (ALDISP.MAC:2274), so the WHOLE scene shifts — tube, spikes, enemies, claw,
   // and the warp starfield (DSTARF swaps the eye but keeps ZADJL). The sim owns
   // the animation: render just applies the current camera.screenZ.
-  // tp1-33 (WD-012): during the dive the well EXPANDS past the fixed Claw. The eye
-  // tracks the cursor (MOVCUD), so the far ring rushes outward toward the rim while
-  // the near ring stays put — warpDiveTube returns that progress-driven diving well.
-  // Draw the tube AND spikes against it, so the well and any spike grow around the
-  // stationary Claw (the spike growing up to meet the Claw, WD-012). drawWarp keeps
-  // the Claw on the base near ring (identical to the diving near ring), so it does
-  // not move. Non-warp frames pass the well through unchanged.
+  // tp1-33/tp1-38 (WD-012): during the dive the well EXPANDS past the fixed Claw.
+  // The eye tracks the cursor (MOVCUD), so the WHOLE well rushes outward — the far
+  // ring toward the rim's old spot, and the rim itself past the camera (it crosses
+  // the eye at p* = (16+H)/224 and is flagged rimBehindEye — the ONELN2 cull).
+  // warpDescentTube returns that progress-driven moving-eye well; draw the tube AND
+  // spikes against it, so the well and any spike grow around the stationary Claw.
+  // Non-warp frames pass the well through unchanged.
   // tp1-37 (WD-018): during the post-descent eye FLY-IN (flyIn > 0) the new well is NOT
   // static — the eye walks in from EYE_FLYIN_START to EYLDES (-H), so drive warpDiveTube
+  // (the NEAR-FIXED transform — the fly-in's eye is parked NEGATIVE, where ONELN2's
+  // "LDA EYH / IFPL" disarms the behind-eye cull, so its rim must never fly off)
   // from the eye's fraction of that span: the new well starts FLAT (progress 1, continuous
   // with the descent's flattened bottom — no hard cut) and un-flattens to the normal well
   // (progress 0) as the eye lands. The descent itself uses s.warp.progress directly.
@@ -1052,8 +1065,27 @@ export function render(
   const warpProgress = flyingIn
     ? (dest - (s.warp.eyeY ?? EYE_FLYIN_START)) / (dest - EYE_FLYIN_START)
     : Math.min(1, s.warp.progress)
+  const diveTube =
+    s.mode === 'warp'
+      ? flyingIn
+        ? warpDiveTube(s.tube, warpProgress)
+        : warpDescentTube(s.tube, warpProgress)
+      : s.tube
+  // tp1-38: once the rim is behind the eye, the well's visible span ends at the eye
+  // plane — the descent tube's near ring IS the clip ring at (warpEyeClipDepth −
+  // margin), so spike depths are re-parameterised onto that truncated span (and
+  // thereby clipped: ONELN2 aborts behind-eye lines). The rescale keeps the
+  // projective interpolation EXACT for every still-visible spike point.
+  const rimGone = 'rimBehindEye' in diveTube && diveTube.rimBehindEye
+  const spikeSpan = Math.max(0.01, warpEyeClipDepth(s.tube, warpProgress) - WARP_EYE_CLIP_MARGIN)
   const scene =
-    s.mode === 'warp' ? { ...s, tube: warpDiveTube(s.tube, warpProgress) } : s
+    s.mode === 'warp'
+      ? {
+          ...s,
+          tube: diveTube,
+          spikes: rimGone ? s.spikes.map((h) => Math.min(h, spikeSpan) / spikeSpan) : s.spikes,
+        }
+      : s
   pctx.translate(0, s.camera.screenZ)
   drawTube(pctx, scene, wellHex, currentLane(scene.tube, scene.player.lane))
   drawSpikes(pctx, scene)

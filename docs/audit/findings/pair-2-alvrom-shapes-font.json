@@ -44,7 +44,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 383,
+      "line": 389,
       "verbatim": "      blitGlowDot(ctx, '#ffffff', b.x, b.y, 2.0)"
     },
     "claim": "The enemy-line body carries the fixed VG prologue `ENLFIX` whose comment is `(CSTATGREEN,CNTR)` (ALDISP.MAC 3027); an un-shattered tip inserts a WHITE colour stat (ALDISP.MAC 3208-3215, WHITIP) then a JSRL to JSRDOT (a zero-length VCTR 0,0 = one dot). drawSpikes strokes the shaft '#39ff14' (render.ts 251) and fills exactly one white tip dot (render.ts 263-266). Line colour and tip colour, and the single-dot cap, all match.",
@@ -352,7 +352,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 900,
+      "line": 906,
       "verbatim": "  vecText(ctx, String(hi).padStart(6, '0'), W / 2, 22, 22, GLYPH_HEX.green, 12, 'center', 'top')"
     },
     "claim": "The SCORES template (ALVROM.MAC 1955-2017) fixes the colour of every HUD field: `CSTAT GREEN` before the 6-digit player score (1958), `CSTAT YELLOW` before the row of LIFE0 life icons (1971-1977), `CSTAT GREEN` before the 6-digit high score (1979), `CSTAT BLUE` before the 2-digit LEVEL (1987-1989), `CSTAT GREEN` before the 3 hi-score initials (1990-1994). Ours draws score, level AND hi-score in the level-cycling `color` (render.ts 787/790/794) and adds three captions the ROM has no glyphs for — 'SCORE', 'LEVEL', 'HI-SCORE' (render.ts 788/791/795) — in a steel-blue that is not a palette colour. The ROM also places the high score directly under player 1's score with the level below it, not centred at the top.",
@@ -484,7 +484,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 910,
+      "line": 916,
       "verbatim": "    drawGlowText(ctx, 'GAME OVER', W / 2, H * 0.28, 64, '#39ff14', 26)"
     },
     "claim": "The message table declares GAMOV as GREEN, scale 1, y=56h; the English literal is `EGAMOV: ASCVH <GAME OVER>` (ALLANG.MAC 97). We draw the same string in '#39ff14' (GLYPH_HEX green).",
@@ -501,7 +501,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 789,
+      "line": 795,
       "verbatim": "  drawGlowText(ctx, 'PRESS START', W / 2, H * 0.86, 26, '#ff2f4f', 18)"
     },
     "claim": "PRESS is RED, scale 1, y=56h; English literal `EPRESS: ASCVH <PRESS START>` (ALLANG.MAC 111). We draw 'PRESS START' in '#ff2f4f' (GLYPH_HEX red), blinking, on the attract screen.",
@@ -518,7 +518,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 719,
+      "line": 725,
       "verbatim": "  drawGlowText(ctx, 'HIGH SCORES', cx, top, 20, '#ff2f4f', 14)"
     },
     "claim": "HIGHS is RED, and note SCALE 0 (the big cell) — the only message besides PLAYER and AVOID SPIKES to use it. English literal `EHIGHS: ASCVH 0BC,<HIGH SCORES>` (ALLANG.MAC 136), plural. We draw the plural 'HIGH SCORES' in '#ff2f4f'.",
@@ -535,7 +535,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 806,
+      "line": 812,
       "verbatim": "  drawGlowText(ctx, 'RATE YOURSELF', W / 2, H * 0.13, 40, '#39ff14', 22)"
     },
     "claim": "RATE = GREEN (ALLANG.MAC 74, literal `ERATE: ASCVH <RATE YOURSELF>` at 146); NOVIC = RED and EXPER = RED (ALLANG.MAC 75-76). We draw 'RATE YOURSELF' green (#39ff14) and 'NOVICE'/'EXPERT' red (#ff2f4f, render.ts 708-709).",
@@ -552,7 +552,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1102,
+      "line": 1134,
       "verbatim": "    drawGlowText(ctx, 'AVOID SPIKES', W / 2, H * 0.32, 28, '#ffffff', 18)"
     },
     "claim": "SPIKE is WHITE at scale 0 (double-size cell), y=0; English literal `ESPIKE: ASCVH -72.,<AVOID SPIKES>` (ALLANG.MAC 238). We draw 'AVOID SPIKES' in '#ffffff' during the warp hold.",
@@ -569,7 +569,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1110,
+      "line": 1142,
       "verbatim": "    drawGlowText(ctx, 'BONUS', W / 2, H * 0.16, 40, '#39ff14', 20)"
     },
     "claim": "BONUS = GREEN scale 1 y=-70. (ALLANG.MAC 77) and TIME = GREEN scale 1 y=98h (ALLANG.MAC 78); literals `SBONUS: ASCVH 8B,<BONUS>` (164) and `ETIME: ASCVH 0E8,<TIME>` (166). We draw both banners in '#39ff14' on the level-clear warp (render.ts 993-994).",
@@ -586,7 +586,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 1127,
+      "line": 1159,
       "verbatim": "    drawGlowText(ctx, 'SUPERZAPPER RECHARGE', W / 2, H * 0.68, 26, '#1f8fff', 16)"
     },
     "claim": "SUPZA uses BLULET (=7, the second letters slot, ALCOMN.MAC 352) — not the usual LETCOL green. English falls through to `FSUPZA: ASCVH <SUPERZAPPER RECHARGE>` (ALLANG.MAC 248-249), i.e. the English string IS 'SUPERZAPPER RECHARGE'. We draw exactly that string in '#1f8fff' blue.",
@@ -701,7 +701,7 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 472,
+      "line": 478,
       "verbatim": "      strokeGlyph(ctx, spikerGlyph(Math.floor(renderTime * 8)), p.x, p.y, r / 6, 0, 12)"
     },
     "claim": "Everywhere the ROM cycles a picture it indexes QFRAME, the integer GAME-frame counter — advanced once per FRTIMR-gated MAINLN pass, i.e. 256/9 = 28.44 Hz, not once per IRQ (~256 Hz) and not 60 Hz (FR-001). Enemy shots `LDA QFRAME / ASL / AND I,6` (ALDISP.MAC 910-912), trailer/spiker `LDA QFRAME / AND I,3` (ALDISP.MAC 701-702), flippers hold one frame (`FLITAB: .BYTE CINVA1,CINVA1,CINVA1,CINVA1`, ALDISP.MAC 685). We derive frames from a float seconds clock instead: spiker `Math.floor(renderTime * 8)` (render.ts 349), fuseball `Math.floor(renderTime * 12)` (render.ts 354), pulsar strobe `Math.sin(renderTime * 12/18)` (render.ts 359-361), bullet spin `renderTime * 5` (render.ts 285). This covers only animation whose frame index is derived from TIME (a float seconds clock standing in for the ROM's integer game-frame count) — it explicitly EXCLUDES any animation whose frame index is derived from something other than elapsed time. In particular, DA-018 (pair-3-aldisp-a-objects.json) shows the enemy-bolt spin frame is computed from `Math.floor(b.depth * 8)` — the bolt's own travel DEPTH, a spatial quantity, not the render clock — so a bolt that stalls in place would freeze mid-animation; that is not a float restatement of QFRAME and is not covered by this finding.",
