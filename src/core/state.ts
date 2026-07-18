@@ -1,7 +1,7 @@
 // src/core/state.ts
 import { Tube, tubeForLevel } from './geometry'
 import { type Rng, createRng } from '@arcade/shared/rng'
-import { START_LIVES, spawnForLevel, PULSE_SON_INIT, PULSE_STEP } from './rules'
+import { START_LIVES, spawnForLevel, PULSE_SON_INIT, pultimForLevel } from './rules'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import type { GameEvent } from './events'
 
@@ -141,7 +141,7 @@ export interface SpawnState {
 // A signed byte and its increment; the SIGN of `son` is the pulse ("PULSE STATUS
 // (MINUS=OFF)", ALCOMN.MAC:775). It lives on GameState rather than on the pulsars
 // because that is what it is: global, and ticked once a frame whether or not a pulsar
-// is on the board. See rules.ts (PULSE_STEP / PULSE_SON_*) for the rails and the seed.
+// is on the board. See rules.ts (pultimForLevel / PULSE_SON_*) for the rails and the seed.
 export interface PulseState {
   son: number           // PULSON — lit while >= 0
   tim: number           // PULTIM — the per-frame increment; negated at each rail
@@ -257,7 +257,7 @@ export function initialState(seed: number): GameState {
     lives: START_LIVES,
     startBonus: 0,        // set at level select; attract boots with no pending bonus (tp1-13)
     spawn: spawnForLevel(1, rng, tube.laneCount),
-    pulse: { son: PULSE_SON_INIT, tim: PULSE_STEP },  // INEWLI, ALWELG.MAC:46-48
+    pulse: { son: PULSE_SON_INIT, tim: pultimForLevel(1) },  // INEWLI, ALWELG.MAC:46-48
     warp: { progress: 0, velocity: 0, warning: 0 },
     select: { selectedLevel: 1 },
     entry: null,
