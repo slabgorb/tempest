@@ -84,27 +84,33 @@ assembler) and `ours` (a byte-exact quote of the line in THIS repo that diverges
 `npm test -- citations` re-opens both and compares. A citation that cannot be re-opened is
 not evidence, so **the gate is not optional and must stay green**.
 
-That creates a trap for every story in the `tp1` epic, because fixing a finding
-necessarily makes its own `ours` quote false — the quote describes the bug you just
-removed. Two rules resolve it, and **both are load-bearing**:
+The `source` side is byte-checked live against the 1981 assembler, which never changes. The
+`ours` side is byte-checked against our code **as it stood at the audit commit `4232ed4`** —
+NOT the working tree (story tp1-22). The record is `git show 4232ed4:<file>`; CI's
+`fetch-depth: 0` is what keeps that blob reachable. Freezing `ours` to the audit commit is
+deliberate: the audit record is immutable, so a later story that legitimately fixes or
+refactors a cited line can no longer redden the gate. Before tp1-22 the gate read the
+working tree, and every `tp1` fix story paid a tax of re-pointing dozens of citations by
+hand — that tax is gone.
 
-1. **Fixed a finding? Mark it `"remediated_by": "<story-id>"`.**
-   The checker then keeps the `ours` citation as HISTORY and stops re-opening it against
-   the working tree. The quote stays as the record of what our code said when it was
-   audited; its line number is deliberately frozen and will drift. That is intended — the
-   durable route back to the change is the field itself, which names the story. The ROM
-   `source` side is still checked, always: that is where the audit's authority lives, and
-   the 1981 source does not change.
+Two conventions still matter:
 
-2. **Touched a cited file? Run `node tools/audit/reanchor-citations.mjs --write`.**
-   A citation you did not fix, in a file you edited, is still TRUE — it just points at the
-   wrong row now. The tool re-finds each quote and corrects the line. It reports
-   `LOST` for any quote it cannot find, which means either you fixed that line and forgot
-   rule 1, or the citation was already broken. Commit the re-anchored JSON.
+1. **Fixed a finding? Record it with `"remediated_by": "<story-id>"`.**
+   The freeze keeps the gate green whether or not you do this, but the field is how the audit
+   RECORDS that a defect was corrected, and by which story — the durable, honest route back
+   to the change. The checker then keeps `ours` as HISTORY (the quote of what our code said
+   when it was audited) and does not re-open it. A NO_COUNTERPART finding may keep `ours:
+   null` — the rule was missing outright, so there was no line to quote — or point `ours` at
+   the code that now implements it. Do NOT re-point a fixed finding's `ours` at the corrected
+   line: that makes the finding assert the fix is the defect.
 
-Do both **before committing**, or the gate goes red on the next story with a confusing
-"does not match verbatim". `ours` must always name a **tracked file in this repo** — never
-`node_modules/`, whose line numbers move on every re-pin (the checker rejects it outright).
+2. **`ours` must always name a tracked file in this repo** — never `node_modules/`, whose
+   line numbers move on every re-pin (the checker rejects it outright). If the gate goes red
+   with "does not match verbatim at 4232ed4", the finding's `ours` has drifted off the
+   immutable record: re-baseline its quote to the `4232ed4` text, or mark it `remediated_by`
+   if it was actually fixed. `node tools/audit/reanchor-citations.mjs` validates every `ours`
+   quote against the audit commit and reports any that are LOST; it no longer moves line
+   numbers, because `ours` is frozen and its stored line is now decorative.
 
 > This convention was invented twice, independently, because it was written down nowhere:
 > tp1-1 shipped `remediated_by` and tp1-3 shipped an identical `fixed_in` in parallel, and

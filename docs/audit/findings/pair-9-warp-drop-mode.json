@@ -46,8 +46,8 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 218,
-      "verbatim": "  const perFrame8_8 = Math.min(wave * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+      "line": 51,
+      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
     },
     "claim": "MOVCUD's 'CONSTANT ACCELERATION FOR VELOCITY' block (ALWELG.MAC:1063-1078) is: LDA CURWAV / ASL / ASL (wave*4) / CMP I,30 / IFCS / LDA I,30 (cap at 0x30) / CLC / ADC I,20 (base 0x20) / CLC / ADC CURSVL / STA CURSVL / LDA CURSVH / ADC I,0 / STA CURSVH. The accel byte is added to the velocity's LOW byte, i.e. it is in units of 1/256 along-units per frame squared. Our perFrame8_8 = Math.min(level * 4, 0x30) + 0x20, divided by 256, is the identical expression - including the *4, the 0x30 cap and the 0x20 base, and including the 8.8 scaling.",
     "reasoning": "Every literal in this formula survives contact with the primary source. The dive is a constant-acceleration ramp with a per-wave accel that saturates - exactly as we model it. (The level BASE fed into it is off by one - WD-010 - and the seconds conversion is wrong - WD-008 - but the formula itself is correct and should not be touched.)"
@@ -63,7 +63,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 799,
+      "line": 805,
       "verbatim": "    const spikeThreat = s.spikes.some((h) => h > 0)"
     },
     "claim": "INDROP counts live enemy lines across ALL 16 lanes before deciding to warn: 'LDX I,NLINES-1 / BEGIN / LDA X,LINEY / IFNE / INC ELICNT ;COUNT LIVE SPIKES / ENDIF / DEX / MIEND' (ALWELG.MAC:3150-3157), then 'LDA ELICNT / IFNE ;ENEMY LINES?' (3158-3159). It does NOT check whether the spike is on the player's own lane. Our spikeThreat = s.spikes.some((h) => h > 0) is the same any-lane predicate.",
@@ -97,7 +97,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 952,
+      "line": 958,
       "verbatim": "  if (s.warp.warning > 0) {"
     },
     "claim": "When it warns, INDROP does not enter drop mode: it sets 'LDA I,CPAUSE / STA QSTATE ;PAUSE FIRST' then 'LDA I,CDROP / STA QNXTSTA ;THEN DROP MODE' (ALWELG.MAC:3166-3169), so the Claw sits at CURSY = ILINLIY for the whole timer with no descent and no spike check. The PAUSE state handler still rotates the player - it ends with 'JMP MOVCUR ;UPDATE CURSOR (IF ALIVE)' (ALEXEC.MAC:129). Our stepWarp returns early while s.warp.warning > 0 (no velocity integration, no resolveWarpSpikeHit), and stepPlayer still runs every warp frame (src/core/sim.ts:748).",
@@ -114,7 +114,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 909,
+      "line": 915,
       "verbatim": "  if (height > 0 && warpClawDepth(s.warp.progress) <= height) {"
     },
     "claim": "MOVCUD's collision loop (ALWELG.MAC:1082-1103) runs only while CURSY < ILINDDY, and per lane requires the line to be alive ('LDA X,LINEY / IFNE ;ACTIVE LINE?'), to be the player's lane ('CPX CURSL1 / IFEQ ;SAME LINE AS CURSOR?', 1089-1090) and then 'CMP CURSY / IFCC' (1091-1092), i.e. LINEY < CURSY - the cursor's along-coordinate has passed the spike's tip. Mapping the ROM's along axis to our depth (depth = (0xF0 - along)/224), LINEY < CURSY is exactly clawDepth <= spikeHeight. Our check is `height > 0 && warpClawDepth(s.warp.progress) <= height` on currentLane only. Same predicate, same lane restriction, boundary differs only by strict-vs-inclusive on an exact float tie.",
@@ -192,8 +192,8 @@
     },
     "ours": {
       "file": "src/core/rules.ts",
-      "line": 218,
-      "verbatim": "  const perFrame8_8 = Math.min(wave * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
+      "line": 51,
+      "verbatim": "  const perFrame8_8 = Math.min(level * 4, 0x30) + 0x20  // 1/256 along-units / frame²"
     },
     "claim": "'LDA CURWAV / ASL / ASL' (ALWELG.MAC:1064-1066) is two 8-bit shifts with no carry capture, so for CURWAV >= 0x40 (displayed level 65) the product wraps: CURWAV=0x40 -> 0x00, giving accel = 0x00 + 0x20 = 0x20 - the same acceleration as level 1 - and it climbs from there again (displayed levels 65..76 before re-saturating). Our Math.min(level * 4, 0x30) is arbitrary-precision and never wraps, so from level 65 up our dive is faster than the arcade's.",
     "reasoning": "A genuine 8-bit artefact of the shipped ROM rather than a design choice, and it only bites past displayed level 65 - deeper than the project's own ratchet rule cares about (compare PULSAR_NEAR_FAR_DEPTH, where the L65+ tier was deliberately not modelled). Recording it so the next person who reads 'min(level*4, 0x30)' against the source does not think we missed it. [REFUTATION] Re-opened ALWELG.MAC:1064-1066 exactly: 'LDA CURWAV / ASL / ASL / CMP I,30 / IFCS / LDA I,30 / ENDIF / CLC / ADC I,20'. ALWELG.MAC has no own .RADIX directive but .INCLUDEs ALCOMN.MAC at its top, whose line 17 sets .RADIX 16 and is never reset afterward — so 'I,30' and 'I,20' are hex 0x30/0x20, matching our own 0x30/0x20 constants in rules.ts:51 exactly (agreement, not a radix trap). CURWAV is confirmed 0-indexed relative to displayed level: ALEXEC.MAC:366-367 increments WAVEN1 ('# OF ENEMY WAVE WHICH PLAYER IS BATTLING -1') and CURWAV together each level-clear, and ALWELG.MAC:3160 uses 'CMP CURWAV,I,7' as the warp-warning gate, which corresponds 1:1 to our WARP_AVOID_SPIKES_MAX_LEVEL=7 only if CURWAV = level-1 -- confirms the indexing the finding relies on. LDA/ASL/ASL is genuinely an 8-bit accumulator-only shift (no ROL into a second byte anywhere nearby) -- CURWAV*4 truly wraps mod 256. Did the arithmetic myself: CURWAV=0x40 (level 65) -> 0x40*4=0x100 mod 256=0x00, which is < 0x30 so the IFCS cap does NOT fire, giving 0x00+0x20=0x20 -- identical to level 1's accel. Continuing the arithmetic: the pre-cap value climbs again and re-saturates when CURWAV*4 mod 256 hits 0x30, which happens at CURWAV=0x4C=76 decimal (level 77): 76*4=304, mod256=48=0x30, IFCS true (CMP sets carry on >=). So the climbing window is exactly displayed levels 65..76 as claimed, re-saturating at level 77. Our warpAccel(level) uses a plain JS number with Math.min -- verified in src/core/rules.ts:50-52, it never wraps, so at level 65 our code computes min(260,0x30)+0x20=0x50 (80) vs the ROM's wrapped 0x20 (32) -- a real, correctly-computed divergence past level 65. Checked self-consistency: no contradiction between claim text and title. Holds. [CORRECTION] None needed -- the finding's numeric window (levels 65..76 climbing, level 77 re-saturating) is exactly right down to the boundary.",
@@ -295,8 +295,8 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 791,
-      "verbatim": "  if (s.enemies.length === 0 && s.spawn.nymphs.length === 0) {"
+      "line": 538,
+      "verbatim": "  if (s.enemies.length === 0 && s.spawn.remaining === 0) {"
     },
     "claim": "ANALYZ decides to start the drop (ALWELG.MAC:3101-3117) when the cursor is alive and at the top, all nymphs are converted and all explosions are done ('LDA NYMCOU / ORA EXPCOU / IFEQ', 3103-3105), and no invader is still down the well: the loop tests 'LDA Y,INVAY / IFNE / CMP I,11 / BCS LINER ;EXIT IF LINER (NOT AT TOP)' (3108-3111) - only invaders with INVAY >= 0x11 abort the drop. An invader sitting AT the rim (INVAY <= 0x10 = ILINLIY) does not, so the ROM will warp out from under a still-living flipper or fuseball that has reached the top. Our gate is 'if (s.enemies.length === 0 && s.spawn.remaining === 0)' - any living enemy anywhere, including one at the rim, blocks the warp indefinitely.",
     "reasoning": "In practice our PLAYER_RIM_DEPTH grab resolves most rim enemies before this can matter, and a fuseball loitering at the rim is the only realistic case. Recording it because it is literally 'how the dive starts' and the two conditions are not the same predicate; the behavioural delta is small enough that changing it risks more than it buys. [REFUTATION] Re-opened ALWELG.MAC:3101-3117 (ANALYZ) in full context. Confirmed .RADIX 16 is in effect throughout ALWELG.MAC (same inheritance from ALCOMN.MAC as above), so 'CMP I,11' is hex 0x11 (17 decimal) and ILINLIY (ALCOMN.MAC:820, 'ILINLIY=010') is hex 0x10 (16 decimal) -- exactly as the finding states. Verified the gating chain: this branch only runs when CURMOD==0 (top mode) and NYMCOU|EXPCOU==0 (line 3103-3105, roughly our spawn.remaining check), then loops invaders Y=WINVMX down to 0: 'LDA Y,INVAY / IFNE / CMP I,11 / BCS LINER' -- only fires on active invaders (INVAY!=0) with INVAY>=0x11, aborting via LINER. If the loop runs to completion without any invader tripping that branch, it falls through (MIEND) straight into 'JSR INDROP' (start the drop). Confirmed which end 0x10/0xF0 correspond to by cross-checking ALDISP.MAC:2589 ('LDA I,ILINDDY ;BOTTOM OF WELL Y') and ALDISP.MAC:2599 ('LDA I,ILINLIY ;TOP OF WELL Y'), plus ALWELG.MAC INICUR/NEWAV2 both setting CURSY (the cursor/player's own Y) to ILINLIY -- ILINLIY is unambiguously the RIM position (where the player sits), not the spawn/far end. So the finding has the geometry right: an invader with INVAY<=0x10 is genuinely sitting at/near the rim and does NOT block INDROP; only ones deeper in the well (INVAY>=0x11) do. Checked our side: sim.ts:536-540 checkLevelClear is the sole writer of the level-clear/warp transition (grepped for other 'enemies.length === 0' gates -- none), and it requires literally zero live enemies anywhere on the board, a strictly stronger condition than the ROM's Y-threshold test. This is a real, precisely-cited predicate mismatch, not a unit or radix artifact. Self-consistency check passed -- the claim's own text states the narrow scope and the finding does not overstate impact. Holds. [CORRECTION] None needed.",

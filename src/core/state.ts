@@ -1,7 +1,7 @@
 // src/core/state.ts
 import { Tube, tubeForLevel } from './geometry'
 import { type Rng, createRng } from '@arcade/shared/rng'
-import { START_LIVES, spawnForLevel, PULSE_SON_INIT, PULSE_STEP } from './rules'
+import { START_LIVES, spawnForLevel, PULSE_SON_INIT, pultimForLevel } from './rules'
 import type { HighScoreTable } from '@arcade/shared/highscore'
 import type { GameEvent } from './events'
 
@@ -46,6 +46,13 @@ export type TankerCargo = 'flipper' | 'fuseball' | 'pulsar'
 // own per-invader bytes, and they PERSIST across frames — that is what makes a CAM
 // program a coroutine rather than a state machine.
 interface EnemyBase {
+  // INIINV's per-invader slot (ALWELG.MAC:345-350) — X, indexing the fixed INVAY array. Our
+  // s.enemies array is spliced (dead enemies removed by `filter`), so an enemy's INDEX shifts
+  // whenever an earlier one dies; `slotId` is the stable identity the ROM gets for free from
+  // its fixed array and this port does not. Assigned once at spawn (GameState.nextSlotId,
+  // tp1-29) and never recomputed — MAYBLR's parity gate (interpreter.ts jfuseup) is keyed on
+  // this, not on array position.
+  slotId: number
   lane: number          // integer lane — the ROM's INVAL1, the invader's base leg
   depth: number         // 0 (far, spawn) → 1 (near rim) — INVAY, inverted
   fireCooldown?: number // seconds left on the refire holdoff (Story 6-5); absent = ready to fire
@@ -141,7 +148,7 @@ export interface SpawnState {
 // A signed byte and its increment; the SIGN of `son` is the pulse ("PULSE STATUS
 // (MINUS=OFF)", ALCOMN.MAC:775). It lives on GameState rather than on the pulsars
 // because that is what it is: global, and ticked once a frame whether or not a pulsar
-// is on the board. See rules.ts (PULSE_STEP / PULSE_SON_*) for the rails and the seed.
+// is on the board. See rules.ts (pultimForLevel / PULSE_SON_*) for the rails and the seed.
 export interface PulseState {
   son: number           // PULSON — lit while >= 0
   tim: number           // PULTIM — the per-frame increment; negated at each rail
@@ -234,6 +241,11 @@ export interface GameState {
   rng: Rng
   fireRng: Rng                       // SEPARATE stream for enemy-fire rolls (6-5), so fire decisions
                                      // never desync the movement RNG (mirrors the ROM's pokey1_rand)
+  // tp1-29: a monotonic counter minting each enemy's stable `slotId` at spawn (INIINV's fixed
+  // slot, ALWELG.MAC:345-350). Lives on GameState — NOT a module global or any non-seeded RNG
+  // call — so stepGame/cloneState stay deterministic and replayable. NEVER reset (not on level
+  // start, not on respawn): only `initialState` sets it to 0.
+  nextSlotId: number
 }
 
 export function initialState(seed: number): GameState {
@@ -257,7 +269,7 @@ export function initialState(seed: number): GameState {
     lives: START_LIVES,
     startBonus: 0,        // set at level select; attract boots with no pending bonus (tp1-13)
     spawn: spawnForLevel(1, rng, tube.laneCount),
-    pulse: { son: PULSE_SON_INIT, tim: PULSE_STEP },  // INEWLI, ALWELG.MAC:46-48
+    pulse: { son: PULSE_SON_INIT, tim: pultimForLevel(1) },  // INEWLI, ALWELG.MAC:46-48
     warp: { progress: 0, velocity: 0, warning: 0 },
     select: { selectedLevel: 1 },
     entry: null,
@@ -269,5 +281,6 @@ export function initialState(seed: number): GameState {
     rng,
     // Derive a distinct seed so the fire stream is decorrelated from movement.
     fireRng: createRng(seed ^ 0x9e3779b9),
+    nextSlotId: 0,
   }
 }

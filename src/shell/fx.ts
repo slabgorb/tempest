@@ -7,7 +7,7 @@
 import { GameState } from '../core/state'
 import type { GameEvent } from '../core/events'
 import { currentLane, project } from '../core/geometry'
-import { ROM_FPS, fuseballScore } from '../core/rules'
+import { ROM_FPS } from '../core/rules'
 import { FUSE_SCORE_TIERS } from './glyphs'
 
 interface Particle {
@@ -172,11 +172,13 @@ export function createFx(): Fx {
     explosions.push({ kind: 'spark', x: p.x, y: p.y, life: SPARK_LIFE, max: SPARK_LIFE })
   }
 
-  // The fuseball score pop-up (V-022). `depth` picks the tier through the SAME rule
-  // the sim scores with, so the number shown is the number awarded — when tp1-21
-  // replaces the depth band with the ROM's weighted roll, this follows it.
-  function spawnFuseScore(p: { x: number; y: number }, depth: number): void {
-    const tier = FUSE_SCORE_TIERS.indexOf(fuseballScore(depth))
+  // The fuseball score pop-up (V-022). tp1-21: the fuseball's tier is now a
+  // weighted random roll (ALWELG.MAC:2754), not a function of depth, so this can
+  // no longer re-derive the tier from where the fuseball died — it reads the
+  // ACTUAL score the kill awarded off the event, so the number shown is always
+  // the number added to the scoreboard.
+  function spawnFuseScore(p: { x: number; y: number }, score: number): void {
+    const tier = FUSE_SCORE_TIERS.indexOf(score)
     if (tier < 0) return // a score the ROM has no picture for — draw nothing
     explosions.push({
       kind: 'fuse-score', x: p.x, y: p.y, tier,
@@ -238,7 +240,9 @@ export function createFx(): Fx {
         const at = project(tube, e.lane, e.depth)
         spawnEnemyBurst(at)
         // …and, for a fuseball only, the ROM's score number on top of it (V-022).
-        if (e.enemyType === 'fuseball') spawnFuseScore(at, e.depth)
+        // `score` is set by the sim on every real kill (tp1-21); a hand-built
+        // fixture that omits it draws no pop-up, same as an unrecognised tier.
+        if (e.enemyType === 'fuseball' && e.score !== undefined) spawnFuseScore(at, e.score)
       }
 
       // tp1-13 (S-013): a shot-down enemy bolt explodes like any kill — INCCSQ pairs

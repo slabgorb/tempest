@@ -6,8 +6,8 @@ import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_BURROW_SPEED, SPIKE_BURROW_HITS, TANKER_SPLIT_DEPTH, LevelParams,
-  SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
-  PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
+  SPLIT_TOO_CLOSE_DEPTH, NINVAD, WINVMX,
+  pultimForLevel, pulpotKillDepthForLevel, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   EYE_FLYIN_START, EYE_FLYIN_STEP, startWaveBonus,
@@ -136,7 +136,13 @@ function stepBullets(s: GameState, dt: number): void {
 export function makeEnemy<K extends EnemyKind>(
   kind: K, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
 ): Extract<Enemy, { kind: K }> {
-  const cam = { camPc: camForNewEnemy(kind, params), camLoop: 0, rot: -1 as const, direction: 1 as const }
+  // `slotId: 0` is a fixed default, not a counter read — `makeEnemy` has no GameState to draw
+  // a fresh id from. Both real spawn sites (stepNymphs' hatch, splitTanker's children) stamp a
+  // fresh `s.nextSlotId++` over this immediately after; only fixture code that builds an enemy
+  // directly (bypassing stepGame) ever sees the default (tp1-29).
+  const cam = {
+    camPc: camForNewEnemy(kind, params), camLoop: 0, rot: -1 as const, direction: 1 as const, slotId: 0,
+  }
   const made: Enemy = ((): Enemy => {
     switch (kind) {
       case 'flipper':  return { kind: 'flipper', lane, depth, ...cam }
@@ -219,7 +225,9 @@ function stepNymphs(s: GameState): void {
         if (pick) {
           hatchedThisFrame += 1
           hatched.add(n)
-          s.enemies.push(makeEnemy(pick.kind, n.lane, 0, params, pick.cargo))
+          const hatchling = makeEnemy(pick.kind, n.lane, 0, params, pick.cargo)
+          hatchling.slotId = s.nextSlotId++ // INIINV's slot, stamped once, at the hatch (tp1-29)
+          s.enemies.push(hatchling)
         } else {
           n.py += 1
           latched = true
@@ -484,9 +492,19 @@ function resolveBulletHits(s: GameState): void {
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= tol) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
-        awardScore(s, scoreFor(e))
-        s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth })
-        if (e.kind === 'tanker') spawned.push(...splitTanker(e, s.tube, params))
+        // tp1-21: the fuseball tier is a weighted roll off state.rng at kill time
+        // (ALWELG.MAC:2754); scoreFor draws it here so exactly one roll happens
+        // per kill and the seeded stream stays predictable downstream.
+        const points = scoreFor(e, s.rng)
+        awardScore(s, points)
+        s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth, score: points })
+        if (e.kind === 'tanker') {
+          // The split is the OTHER spawn site (INIINV's slot again): stamp each child before
+          // it reaches activateInvaders, same as the hatch above (tp1-29).
+          const kids = splitTanker(e, s.tube, params)
+          for (const k of kids) k.slotId = s.nextSlotId++
+          spawned.push(...kids)
+        }
         break
       }
     }
@@ -541,7 +559,11 @@ function resolveTankerArrivals(s: GameState): void {
   const spawned: Enemy[] = []
   for (const e of s.enemies) {
     if (e.kind === 'tanker' && e.depth >= TANKER_SPLIT_DEPTH) {
-      spawned.push(...splitTanker(e, s.tube, params))
+      // Same stamp as resolveBulletHits' split site — this is the OTHER path a tanker
+      // reaches activateInvaders through (arriving at TANKER_SPLIT_DEPTH, not being shot).
+      const kids = splitTanker(e, s.tube, params)
+      for (const k of kids) k.slotId = s.nextSlotId++
+      spawned.push(...kids)
     } else {
       survivors.push(e)
     }
@@ -559,8 +581,10 @@ function startLevel(s: GameState): void {
   s.player.zapTimer = 0         // no zap window carries across a level/respawn (10-2)
   // INEWLI (ALWELG.MAC:37-48) re-seeds the pulse for every new wave AND every new life,
   // so a wave always opens dark. The seed is not decoration: it fixes the counter's
-  // residue, and with it the duty cycle (rules.ts, PULSE_SON_INIT).
-  s.pulse = { son: PULSE_SON_INIT, tim: PULSE_STEP }
+  // residue, and with it the duty cycle (rules.ts, PULSE_SON_INIT). `tim` is PULTIM,
+  // wave-parameterised (tp1-26) — THIS is the only place a wave's step reaches the
+  // running pulse; stepPulseClock just steps whatever it finds.
+  s.pulse = { son: PULSE_SON_INIT, tim: pultimForLevel(s.level) }
 }
 
 function killPlayer(s: GameState): void {
@@ -606,10 +630,13 @@ function resolvePlayerHits(s: GameState): void {
   //
   //   * `LDA PULSON / IFPL`   — the pulse is lit. (Ours: `pulsing`.)
   //   * `CMP PULPOT / IFCC`   — and the pulsar has climbed INTO the potency zone. PULPOT
-  //     is $A0 for waves 1-64 (WPULPOT, 606-609), which is PULSAR_NEAR_FAR_DEPTH — the
-  //     same line it already crosses to change climb speed. A pulsar strobing out in the
-  //     far third of the well is harmless, and ours electrocuted the player from there
-  //     (W-027).
+  //     is WAVE-PARAMETERISED (WPULPOT, 606-609): $A0 for waves 1-64, $C0 (WIDER) for
+  //     65-99 — read here via `pulpotKillDepthForLevel` (tp1-26; it used to be frozen at
+  //     the wave-1 $A0 value, PULSAR_NEAR_FAR_DEPTH, which a pulsar strobing out in the
+  //     far third of the well would clear harmlessly at every wave — W-027). PULPOT is
+  //     the same byte the climb-speed switch reads (rules.ts, PULSAR_NEAR_FAR_DEPTH's
+  //     comment), but that site — and the descend reverse, interpreter.ts — deliberately
+  //     stay on the frozen $A0 constant; only the kill tier is wave-parameterised here.
   //   * both its legs on both of the cursor's legs (1808-1814) — which an invader caught
   //     MID-FLIP, straddling two lines, does not have. That is the grab's own gate, one
   //     line above; the pulse branch beside it never got it, so a pulsar mid-flip could
@@ -617,7 +644,7 @@ function resolvePlayerHits(s: GameState): void {
   //     4 of tp1-5, left open when the grab gate was widened in tp1-4).
   const killer = grabber ?? s.enemies.find(
     (e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl
-      && e.depth >= PULSAR_NEAR_FAR_DEPTH && !isJumping(e),
+      && e.depth >= pulpotKillDepthForLevel(s.level) && !isJumping(e),
   )
   if (!killer) return
   s.events.push({ type: 'player-grab', lane: pl, killedBy: killer.kind })
@@ -697,8 +724,10 @@ function nearestRimIndex(s: GameState, pick: (e: Enemy) => boolean): number {
 // cargo is never released (no split), preserving the 10-1 declaw.
 function zapKillAt(s: GameState, idx: number): void {
   const victim = s.enemies[idx]
-  awardScore(s, scoreFor(victim))
-  s.events.push({ type: 'enemy-death', enemyType: victim.kind, lane: victim.lane, depth: victim.depth })
+  // tp1-21: same weighted-roll scoring as a bullet kill — one roll off state.rng.
+  const points = scoreFor(victim, s.rng)
+  awardScore(s, points)
+  s.events.push({ type: 'enemy-death', enemyType: victim.kind, lane: victim.lane, depth: victim.depth, score: points })
   s.enemies = s.enemies.filter((_, i) => i !== idx)
 }
 

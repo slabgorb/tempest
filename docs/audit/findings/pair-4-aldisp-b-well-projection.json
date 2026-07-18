@@ -78,8 +78,8 @@
     },
     "ours": {
       "file": "src/core/geometry.ts",
-      "line": 49,
-      "verbatim": "  return (r * depth) / (r * depth + (1 - depth))"
+      "line": 38,
+      "verbatim": "  return (FAR_RATIO * depth) / (FAR_RATIO * depth + (1 - depth))"
     },
     "claim": "ARCADE. WORSCR (ALDISP.MAC:2218-2333) computes MXP = PY - EY once, loads it as the math box's divisor (MXPL/MXPH), then twice sets the numerator's HIGH byte (MZLH, ALDISP.MAC:2243/2268) and starts a divide (MSZXD, 2244/2269). Numerator in the high byte = numerator*256, so:  SX = 256*(PX-EX)/(PY-EY) + XADJ  and  SZ = 256*(PZ-EZ)/(PY-EY) + ZADJ. That is the header formula at 2049/2051 verbatim, with FACTOR = 256. CASCAL (ALDISP.MAC:1453-1514) derives an object's SIZE from the same denominator: it divides YDEUNI by (PYL - EY) (1456-1479) and packs the result into the VG's binary+linear SCAL word — i.e. scale(PY) = YDEUNI/(PY - EY), a pure reciprocal. The well spans PY in [ILINLIY=0x10 (near rim), ILINDDY=0xF0 (far end)] (ALCOMN.MAC:819-820, used at ALDISP.MAC:2589/2599), and INIWLS sets EY = -HOLEYL[wellID] and YDEUNI = 0x10 - EY = 16 + HOLEYL (ALDISP.MAC:2470-2481), so scale is exactly 1.0 at the rim.\n\nOURS. project() (geometry.ts:84-89) walks the far->near segment by t = perspectiveDepth(d) = R*d/(R*d + 1 - d), R = FAR_RATIO, with our far ring built as near*R about the origin (geometry.ts:209). Substituting: screen radius(d) = |N|*(R + (1-R)*t) = |N| * R / (1 - (1-R)*d).\n\nCONVERSION. Our depth d (0=far, 1=near) is linear in the arcade's world Y: PY = 240 - 224*d. Then the arcade's screen radius from the vanishing point is 256*|W-E|/(240 + H - 224*d) with H = HOLEYL. Normalising by its rim value and writing R_a = (16+H)/(240+H):  240+H = (16+H)/R_a and 224 = (16+H)*(1-R_a)/R_a, so the arcade's radius law collapses to  R_a / (1 - (1-R_a)*d)  — ALGEBRAICALLY IDENTICAL to ours, term for term. The curve family is right; only the value of R differs (see DB-006).",
     "reasoning": "This is the centrepiece and it clears us: our reparameterisation is not an ad-hoc easing curve, it is the cabinet's pinhole divide expressed as a fraction along the far->near segment. Any perspective wrongness in the clone therefore comes from the CONSTANTS fed to that curve (DB-006, DB-007, DB-008), not from the curve. Worth locking in with a unit test that asserts perspectiveDepth against 256*(1/(240+H-224d)) normalised."
@@ -225,8 +225,8 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 379,
-      "verbatim": "    withGlow(ctx, { stroke: '#39ff14', width: 2, blur: 10 }, () => {"
+      "line": 251,
+      "verbatim": "  ctx.strokeStyle = '#39ff14'"
     },
     "claim": "DSPENL emits ENLFIX in REVERSE byte order (ALDISP.MAC:3024-3031 counts X down from 3), so VGLIST receives 05, 68, 40, 80. VGSTAT stores the colour index as the LSB and 0x60|flags as the MSB (ALVGUT.MAC:226-230), so 05/68 is 'STAT colour = 5'. Colour 5 = GREEN (ALCOMN.MAC: GREEN=5); the source's own comment at ALDISP.MAC:3095 names it CSTATGREEN. 40/80 is the CNTR opcode (VGCNTR, ALVGUT.MAC:239-240). The tip: when the line is not shattered, WHITIP writes 'STAT colour = WHITE' then a JSRL to the DOT picture (ALDISP.MAC:3208-3219, `LDA I,WHITE ;COLOR (SET STAT WHITE)`). Ours: green line #39ff14 (render.ts:251) with a single white dot at b (render.ts:263-266). Match.",
     "reasoning": "Confirms Story 10-7's green-spike/white-tip call was right. Caveat for later: like the well (DB-010) the spike colour is an INDEX, so it too repalettes every 16 waves — COLTAB slot 5 is ZGREEN, ZTURQOI, ZRED, ZRED, ZGREEN, ZBLUE across the six sets. Our #39ff14 is hardcoded, so it is only correct for waves 1-16 (and 81-96)."

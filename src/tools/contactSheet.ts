@@ -44,8 +44,8 @@ const TUBE_COLOR = '#1f8fff'
 const COLOR = {
   flipper: '#ff2f4f', // red bowtie
   tanker: '#39ff14', // green X-diamond
-  spiker: '#ffa500', // orange pinwheel
-  fuseball: '#ffe600', // one of its tri-colour legs
+  spiker: '#39ff14', // green spiral
+  fuseball: '#ffe600', // one of its five leg colours
   pulsar: '#00e5ff', // cyan zig-zag
   claw: '#ffe600', // CLAW_COLOR
 } as const
@@ -78,8 +78,11 @@ function baseState(): GameState {
 
 // The CAM registers every invader carries. The contact sheet does not run the
 // interpreter — each cell hand-animates its model so the SHAPE can be eyeballed —
-// so these are just the quiescent values render.ts reads.
-const regs = () => ({ camPc: CAM_ENTRY.NOJUMP, camLoop: 0, rot: 1 as const, direction: 1 as const })
+// so these are just the quiescent values render.ts reads. `slotId` is unused here
+// (no MAYBLR gate runs off-sim), so every cell gets the same fixed placeholder.
+const regs = () => ({
+  camPc: CAM_ENTRY.NOJUMP, camLoop: 0, rot: 1 as const, direction: 1 as const, slotId: 0,
+})
 
 // Flipper — climbs far→near and tumbles lane→lane, bouncing across the board's
 // three lanes (0→1→2→1→0). render.ts supplies the bowtie spin + mid-flip half-turn.

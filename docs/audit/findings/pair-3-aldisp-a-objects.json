@@ -150,7 +150,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 237,
+      "line": 239,
       "verbatim": "      if (e.type === 'enemy-death') {"
     },
     "claim": "TEXTYP reserves 3 dedicated entries (\"FUSE EXPL 1/2/3\", lines 979-981, note the ROM's own typo \"BUSE\" for \"FUSE\" on line 979) pointing into the PTFUSX picture table — a bang sequence used only when a fuseball dies, distinct from the generic EXPL1-4 burst used for \"CHARGE CHARGE, CHARGE INVADER\" (line 977). Our `enemy-death` event already carries `enemyType: EnemyKind` (events.ts:22), but `detect()`'s handler (fx.ts:185-187) calls `spawnEnemyBurst` unconditionally for every kind — the field is read nowhere in fx.ts, so a fuseball explodes identically to a flipper or tanker.",
@@ -211,7 +211,7 @@
     },
     "ours": {
       "file": "src/shell/fx.ts",
-      "line": 300,
+      "line": 304,
       "verbatim": "        ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)"
     },
     "claim": "TSPTIM's picture order (ALDISP.MAC:1022-1030) plays SPLAT6 (the LARGEST picture, `SCAL 2,40`, line 803) first as the \"CHARGE PLAYER EXPLOSION START\", steps down through SPLAT5/4/3/2 to SPLAT1 (the smallest, `SCAL 0,0`, line 793) at the sequence's middle, then climbs back up through SPLAT3/SPLAT5 to SPLAT6 again at the \"FINISH\". So the authentic splat begins already at its biggest size, collapses toward a point, then re-expands to full size. Our `ex.radius = SPLAT_PEAK_RADIUS * Math.sin(progress * Math.PI)` is the opposite arc: it starts at 0, grows to a single peak at the midpoint, and shrinks back to 0.",

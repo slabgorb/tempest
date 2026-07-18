@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { createRng } from '@arcade/shared/rng'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import { Input } from '../../src/core/input'
@@ -9,16 +10,19 @@ const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 
 describe('scoreFor', () => {
   it('returns the authentic per-kind value', () => {
-    expect(scoreFor(makeEnemy('flipper', 0, 0.5, levelParams(1)))).toBe(SCORE_FLIPPER)
-    expect(scoreFor(makeEnemy('tanker', 0, 0.5, levelParams(1), 'flipper'))).toBe(SCORE_TANKER)
-    expect(scoreFor(makeEnemy('spiker', 0, 0.5, levelParams(1)))).toBe(SCORE_SPIKER)
-    expect(scoreFor({ ...makeEnemy('pulsar', 0, 0.5, levelParams(1)), pulsing: false })).toBe(SCORE_PULSAR)
+    const rng = createRng(1) // unused by these kinds; scoreFor's signature just requires it
+    expect(scoreFor(makeEnemy('flipper', 0, 0.5, levelParams(1)), rng)).toBe(SCORE_FLIPPER)
+    expect(scoreFor(makeEnemy('tanker', 0, 0.5, levelParams(1), 'flipper'), rng)).toBe(SCORE_TANKER)
+    expect(scoreFor(makeEnemy('spiker', 0, 0.5, levelParams(1)), rng)).toBe(SCORE_SPIKER)
+    expect(scoreFor({ ...makeEnemy('pulsar', 0, 0.5, levelParams(1)), pulsing: false }, rng)).toBe(SCORE_PULSAR)
   })
 
-  it('escalates the fuseball value with depth (250 → 500 → 750)', () => {
-    expect(fuseballScore(0.1)).toBe(250)
-    expect(fuseballScore(0.5)).toBe(500)
-    expect(fuseballScore(0.9)).toBe(750)
+  // tp1-21: the fuseball tier is a weighted roll off the seeded RNG (ALWELG.MAC:2754),
+  // not a function of depth — see tests/core/tp1-21.fuseball-score.test.ts for the
+  // full determinism/distribution/depth-independence suite this re-points to.
+  it('rolls the fuseball tier from the seeded RNG — one of the ROM 250/500/750 values', () => {
+    const rng = createRng(1)
+    expect([250, 500, 750]).toContain(fuseballScore(rng))
   })
 })
 

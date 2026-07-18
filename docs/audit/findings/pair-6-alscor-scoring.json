@@ -98,8 +98,8 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 813,
-      "verbatim": "  drawGlowText(ctx, `RANKING FROM 1 TO ${MAX_SELECT_LEVEL}`, W / 2, H * 0.13 + 38, 16, GLYPH_HEX.red, 8)"
+      "line": 701,
+      "verbatim": "  drawGlowText(ctx, 'RANK', W / 2, H * 0.13 + 38, 16, '#ff2f4f', 8)"
     },
     "claim": "RQRDSP (ALSCOR.MAC:1074-1096) walks MSGTAB = {MRATE,MPRMOV,MPRFIR / MNOVIC,MEXPER,MLEVEL / MHOLE,MBONUS} (lines 1227-1229) to build the \"RATE YOURSELF\" / RANK screen with NOVICE and EXPERT flanking the level chooser. Our drawSelect() (render.ts:697-711) renders the same shape: 'RATE YOURSELF' + 'RANK' header (700-701), 'SELECT START LEVEL' chooser, 'NOVICE' at W*0.17 and 'EXPERT' at W*0.83 (708-709) flanking it — the concept and message set survive even though the presentation differs (see SC-011)."
   },
@@ -114,8 +114,8 @@
     },
     "ours": {
       "file": "src/shell/render.ts",
-      "line": 808,
-      "verbatim": "  // 1981 Messages table — RATE YOURSELF is GREEN, the rank line/NOVICE/EXPERT RED."
+      "line": 699,
+      "verbatim": "  // from the 1981 Messages table — RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED."
     },
     "claim": "MSGS (ALSCOR.MAC:423-467) derives each message's actual display color from a per-message byte in MSGLBS (`LDA X,MSGLBS ... LSR*4 ... JSR NWCOLO`), but MSGLBS itself is only declared `.GLOBL` here — its data table is defined in a different module, not in ALSCOR.MAC, ALEARO.MAC, or ALCOMN.MAC. Our render.ts comment asserts a specific split (\"RATE YOURSELF is GREEN, RANK/NOVICE/EXPERT RED\") that this pair's primary source cannot confirm or refute.",
     "reasoning": "Recording this so the claim isn't mistaken for something this audit verified: the color assignment is a real, checkable fact, just not one reachable from ALSCOR.MAC/ALEARO.MAC/ALCOMN.MAC. A future audit pair with ALDISP.MAC/ALVGUT.MAC in scope should adjudicate it.",
