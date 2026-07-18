@@ -44,8 +44,8 @@ const TUBE_COLOR = '#1f8fff'
 const COLOR = {
   flipper: '#ff2f4f', // red bowtie
   tanker: '#39ff14', // green X-diamond
-  spiker: '#ffa500', // orange pinwheel
-  fuseball: '#ffe600', // one of its tri-colour legs
+  spiker: '#39ff14', // green spiral
+  fuseball: '#ffe600', // one of its five leg colours
   pulsar: '#00e5ff', // cyan zig-zag
   claw: '#ffe600', // CLAW_COLOR
 } as const
