@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { checkFindings } from '../../tools/audit/check-citations.mjs'
@@ -8,6 +9,14 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const findingsDir = join(repoRoot, 'docs', 'audit', 'findings')
 const sourceDir = process.env.TEMPEST_SOURCE_DIR ?? '/Users/slabgorb/Projects/tempest-source-text'
 const sourceAvailable = existsSync(sourceDir)
+
+// tp1-22 — the checker now re-opens `ours` against the AUDIT COMMIT, not the working tree.
+// A well-formed `ours` fixture therefore has to quote a line as it stood at 4232ed4, not a
+// line read live from disk (which may have been fixed/refactored since). This mirrors the
+// checker's own `AUDIT_COMMIT` read; a line number that existed at the audit resolves fine.
+const AUDIT_COMMIT = '4232ed4'
+const auditLine = (file: string, n: number): string =>
+  execFileSync('git', ['show', `${AUDIT_COMMIT}:${file}`], { cwd: repoRoot, encoding: 'utf8' }).split('\n')[n - 1]
 
 describe('checkFindings', () => {
   it('rejects a citation to a module that never shipped', () => {
@@ -49,7 +58,7 @@ describe('checkFindings', () => {
   })
 
   it('accepts a finding whose `ours` verbatim matches the real line', () => {
-    const line = readFileSync(join(repoRoot, 'src/core/rules.ts'), 'utf8').split('\n')[7]
+    const line = auditLine('src/core/rules.ts', 8) // as it stood at the audit commit
     const errors = checkFindings(
       [{
         id: 'X-003', class: 'DIVERGENCE', title: 't',
@@ -103,9 +112,9 @@ describe('checkFindings', () => {
 
   it('still accepts an `ours` citation to a tracked file in our own tree', () => {
     // Guard the guard: the node_modules rule must not become a blanket ban on ours-side
-    // citations. src/core/rules.ts:19 is exactly where tempest records that the ladder
-    // depth was delegated to @arcade/shared — a stable, tracked anchor.
-    const line = readFileSync(join(repoRoot, 'src/core/rules.ts'), 'utf8').split('\n')[18]
+    // citations. A tracked file in our own tree, quoted as it stood at the audit commit,
+    // must still be accepted (src/core/rules.ts existed at 4232ed4).
+    const line = auditLine('src/core/rules.ts', 19) // as it stood at the audit commit
     const errors = checkFindings(
       [{
         id: 'X-021', class: 'DIVERGENCE', title: 't',
