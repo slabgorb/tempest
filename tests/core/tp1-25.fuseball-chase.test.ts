@@ -35,9 +35,16 @@
 //
 // Only MAYBLR carries the invader-index parity gate. These tests pin the DIRECT branch:
 // a lone fuseball riding the tube consults WFUSCH bit 6 and chases, with no parity gate
-// in the way. If you implement MAYBLR's parity gate ON the port's single decision point,
-// a lone fuseball at an even slot will never chase and these tests will go red — that is
-// the signal to log the deviation (AC-3), not to weaken the tests.
+// in the way. tp1-25 shipped WITHOUT the parity gate (its deviation D2), because the port
+// had no stable invader index to key it on.
+//
+// ── tp1-29 RETIRES D2 ────────────────────────────────────────────────────────────────
+// tp1-29 gives every enemy a stable `slotId` and ports MAYBLR's gate onto it: at a chase
+// wave a fuseball chases only on an ODD slot, and rolls the LEFRIT coin on an EVEN one. So
+// whether a LONE fuseball chases now depends on ITS slot. Rather than weaken the chase
+// assertions below, `pathWithPlayerAt` seats this fuse on an ODD slot (slotId = 1) so it
+// STILL chases — the behaviour these tests pin is unchanged; only the fixture is now
+// explicit about the slot the gate reads. See tests/core/tp1-29.stable-slot-id.test.ts.
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
@@ -72,6 +79,12 @@ function pathWithPlayerAt(level: number, playerLane: number, fuseLane = 8): numb
   let s = base(level, playerLane)
   const f = makeEnemy('fuseball', fuseLane, 0.0, levelParams(level))
   f.fireCooldown = 999
+  // tp1-29 (AC-3): MAYBLR's parity gate chases only on an ODD slot id. Seat this lone fuse on an
+  // ODD slot so it STILL chases at waves 18/49/100 — retiring tp1-25's deviation D2 without
+  // weakening the assertions. The cast keeps the file compiling before tp1-29 adds `slotId` to Enemy;
+  // it is a plain field write once the story lands. At waves 1/16/17 (WFUSCH = 0) the gate is never
+  // consulted, so the parity is inert and the "ignores the player" tests are unaffected.
+  ;(f as typeof f & { slotId: number }).slotId = 1
   s.enemies = [f]
 
   const lanes: number[] = []
