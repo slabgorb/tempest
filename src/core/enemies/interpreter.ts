@@ -507,7 +507,12 @@ function jfuseup(e: Enemy, ctx: CamContext): void {
     // It aims the SHORTEST way to the player and then flips that bit straight back, so it
     // sets off the LONG way round the tube — away from him. That is not a bug to be tidied
     // up: a fuseball that takes the short way is exactly what tp1-5 tore out.
-    if (wfuschForLevel(ctx.level) & FUSE_CHASE_ON_TUBE) {
+    //
+    // MAYBLR's parity gate (tp1-29, ALWELG.MAC:2157-2160 — `TXA / LSR / BCC LEFRIT / JSR
+    // FUCHPL`) sits downstream of this WFUSCH check: LSR shifts the invader's slot bit0 into
+    // carry, and FUCHPL (chase) falls through only on carry SET — an ODD slot. An EVEN slot
+    // branches to LEFRIT, the coin. This reads the STABLE `slotId`, never the array index.
+    if ((wfuschForLevel(ctx.level) & FUSE_CHASE_ON_TUBE) && (e.slotId & 1) === 1) {
       jchpla(e, ctx)   // aim…
       jchrot(e)        // …then reverse. FUSE IS BACKWARDS.
     } else {

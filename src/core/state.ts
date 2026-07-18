@@ -46,6 +46,13 @@ export type TankerCargo = 'flipper' | 'fuseball' | 'pulsar'
 // own per-invader bytes, and they PERSIST across frames — that is what makes a CAM
 // program a coroutine rather than a state machine.
 interface EnemyBase {
+  // INIINV's per-invader slot (ALWELG.MAC:345-350) — X, indexing the fixed INVAY array. Our
+  // s.enemies array is spliced (dead enemies removed by `filter`), so an enemy's INDEX shifts
+  // whenever an earlier one dies; `slotId` is the stable identity the ROM gets for free from
+  // its fixed array and this port does not. Assigned once at spawn (GameState.nextSlotId,
+  // tp1-29) and never recomputed — MAYBLR's parity gate (interpreter.ts jfuseup) is keyed on
+  // this, not on array position.
+  slotId: number
   lane: number          // integer lane — the ROM's INVAL1, the invader's base leg
   depth: number         // 0 (far, spawn) → 1 (near rim) — INVAY, inverted
   fireCooldown?: number // seconds left on the refire holdoff (Story 6-5); absent = ready to fire
@@ -234,6 +241,11 @@ export interface GameState {
   rng: Rng
   fireRng: Rng                       // SEPARATE stream for enemy-fire rolls (6-5), so fire decisions
                                      // never desync the movement RNG (mirrors the ROM's pokey1_rand)
+  // tp1-29: a monotonic counter minting each enemy's stable `slotId` at spawn (INIINV's fixed
+  // slot, ALWELG.MAC:345-350). Lives on GameState — NOT a module global or any non-seeded RNG
+  // call — so stepGame/cloneState stay deterministic and replayable. NEVER reset (not on level
+  // start, not on respawn): only `initialState` sets it to 0.
+  nextSlotId: number
 }
 
 export function initialState(seed: number): GameState {
@@ -269,5 +281,6 @@ export function initialState(seed: number): GameState {
     rng,
     // Derive a distinct seed so the fire stream is decorrelated from movement.
     fireRng: createRng(seed ^ 0x9e3779b9),
+    nextSlotId: 0,
   }
 }

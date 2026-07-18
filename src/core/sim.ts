@@ -136,7 +136,13 @@ function stepBullets(s: GameState, dt: number): void {
 export function makeEnemy<K extends EnemyKind>(
   kind: K, lane: number, depth: number, params: LevelParams, cargo: TankerCargo = 'flipper',
 ): Extract<Enemy, { kind: K }> {
-  const cam = { camPc: camForNewEnemy(kind, params), camLoop: 0, rot: -1 as const, direction: 1 as const }
+  // `slotId: 0` is a fixed default, not a counter read — `makeEnemy` has no GameState to draw
+  // a fresh id from. Both real spawn sites (stepNymphs' hatch, splitTanker's children) stamp a
+  // fresh `s.nextSlotId++` over this immediately after; only fixture code that builds an enemy
+  // directly (bypassing stepGame) ever sees the default (tp1-29).
+  const cam = {
+    camPc: camForNewEnemy(kind, params), camLoop: 0, rot: -1 as const, direction: 1 as const, slotId: 0,
+  }
   const made: Enemy = ((): Enemy => {
     switch (kind) {
       case 'flipper':  return { kind: 'flipper', lane, depth, ...cam }
@@ -219,7 +225,9 @@ function stepNymphs(s: GameState): void {
         if (pick) {
           hatchedThisFrame += 1
           hatched.add(n)
-          s.enemies.push(makeEnemy(pick.kind, n.lane, 0, params, pick.cargo))
+          const hatchling = makeEnemy(pick.kind, n.lane, 0, params, pick.cargo)
+          hatchling.slotId = s.nextSlotId++ // INIINV's slot, stamped once, at the hatch (tp1-29)
+          s.enemies.push(hatchling)
         } else {
           n.py += 1
           latched = true
@@ -490,7 +498,13 @@ function resolveBulletHits(s: GameState): void {
         const points = scoreFor(e, s.rng)
         awardScore(s, points)
         s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth, score: points })
-        if (e.kind === 'tanker') spawned.push(...splitTanker(e, s.tube, params))
+        if (e.kind === 'tanker') {
+          // The split is the OTHER spawn site (INIINV's slot again): stamp each child before
+          // it reaches activateInvaders, same as the hatch above (tp1-29).
+          const kids = splitTanker(e, s.tube, params)
+          for (const k of kids) k.slotId = s.nextSlotId++
+          spawned.push(...kids)
+        }
         break
       }
     }
@@ -545,7 +559,11 @@ function resolveTankerArrivals(s: GameState): void {
   const spawned: Enemy[] = []
   for (const e of s.enemies) {
     if (e.kind === 'tanker' && e.depth >= TANKER_SPLIT_DEPTH) {
-      spawned.push(...splitTanker(e, s.tube, params))
+      // Same stamp as resolveBulletHits' split site — this is the OTHER path a tanker
+      // reaches activateInvaders through (arriving at TANKER_SPLIT_DEPTH, not being shot).
+      const kids = splitTanker(e, s.tube, params)
+      for (const k of kids) k.slotId = s.nextSlotId++
+      spawned.push(...kids)
     } else {
       survivors.push(e)
     }
