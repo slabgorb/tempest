@@ -6,8 +6,8 @@ import {
   SPIN_SENSITIVITY, BULLET_SPEED, MAX_BULLETS, scoreFor, EXTRA_LIFE_INTERVAL,
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_BURROW_SPEED, SPIKE_BURROW_HITS, TANKER_SPLIT_DEPTH, LevelParams,
-  SPLIT_TOO_CLOSE_DEPTH, PULSAR_NEAR_FAR_DEPTH, NINVAD, WINVMX,
-  PULSE_STEP, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
+  SPLIT_TOO_CLOSE_DEPTH, NINVAD, WINVMX,
+  pultimForLevel, pulpotKillDepthForLevel, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   EYE_FLYIN_START, EYE_FLYIN_STEP, startWaveBonus,
@@ -563,8 +563,10 @@ function startLevel(s: GameState): void {
   s.player.zapTimer = 0         // no zap window carries across a level/respawn (10-2)
   // INEWLI (ALWELG.MAC:37-48) re-seeds the pulse for every new wave AND every new life,
   // so a wave always opens dark. The seed is not decoration: it fixes the counter's
-  // residue, and with it the duty cycle (rules.ts, PULSE_SON_INIT).
-  s.pulse = { son: PULSE_SON_INIT, tim: PULSE_STEP }
+  // residue, and with it the duty cycle (rules.ts, PULSE_SON_INIT). `tim` is PULTIM,
+  // wave-parameterised (tp1-26) — THIS is the only place a wave's step reaches the
+  // running pulse; stepPulseClock just steps whatever it finds.
+  s.pulse = { son: PULSE_SON_INIT, tim: pultimForLevel(s.level) }
 }
 
 function killPlayer(s: GameState): void {
@@ -610,10 +612,13 @@ function resolvePlayerHits(s: GameState): void {
   //
   //   * `LDA PULSON / IFPL`   — the pulse is lit. (Ours: `pulsing`.)
   //   * `CMP PULPOT / IFCC`   — and the pulsar has climbed INTO the potency zone. PULPOT
-  //     is $A0 for waves 1-64 (WPULPOT, 606-609), which is PULSAR_NEAR_FAR_DEPTH — the
-  //     same line it already crosses to change climb speed. A pulsar strobing out in the
-  //     far third of the well is harmless, and ours electrocuted the player from there
-  //     (W-027).
+  //     is WAVE-PARAMETERISED (WPULPOT, 606-609): $A0 for waves 1-64, $C0 (WIDER) for
+  //     65-99 — read here via `pulpotKillDepthForLevel` (tp1-26; it used to be frozen at
+  //     the wave-1 $A0 value, PULSAR_NEAR_FAR_DEPTH, which a pulsar strobing out in the
+  //     far third of the well would clear harmlessly at every wave — W-027). PULPOT is
+  //     the same byte the climb-speed switch reads (rules.ts, PULSAR_NEAR_FAR_DEPTH's
+  //     comment), but that site — and the descend reverse, interpreter.ts — deliberately
+  //     stay on the frozen $A0 constant; only the kill tier is wave-parameterised here.
   //   * both its legs on both of the cursor's legs (1808-1814) — which an invader caught
   //     MID-FLIP, straddling two lines, does not have. That is the grab's own gate, one
   //     line above; the pulse branch beside it never got it, so a pulsar mid-flip could
@@ -621,7 +626,7 @@ function resolvePlayerHits(s: GameState): void {
   //     4 of tp1-5, left open when the grab gate was widened in tp1-4).
   const killer = grabber ?? s.enemies.find(
     (e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl
-      && e.depth >= PULSAR_NEAR_FAR_DEPTH && !isJumping(e),
+      && e.depth >= pulpotKillDepthForLevel(s.level) && !isJumping(e),
   )
   if (!killer) return
   s.events.push({ type: 'player-grab', lane: pl, killedBy: killer.kind })

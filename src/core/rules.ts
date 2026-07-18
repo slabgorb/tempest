@@ -324,8 +324,10 @@ export function enemyFireHoldoffSeconds(level: number): number {
 // The counter walks a triangle between two rails, negating its increment at each
 // (1557-1568): at PULSON >= 15, and again at PULSON <= -64 (the ROM spells the lower
 // rail `CMP I,-63. / IFCC`, an UNSIGNED compare against 0xC1, so it fires on -64 and
-// below). PULTIM is 4 below wave 49 (WPULTIM, 610-613).
-export const PULSE_STEP = 4        // PULTIM — WPULTIM's value for waves 1-48
+// below). PULTIM is WAVE-PARAMETERISED (WPULTIM, 610-613) — 4 for waves 1-48, 6 for
+// 49-64, 8 for 65-99 — via `pultimForLevel` below (tp1-26; it used to be frozen at the
+// wave-1 value 4 here as PULSE_STEP). Only the SEED sites (sim.ts's startLevel, and the
+// boot default in state.ts) read it; stepPulseClock just steps whatever `tim` it finds.
 export const PULSE_SON_MAX = 15    // `CMP I,15. / BCS NEGPUL`
 export const PULSE_SON_MIN = -64   // `CMP I,-63. / IFCC` — an unsigned compare: -64 and below
 //
@@ -340,6 +342,12 @@ export const PULSE_SON_MIN = -64   // `CMP I,-63. / IFCC` — an unsigned compar
 // Seed the same machine at 0 instead and it lands on {0,4,8,12,16} and gives NINE. The
 // audit says nine (and its refuter says the period is 42); neither read INEWLI. The
 // period is 40 and the pulse is lit for 7 — see the tp1-5 deviations.
+//
+// That "40/7" is the WAVE-1 residue only (PULTIM 4). The other two PULTIM bands pin a
+// different residue off the same -1 seed: PULTIM 6 (waves 49-64) gives period 28, lit 5;
+// PULTIM 8 (waves 65-99) gives period 20, lit 3 (tp1-26, measured out of the running sim,
+// never re-derived — see the tp1-26 suite's own header on why re-deriving got this wrong
+// twice already).
 export const PULSE_SON_INIT = -1
 export const FUSEBALL_JITTER_INTERVAL = 0.3  // seconds between erratic lane hops
 // fuzz_move probability gate (rev-3 §D l.240-250): a fuseball only slides a lane
@@ -451,6 +459,16 @@ export const PULSAR_CLIMB_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / WARP_ALON
 // along > $a0 (depth < this) is "farther than L0157" → flipper speed; nearer →
 // pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
 // is intentionally not modelled.
+//
+// PULPOT (WPULPOT, ALWELG.MAC:606-609) is ONE ROM byte and JPULMO reads this SAME byte
+// at three sites: the climb-speed switch below (1783-1786), the descend reverse
+// (interpreter.ts, 1795) and the kill test (1802-1813). All three widen to $C0 at wave
+// 65 in the ROM. tp1-26 wave-parameterises only the KILL tier (see pulpotKillDepthForLevel
+// below) and leaves this constant — and therefore the climb speed and reverse — frozen at
+// $A0: the L65+ tier was already an accepted deferral for those two, and moving them would
+// redden the wave-1 pulsar-motion suites (tp1-5, tp1-6, sim.enemy-motion-fidelity). See the
+// tp1-26 Design Deviation: the two are not different ROM constants that merely coincide
+// below wave 65, as an earlier framing assumed — they are the same byte, coincident always.
 export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.357
 // There is no SPLIT_CHILD_DEPTH here any more, and that is the point of tp1-24 (W-030).
 //
@@ -591,6 +609,38 @@ function contourValue(records: readonly ContourRecord[], level: number): number 
     }
   }
   return 0 // TE — end of table
+}
+
+// ── PULTIM (ALWELG.MAC:610-613, WPULTIM) — the pulse counter's per-frame step, wave-
+// parameterised (tp1-26): 4 for waves 1-48, 6 for 49-64, 8 for 65-99. Read ONLY at the
+// pulse's seed points — INEWLI's re-seed in sim.ts's startLevel, and the boot default in
+// state.ts — never inside stepPulseClock, which merely steps whatever `tim` it was seeded
+// with. PULTIM sets the counter's STEP, and the seed (PULSE_SON_INIT above) pins its
+// residue, so the step also sets the period and duty cycle: 40/7, 28/5, 20/3 across the
+// three bands (measured out of the running sim by the tp1-26 suite, never re-derived).
+const WPULTIM: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 48, v: 4 },
+  { t: 'T1', start: 49, end: 64, v: 6 },
+  { t: 'T1', start: 65, end: 99, v: 8 },
+]
+export function pultimForLevel(level: number): number {
+  return contourValue(WPULTIM, level)
+}
+
+// ── PULPOT (ALWELG.MAC:606-609, WPULPOT) — the pulsar potency-zone byte JPULMO's kill
+// test reads (`LDA INVAY / CMP PULPOT / IFCC`, 1802-1813): $A0 for waves 1-64, $C0 for
+// 65-99 — WIDER, so the kill zone reaches farther from the rim at wave 65+. Converted to
+// a depth the same way every other along-byte in this file is: (0xf0 - byte) / WARP_ALONG_SPAN.
+//
+// PULPOT is ONE ROM byte, also read by the climb-speed near/far switch and the descend
+// reverse (see PULSAR_NEAR_FAR_DEPTH's comment) — this lookup feeds ONLY the kill gate
+// (sim.ts's resolvePlayerHits); the other two sites stay on the frozen $A0 constant.
+const WPULPOT: readonly ContourRecord[] = [
+  { t: 'T1', start: 1, end: 64, v: 0xa0 },
+  { t: 'T1', start: 65, end: 99, v: 0xc0 },
+]
+export function pulpotKillDepthForLevel(level: number): number {
+  return (0xf0 - contourValue(WPULPOT, level)) / WARP_ALONG_SPAN
 }
 
 // ── 1. TNYMMX (ALWELG.MAC:697-703) — NWNYMC, the wave's enemy budget. NON-MONOTONIC:
