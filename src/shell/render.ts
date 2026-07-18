@@ -938,7 +938,16 @@ function drawHud(
 // itself is scaled up about its vanishing point as the dive progresses (the caller
 // applies that zoom to the tube). Speed streaks rush outward along every spoke for
 // the dive sensation; spikes stay drawn (by the caller) so the spike crash reads.
-function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): void {
+// tp1-39: the streaks ride THAT expanding well (divingTube — the same moving-eye
+// view render() already computed for drawTube/drawSpikes at 1068-1073, passed in
+// so the streaks and the drawn tube can never diverge frame-to-frame), while the
+// Claw stays anchored on `s.tube`, the STATIC well (tp1-38 invariant, below).
+function drawWarp(
+  ctx: CanvasRenderingContext2D,
+  s: GameState,
+  color: string,
+  divingTube: Tube,
+): void {
   // tp1-38: `s` here is the UNMAPPED state — this is the STATIC well, never the
   // warpDescentTube view whose rim flies off. The Claw rides CURSY: (CURSY − EY)
   // ≡ 16+H is invariant (MOVCUD advances both by CURSVL, ALWELG.MAC:1024-1057),
@@ -947,12 +956,14 @@ function drawWarp(ctx: CanvasRenderingContext2D, s: GameState, color: string): v
   const progress = Math.max(0, Math.min(1, s.warp.progress))
 
   // Speed streaks along each spoke, faster and brighter as the warp progresses.
+  // tp1-39: iterate divingTube's spokes (NOT staticTube) so the streaks ride the
+  // well as it expands and the rim flies off, matching what's actually drawn.
   const speed = 1.5 + progress * 4
   const streaks = 3
   const segLen = 0.14
-  for (let i = 0; i < staticTube.far.length; i++) {
-    const f = staticTube.far[i]
-    const n = staticTube.near[i]
+  for (let i = 0; i < divingTube.far.length; i++) {
+    const f = divingTube.far[i]
+    const n = divingTube.near[i]
     for (let k = 0; k < streaks; k++) {
       const t = (((renderTime * speed + k / streaks) % 1) + 1) % 1
       const a = lerpP(f, n, t)
@@ -1096,7 +1107,7 @@ export function render(
     if (s.warp.progress >= WARP_STARFIELD_GATE) drawStarfield(pctx, s.level)
     // Diving warp transition; spikes above stay drawn so a crash reads. drawWarp
     // draws the streaks + the rim-anchored, constant Claw (WD-012, via clawTransform).
-    drawWarp(pctx, s, color)
+    drawWarp(pctx, s, color, diveTube)
   } else {
     // Not warping — clear the starfield so the next dive starts from centre.
     starfield.reset()
