@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { LINKED_MODULES } from './linked-modules.mjs'
 
@@ -6,6 +7,17 @@ const CLASSES = ['DIVERGENCE', 'CONFIRMED', 'BOOK_WAS_WRONG', 'STRUCTURAL', 'NO_
 const RECOMMENDATIONS = ['fix', 'accept', 'wont_fix']
 const SIZES = ['s', 'm', 'l']
 const NODE_MODULES = /(^|\/)node_modules(\/|$)/
+
+// tp1-22 — THE FREEZE. `ours` is read from the AUDIT COMMIT, never the working tree.
+//
+// Each finding's `ours.verbatim` IS the defect text as our code stood when it was audited.
+// Reading it from the working tree meant the gate went red the moment any story fixed the
+// very line the audit describes — so every tp1 story paid a hand re-pointing tax. We instead
+// re-open `ours` against the commit that recorded the audit. That commit is immutable, so a
+// later fix (or refactor) of the working tree can never redden the gate again. The ROM
+// `source` side above stays LIVE against the 1981 assembler — that is where the audit's
+// authority comes from, and it must still catch a mis-cited source line.
+const AUDIT_COMMIT = '4232ed4'
 
 /**
  * Is this a whole citation — something a reader could actually go and re-open?
@@ -29,6 +41,29 @@ function lineAt(path, n) {
     lineCache.set(path, readFileSync(path, 'utf8').split('\n'))
   }
   return lineCache.get(path)[n - 1]
+}
+
+// A tracked file as it stood at AUDIT_COMMIT, line-split — or `{ error }` if git cannot
+// resolve it (the path did not exist at the audit). Cached per (repo, file); `git show` is
+// invoked at most once per file. `git show` THROWS for an absent path, so the throw is
+// caught and turned into a returned error the caller reports — the gate must never crash on
+// a frozen citation it cannot resolve (tp1-22 AC-4b).
+const frozenCache = new Map()
+function frozenFileAt(repoRoot, file) {
+  const key = `${repoRoot}::${file}`
+  if (!frozenCache.has(key)) {
+    try {
+      const text = execFileSync('git', ['show', `${AUDIT_COMMIT}:${file}`], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      frozenCache.set(key, { lines: text.split('\n') })
+    } catch {
+      frozenCache.set(key, { error: `git show ${AUDIT_COMMIT}:${file} failed — path absent from the audit commit` })
+    }
+  }
+  return frozenCache.get(key)
 }
 
 /**
@@ -152,15 +187,28 @@ export function checkFindings(findings, { repoRoot, sourceDir }) {
     } else if (!f.ours?.file) {
       errors.push(`${id}: class ${f.class} requires \`ours\` (only NO_COUNTERPART may omit it)`)
     } else {
-      const actual = lineAt(join(repoRoot, f.ours.file), f.ours.line)
-      if (actual === undefined) {
-        errors.push(`${id}: ours ${f.ours.file}:${f.ours.line} does not exist`)
-      } else if (actual.trimEnd() !== String(f.ours.verbatim).trimEnd()) {
+      // THE FREEZE (tp1-22). Re-open `ours` against AUDIT_COMMIT, not the working tree, and
+      // match BY TEXT rather than by the stored line: tp1-1 and later stories re-anchored
+      // `ours.line` to the working tree, so the recorded row is no longer the audit-commit
+      // row. Mirroring `reanchor-citations.mjs`, the quote is honoured if it appears anywhere
+      // in the file as it stood at the audit — its line number is now decorative. A path that
+      // never existed at the audit commit is a clear returned error, never a crash (AC-4b).
+      const frozen = frozenFileAt(repoRoot, f.ours.file)
+      if (frozen.error) {
         errors.push(
-          `${id}: ours ${f.ours.file}:${f.ours.line} does not match verbatim\n` +
-            `  cited:  ${JSON.stringify(f.ours.verbatim)}\n` +
-            `  actual: ${JSON.stringify(actual)}`,
+          `${id}: ours ${f.ours.file}:${f.ours.line} cannot be frozen — ${frozen.error}. ` +
+            `Re-baseline it to a file present at ${AUDIT_COMMIT}, or mark it remediated_by.`,
         )
+      } else {
+        const want = String(f.ours.verbatim).trimEnd()
+        const present = frozen.lines.some((l) => l.trimEnd() === want)
+        if (!present) {
+          errors.push(
+            `${id}: ours ${f.ours.file}:${f.ours.line} does not match verbatim at ${AUDIT_COMMIT}\n` +
+              `  cited:  ${JSON.stringify(f.ours.verbatim)}\n` +
+              `  (that text is absent from ${f.ours.file} as it stood at the audit commit)`,
+          )
+        }
       }
     }
   }

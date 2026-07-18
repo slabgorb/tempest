@@ -64,8 +64,8 @@
     },
     "ours": {
       "file": "src/core/state.ts",
-      "line": 151,
-      "verbatim": "  progress: number      // 0 = warp just entered (Claw at rim), 1 = cursor at the well bottom (ILINDDY)"
+      "line": 93,
+      "verbatim": "  progress: number      // 0 = warp just entered (Claw at rim), 1 = arrived at next level"
     },
     "claim": "The ROM represents \"is the Claw currently diving down the well, how far along, and how fast\" with: CURMOD (ALCOMN.MAC:707), whose SIGN bit alone flags dropping-mode; CURSY/CURSYL (ALCOMN.MAC:833, 708), an integer+fractional byte pair for depth; and CURSVL/CURSVH (ALCOMN.MAC:705-706), an integer+fractional byte pair for acceleration/velocity down the well — 5 bytes across 3 named variables. Our `WarpState` (state.ts:92-96) covers the same three facts with `mode === 'warp'` (a tagged union member, state.ts:8) plus two IEEE-754 doubles, `progress` and `velocity`.",
     "reasoning": "Same three facts (diving?/how far?/how fast?), packed as a sign-bit flag plus two 8.8-style fixed-point byte pairs on the 6502 versus a discriminated-union tag plus two floats in JS. Different spelling of the same behaviour — accept.",
