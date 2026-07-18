@@ -78,8 +78,11 @@ function baseState(): GameState {
 
 // The CAM registers every invader carries. The contact sheet does not run the
 // interpreter — each cell hand-animates its model so the SHAPE can be eyeballed —
-// so these are just the quiescent values render.ts reads.
-const regs = () => ({ camPc: CAM_ENTRY.NOJUMP, camLoop: 0, rot: 1 as const, direction: 1 as const })
+// so these are just the quiescent values render.ts reads. `slotId` is unused here
+// (no MAYBLR gate runs off-sim), so every cell gets the same fixed placeholder.
+const regs = () => ({
+  camPc: CAM_ENTRY.NOJUMP, camLoop: 0, rot: 1 as const, direction: 1 as const, slotId: 0,
+})
 
 // Flipper — climbs far→near and tumbles lane→lane, bouncing across the board's
 // three lanes (0→1→2→1→0). render.ts supplies the bowtie spin + mid-flip half-turn.
