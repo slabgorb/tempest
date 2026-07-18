@@ -17,11 +17,16 @@ import type { EnemyKind } from './state'
 
 // An enemy was destroyed (by a bullet or the superzapper). `enemyType` is the
 // enemy's kind; `lane`/`depth` mark where it died, for particle/SFX placement.
+// `score` is the points actually awarded for this kill (tp1-21: the fuseball's
+// tier is a random roll, so the shell can no longer re-derive it from `depth` —
+// it must read the number the sim actually rolled). Optional so every other
+// kind, and existing hand-built fixtures, need not carry it.
 export interface EnemyDeathEvent {
   type: 'enemy-death'
   enemyType: EnemyKind
   lane: number
   depth: number
+  score?: number
 }
 
 // The Claw was killed at the rim — grabbed by an enemy or caught by a pulse.

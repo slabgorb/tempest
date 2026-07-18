@@ -14,17 +14,19 @@
 // connected a fuseball's death to it. A test that only proves a value-producer exists
 // does not prove the game shows it.
 //
-// The number shown must be the number AWARDED: the tier is read through the same
-// `fuseballScore` the sim scores with. tp1-21 replaces that rule with the ROM's
-// weighted random roll — these tests are written against the RULE, not against a
-// hard-coded depth band, so they should survive it.
+// The number shown must be the number AWARDED. tp1-21 replaces `fuseballScore`'s
+// depth band with the ROM's weighted random roll (ALWELG.MAC:2754) — depth is no
+// longer an input to the score at all, so the pop-up can no longer re-derive its
+// tier from `depth`. It now reads the ACTUAL score the kill awarded straight off
+// the `enemy-death` event's `score` field (set by the sim, never guessed here).
 import { describe, it, expect } from 'vitest'
 import { createFx, type Explosion } from '../../src/shell/fx'
 import { initialState, type EnemyKind } from '../../src/core/state'
 import { project } from '../../src/core/geometry'
-import { fuseballScore } from '../../src/core/rules'
 import { FUSE_SCORE_TIERS } from '../../src/shell/glyphs'
 import type { GameEvent } from '../../src/core/events'
+
+const ROM_TIERS = [250, 500, 750] as const
 
 const FRAME = 1 / 60
 
@@ -37,8 +39,10 @@ function seeded() {
   return { s, fx }
 }
 
-const death = (enemyType: EnemyKind, lane: number, depth: number): GameEvent => ({
-  type: 'enemy-death', enemyType, lane, depth,
+// `score` defaults to a valid ROM tier so tests that don't care about the exact
+// value (non-fuseball kinds, or "a pop-up spawned at all") don't need to name one.
+const death = (enemyType: EnemyKind, lane: number, depth: number, score = 250): GameEvent => ({
+  type: 'enemy-death', enemyType, lane, depth, score,
 })
 
 const scorePops = (fx: { explosions: readonly Explosion[] }): Extract<Explosion, { kind: 'fuse-score' }>[] =>
@@ -64,23 +68,23 @@ describe('V-022 wiring — a dying fuseball blooms its score (ALVROM.MAC:2148)',
   })
 
   it('shows the tier the SIM actually awarded — not a guess', () => {
-    // The pop-up's tier must resolve to fuseballScore(depth) at every depth, so the
-    // number on screen is the number added to the score. Sweep the whole range.
-    for (const depth of [0, 0.1, 0.32, 0.34, 0.5, 0.66, 0.67, 0.9, 1]) {
+    // tp1-21: depth is no longer an input to the score at all (the roll is off
+    // state.rng, at kill time). The pop-up must display whatever `score` the
+    // enemy-death event carries, at a fixed depth, for every ROM tier.
+    for (const score of ROM_TIERS) {
       const { s, fx } = seeded()
-      fx.detect(s, FRAME, [death('fuseball', 2, depth)])
+      fx.detect(s, FRAME, [death('fuseball', 2, 0.5, score)])
       const pop = scorePops(fx)[0]
-      expect(pop, `a pop-up at depth ${depth}`).toBeDefined()
-      expect(FUSE_SCORE_TIERS[pop.tier], `depth ${depth} shows the awarded score`)
-        .toBe(fuseballScore(depth))
+      expect(pop, `a pop-up for score ${score}`).toBeDefined()
+      expect(FUSE_SCORE_TIERS[pop.tier], `score ${score} shows the awarded score`).toBe(score)
     }
   })
 
-  it('reaches all three ROM tiers across the depth range — 750 / 500 / 250', () => {
+  it('reaches all three ROM tiers — 750 / 500 / 250', () => {
     const seen = new Set<number>()
-    for (let d = 0; d <= 1; d += 0.02) {
+    for (const score of ROM_TIERS) {
       const { s, fx } = seeded()
-      fx.detect(s, FRAME, [death('fuseball', 1, d)])
+      fx.detect(s, FRAME, [death('fuseball', 1, 0.5, score)])
       seen.add(FUSE_SCORE_TIERS[scorePops(fx)[0].tier])
     }
     expect([...seen].sort((a, b) => b - a), 'FUSEX1/2/3 all reachable').toEqual([750, 500, 250])
