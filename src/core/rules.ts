@@ -898,18 +898,29 @@ export function spawnForLevel(level: number, rng: Rng, laneCount: number): { nym
   return { nymphs }
 }
 
-export function fuseballScore(depth: number): number {
-  const tier = Math.min(2, Math.max(0, Math.floor(depth * 3))) // 0,1,2
+// INCFS2 ("PLAY-EXPLOSION OF FUSE INIT", ALWELG.MAC:2745-2771) — the fuseball kill
+// path — rolls its score tier from the ROM's RNG byte; depth is not an input:
+//   LDA RANDO2         ; ALWELG.MAC:2754  the ROM's RNG byte
+//   AND I,7            ; ALWELG.MAC:2755  r = RANDO2 & 7, uniform 0..7
+//   CMP I,3            ; ALWELG.MAC:2756
+//   IFCS / LDA I,0     ; ALWELG.MAC:2757-2758  r>=3 → tier=0 ("RANDOMLY CHOOSE
+//                                               0(250),1(500),OR 2(750)")
+// The point table (ALEXEC.MAC:598-600) makes tier 0/1/2 worth 250/500/750 — already
+// SCORE_FUSEBALL_BASE + tier*SCORE_FUSEBALL_STEP below. `nextInt(rng, 8)` is our
+// seeded analogue of `RANDO2 AND 7`.
+export function fuseballScore(rng: Rng): number {
+  const r = nextInt(rng, 8)
+  const tier = r < 3 ? r : 0 // 0,1,2 — weights 6/8 : 1/8 : 1/8
   return SCORE_FUSEBALL_BASE + tier * SCORE_FUSEBALL_STEP
 }
 
-export function scoreFor(enemy: Enemy): number {
+export function scoreFor(enemy: Enemy, rng: Rng): number {
   switch (enemy.kind) {
     case 'flipper':  return SCORE_FLIPPER
     case 'tanker':   return SCORE_TANKER
     case 'spiker':   return SCORE_SPIKER
     case 'pulsar':   return SCORE_PULSAR
-    case 'fuseball': return fuseballScore(enemy.depth)
+    case 'fuseball': return fuseballScore(rng)
     // Without this a sixth kind scores `undefined`, and `score += undefined` is NaN —
     // a scoreboard that never recovers, from a switch that compiled clean.
     default: return assertNever(enemy, 'enemy kind')

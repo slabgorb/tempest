@@ -123,7 +123,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 1031,
+      "line": 1037,
       "verbatim": "const DEMO_MAX_LEVEL = 8  // random start level 1..8 (\"RANDOM AND 7\")"
     },
     "claim": "Confirmed: ALWELG.MAC:242-243 draws 'LDA RANDOM' then 'AND I,7', masking to the range 0-7 (8 values), matching our DEMO_MAX_LEVEL=8 (used as nextInt(rng,8) -> 0..7, then +1 for the 1-indexed level).",
@@ -140,7 +140,7 @@
     },
     "ours": {
       "file": "src/core/sim.ts",
-      "line": 1030,
+      "line": 1036,
       "verbatim": "const DEMO_LIVES = 1      // the attract demo gets a single life (book: attract admin)"
     },
     "claim": "Confirmed: ALWELG.MAC:240-241 ('LDY I,1' / 'STY LIVES1') sets the attract demo to exactly 1 life, matching DEMO_LIVES=1.",
@@ -270,7 +270,8 @@
     "reasoning": "Traced INCFS2 in full (ALWELG.MAC:2745-2771): 'LDA RANDO2 / AND I,7 / CMP I,3 / IFCS[->tier 0] / ... / PLA / CLC / ADC I,5 / TAX / JSR UPSCOR'. There is no reference to the fuseball's Y/depth register (INVAY) anywhere in this scoring path, only the RNG. Not book-attributed (the book's own text says it is \"light on Fuseball ... behaviour\") — this is a fresh discovery from auditing \"every SCORE_* value\" (checklist item 7) against the primary source. [REFUTATION] Re-opened ALWELG.MAC:2745-2771 (INCFS2) in full. 'LDA RANDO2 / AND I,7' rolls 0-7 from RANDO2, confirmed at ALCOMN.MAC:326 to be a POKEY2 hardware RNG register (real randomness, not a disguised depth/position read — TEMP4 at line 2753 stores INVAL1, the invader's LANE assignment, which is never referenced again in this scoring path). 'CMP I,3 / IFCS / LDA I,0' forces the roll to 0 whenever roll>=3 (5 of 8 outcomes: 3,4,5,6,7), else keeps the roll (0,1,2) unchanged since CMP does not alter A. This gives P(tier0)=1/8+5/8=75%, P(tier1)=1/8, P(tier2)=1/8 — exactly the distribution the finding states. Traced the tail: PLA/ADC I,5/TAX/JSR UPSCOR indexes the score table at 5,6,7; decoded TUPSCL/TUPSCM (ALEXEC.MAC:597-600) at those indices as 0250/0500/0750 BCD = 250/500/750, confirming point values are correct and independent of the tier-selection mechanism critique. Verified ours: rules.ts:200-203 fuseballScore(depth) computes the tier purely from a passed-in depth value, with zero RNG draw anywhere in the call chain (scoreFor -> fuseballScore). Governing-code check passes (zapKillAt also calls scoreFor, so the same wrong mechanism applies there too, which only widens rather than weakens the finding). Confirmed as filed.",
     "recommendation": "fix",
     "size": "m",
-    "verdict": "CONFIRMED"
+    "verdict": "CONFIRMED",
+    "remediated_by": "tp1-21"
   },
   {
     "id": "B-016",

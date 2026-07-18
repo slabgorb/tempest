@@ -484,8 +484,12 @@ function resolveBulletHits(s: GameState): void {
       if (e.lane === b.lane && Math.abs(e.depth - b.depth) <= tol) {
         deadBullets.add(bi)
         deadEnemies.add(ei)
-        awardScore(s, scoreFor(e))
-        s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth })
+        // tp1-21: the fuseball tier is a weighted roll off state.rng at kill time
+        // (ALWELG.MAC:2754); scoreFor draws it here so exactly one roll happens
+        // per kill and the seeded stream stays predictable downstream.
+        const points = scoreFor(e, s.rng)
+        awardScore(s, points)
+        s.events.push({ type: 'enemy-death', enemyType: e.kind, lane: e.lane, depth: e.depth, score: points })
         if (e.kind === 'tanker') spawned.push(...splitTanker(e, s.tube, params))
         break
       }
@@ -697,8 +701,10 @@ function nearestRimIndex(s: GameState, pick: (e: Enemy) => boolean): number {
 // cargo is never released (no split), preserving the 10-1 declaw.
 function zapKillAt(s: GameState, idx: number): void {
   const victim = s.enemies[idx]
-  awardScore(s, scoreFor(victim))
-  s.events.push({ type: 'enemy-death', enemyType: victim.kind, lane: victim.lane, depth: victim.depth })
+  // tp1-21: same weighted-roll scoring as a bullet kill — one roll off state.rng.
+  const points = scoreFor(victim, s.rng)
+  awardScore(s, points)
+  s.events.push({ type: 'enemy-death', enemyType: victim.kind, lane: victim.lane, depth: victim.depth, score: points })
   s.enemies = s.enemies.filter((_, i) => i !== idx)
 }
 
