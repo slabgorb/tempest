@@ -115,9 +115,11 @@ describe('framing — start-level select', () => {
     expect(lvlOf(spin(s, 1))).toBe(MAX_SELECT_LEVEL)
   })
 
-  // AC: select accepts only spin and start — fire/zap are inert.
-  it('ignores fire/zap in select: no bullets, no mode change, level unchanged', () => {
-    const out = stepGame(selectState(1, 5), { spin: 0, fire: true, zap: true, start: false }, DT)
+  // AC (amended by tp2-2): select accepts spin, start, and FIRE — a fresh fire
+  // press now confirms the chosen level, honouring the PRESS FIRE TO SELECT
+  // prompt (edge semantics pinned in tp2-2.select-fire.test.ts). Zap stays inert.
+  it('ignores zap in select: no bullets, no mode change, level unchanged', () => {
+    const out = stepGame(selectState(1, 5), { spin: 0, fire: false, zap: true, start: false }, DT)
     expect(modeOf(out)).toBe('select')
     expect(lvlOf(out)).toBe(5)
     expect(out.bullets).toHaveLength(0)

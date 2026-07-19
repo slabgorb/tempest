@@ -455,21 +455,10 @@ export const SPIKER_TURNAROUND_DEPTH = (0xf0 - 0x20) / WARP_ALONG_SPAN  // ≈ 0
 // It is the reason AC2's grep is necessary but not sufficient. Expressed through
 // ROM_FPS, it can never silently re-acquire a frame rate again.
 export const PULSAR_CLIMB_SPEED = (PULSAR_ALONG_PER_FRAME * ROM_FPS) / WARP_ALONG_SPAN  // ≈ 0.175 depth/s
-// Pulsar far/near boundary: L0157 = $a0 for L1-64 (rev-3 §E l.311) → depth ≈0.357.
-// along > $a0 (depth < this) is "farther than L0157" → flipper speed; nearer →
-// pulsar speed. The L65+ $c0 tier is deep-level gold-plating (ratchet rule) and
-// is intentionally not modelled.
-//
-// PULPOT (WPULPOT, ALWELG.MAC:606-609) is ONE ROM byte and JPULMO reads this SAME byte
-// at three sites: the climb-speed switch below (1783-1786), the descend reverse
-// (interpreter.ts, 1795) and the kill test (1802-1813). All three widen to $C0 at wave
-// 65 in the ROM. tp1-26 wave-parameterises only the KILL tier (see pulpotKillDepthForLevel
-// below) and leaves this constant — and therefore the climb speed and reverse — frozen at
-// $A0: the L65+ tier was already an accepted deferral for those two, and moving them would
-// redden the wave-1 pulsar-motion suites (tp1-5, tp1-6, sim.enemy-motion-fidelity). See the
-// tp1-26 Design Deviation: the two are not different ROM constants that merely coincide
-// below wave 65, as an earlier framing assumed — they are the same byte, coincident always.
-export const PULSAR_NEAR_FAR_DEPTH = (0xf0 - 0xa0) / WARP_ALONG_SPAN  // ≈ 0.357
+// The pulsar far/near boundary is PULPOT itself — wave-parameterised, one number for the
+// climb-speed switch, the descend reverse AND the kill gate alike. See pulpotDepthForLevel
+// below. (There used to be a frozen wave-1 constant here, PULSAR_NEAR_FAR_DEPTH = $A0;
+// tp2-1 retired it — two spellings of one ROM byte is how the grab line shipped wrong.)
 // There is no SPLIT_CHILD_DEPTH here any more, and that is the point of tp1-24 (W-030).
 //
 // It was 0.85, and its comment said "Must be < PLAYER_RIM_DEPTH (0.92) so a rim-split is
@@ -627,19 +616,26 @@ export function pultimForLevel(level: number): number {
   return contourValue(WPULTIM, level)
 }
 
-// ── PULPOT (ALWELG.MAC:606-609, WPULPOT) — the pulsar potency-zone byte JPULMO's kill
-// test reads (`LDA INVAY / CMP PULPOT / IFCC`, 1802-1813): $A0 for waves 1-64, $C0 for
-// 65-99 — WIDER, so the kill zone reaches farther from the rim at wave 65+. Converted to
-// a depth the same way every other along-byte in this file is: (0xf0 - byte) / WARP_ALONG_SPAN.
+// ── PULPOT (ALWELG.MAC:606-609, WPULPOT) — the pulsar potency-zone byte: $A0 for waves
+// 1-64, $C0 for 65-99 — WIDER, so the zone reaches farther from the rim at wave 65+.
+// Converted to a depth the same way every other along-byte in this file is:
+// (0xf0 - byte) / WARP_ALONG_SPAN.
 //
-// PULPOT is ONE ROM byte, also read by the climb-speed near/far switch and the descend
-// reverse (see PULSAR_NEAR_FAR_DEPTH's comment) — this lookup feeds ONLY the kill gate
-// (sim.ts's resolvePlayerHits); the other two sites stay on the frozen $A0 constant.
+// PULPOT is ONE ROM byte and JPULMO reads it at THREE sites; this lookup serves all
+// three (tp1-26 kill, tp2-1 climb/reverse):
+//   * the kill test    (`LDA INVAY / CMP PULPOT / IFCC`, 1804-1806) — sim.ts's
+//     resolvePlayerHits
+//   * the climb switch (`CMP PULPOT / IFCS / LDY I,ZABFLI ;NO. GO FASTER`, 1783-1786)
+//     — interpreter.ts's speedFor
+//   * the descend reverse (`CMP PULPOT / IFCS ;TIME TO REVERSE?`, 1795) —
+//     interpreter.ts's jpulmo
+// The zone cannot disagree with itself about where it is, so there is exactly one
+// exported number per wave — no per-site constant may shadow it.
 const WPULPOT: readonly ContourRecord[] = [
   { t: 'T1', start: 1, end: 64, v: 0xa0 },
   { t: 'T1', start: 65, end: 99, v: 0xc0 },
 ]
-export function pulpotKillDepthForLevel(level: number): number {
+export function pulpotDepthForLevel(level: number): number {
   return (0xf0 - contourValue(WPULPOT, level)) / WARP_ALONG_SPAN
 }
 

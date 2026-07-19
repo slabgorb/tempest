@@ -21,7 +21,7 @@ import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
 import {
-  levelParams, SIM_STEP, PULSAR_NEAR_FAR_DEPTH, PLAYER_RIM_DEPTH,
+  levelParams, SIM_STEP, PLAYER_RIM_DEPTH,
   TANKER_SPLIT_DEPTH, SPLIT_TOO_CLOSE_DEPTH, BULLET_SPEED,
 } from '../../src/core/rules'
 import { tubeForLevel } from '../../src/core/geometry'
@@ -30,6 +30,12 @@ import { GameState, Pulsar } from '../../src/core/state'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const FRAME = SIM_STEP
+
+// The wave-1 PULPOT byte ($A0, WPULPOT ALWELG.MAC:606-609) as a depth. Every stage in
+// this suite is wave 1, where $A0 stands under both the frozen constant and the
+// wave-parameterised lookup — tp2-1 retires the rules.ts export, so the premise is
+// pinned to the ROM byte itself, not to the constant under audit (the tp1-27 rule).
+const PULSAR_A0_DEPTH = (0xf0 - 0xa0) / 224   // ≈ 0.357
 
 function base(level: number, playerLane: number): GameState {
   const s = playingState(1)
@@ -219,15 +225,15 @@ describe('tp1-5 — a pulse only kills from inside the potency zone (W-027)', ()
     // JPULMO's kill test (ALWELG.MAC:1801-1815) is three conditions, not one:
     // PULSON positive, INVAY < PULPOT, and both legs on the cursor's legs. PULPOT
     // is $A0 for waves 1-64 (WPULPOT, 606-609) — depth 0.357 in our convention,
-    // which is PULSAR_NEAR_FAR_DEPTH, the very constant we already use to pick the
-    // pulsar's climb speed. A pulsar out in the far third of the well is harmless.
+    // the SAME byte the climb-speed switch reads (wave-parameterised by tp2-1).
+    // A pulsar out in the far third of the well is harmless.
     //
     // resolvePlayerHits asks only `kind === 'pulsar' && pulsing && lane === pl`. No
     // depth at all: a pulsar that hatched at the far end and happens to be strobing
     // kills a player it cannot even reach.
     const s0 = base(1, 6)
     const p = pulsing(s0, makeEnemy('pulsar', 6, 0.20, levelParams(1)))  // 0.20 < 0.357
-    expect(p.depth).toBeLessThan(PULSAR_NEAR_FAR_DEPTH)              // premise
+    expect(p.depth).toBeLessThan(PULSAR_A0_DEPTH)                    // premise
     s0.enemies = [p]
 
     const s = step(s0, 1)
@@ -239,7 +245,7 @@ describe('tp1-5 — a pulse only kills from inside the potency zone (W-027)', ()
     // The other side of the same rule — so the fix cannot be "pulsars never kill".
     const s0 = base(1, 6)
     const p = pulsing(s0, makeEnemy('pulsar', 6, 0.50, levelParams(1)))  // 0.50 > 0.357
-    expect(p.depth).toBeGreaterThan(PULSAR_NEAR_FAR_DEPTH)           // premise
+    expect(p.depth).toBeGreaterThan(PULSAR_A0_DEPTH)                 // premise
     s0.enemies = [p]
 
     const s = step(s0, 1)
@@ -268,7 +274,7 @@ describe('tp1-5 — a pulse only kills from inside the potency zone (W-027)', ()
     // Non-vacuous: it climbs onto him and eventually does kill.
     expect(s.player.alive).toBe(false)
     expect(deathDepth).toBeDefined()
-    expect(deathDepth).toBeGreaterThanOrEqual(PULSAR_NEAR_FAR_DEPTH)
+    expect(deathDepth).toBeGreaterThanOrEqual(PULSAR_A0_DEPTH)
   })
 
   it('does NOT kill from mid-jump — the pulse kill gets the same gate as the grab', () => {
