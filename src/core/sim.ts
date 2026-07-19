@@ -1142,10 +1142,16 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       }
       break
     case 'select':
-      // `start` commits to a fresh game at the chosen level; otherwise `spin`
-      // steps the level by one (sign-based), clamped to [1, MAX_SELECT_LEVEL]
-      // with no wrap. Fire/zap are inert. RNG untouched by the framing step.
-      if (input.start) {
+      // `start` or a FRESH fire press commits to a fresh game at the chosen
+      // level — the prompt says PRESS FIRE TO SELECT and means it (tp2-2). Fire
+      // confirms only on a RISING edge, read through the shared `prevFire` latch
+      // (6-2, maintained every frame and reused by stepHighScore): the shell
+      // asserts `fire` every step a button is held, so a press carried in from
+      // the attract screen must be released before it can confirm. Otherwise
+      // `spin` steps the level by one (sign-based), clamped to
+      // [1, MAX_SELECT_LEVEL] with no wrap. Zap is inert. RNG untouched by the
+      // framing step.
+      if (input.start || (input.fire && !s.prevFire)) {
         startGameAtLevel(s, s.select.selectedLevel)
       } else if (Number.isFinite(input.spin) && input.spin !== 0) {
         // Number.isFinite rejects NaN and ±Infinity: a NaN spin would poison
