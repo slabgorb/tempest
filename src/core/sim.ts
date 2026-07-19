@@ -1131,9 +1131,7 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
       // input. A demo death (mode leaves 'attract') also returns to the title.
       if (input.start) {
         s.mode = 'select'
-        // Seed the fire latch from THIS frame's fire: a mouse click queues
-        // start+fire together, and that press must not confirm the select (tp2-2).
-        s.select = { selectedLevel: 1, fireHeld: input.fire }
+        s.select = { selectedLevel: 1 }
         s.demoActive = false
       } else if (hasRealInput(input)) {
         resetDemoToTitle(s)
@@ -1146,23 +1144,21 @@ export function stepGame(state: GameState, input: Input, dt: number): GameState 
     case 'select':
       // `start` or a FRESH fire press commits to a fresh game at the chosen
       // level — the prompt says PRESS FIRE TO SELECT and means it (tp2-2). Fire
-      // confirms only on a rising edge through the `fireHeld` latch: the shell
+      // confirms only on a RISING edge, read through the shared `prevFire` latch
+      // (6-2, maintained every frame and reused by stepHighScore): the shell
       // asserts `fire` every step a button is held, so a press carried in from
       // the attract screen must be released before it can confirm. Otherwise
       // `spin` steps the level by one (sign-based), clamped to
       // [1, MAX_SELECT_LEVEL] with no wrap. Zap is inert. RNG untouched by the
       // framing step.
-      if (input.start || (input.fire && !s.select.fireHeld)) {
+      if (input.start || (input.fire && !s.prevFire)) {
         startGameAtLevel(s, s.select.selectedLevel)
-      } else {
-        if (Number.isFinite(input.spin) && input.spin !== 0) {
-          // Number.isFinite rejects NaN and ±Infinity: a NaN spin would poison
-          // selectedLevel via Math.sign(NaN) = NaN, and ±Infinity would silently
-          // step the level via Math.sign(±Infinity) = ±1 (Story 5-9).
-          const next = s.select.selectedLevel + Math.sign(input.spin)
-          s.select.selectedLevel = Math.max(1, Math.min(MAX_SELECT_LEVEL, next))
-        }
-        s.select.fireHeld = input.fire
+      } else if (Number.isFinite(input.spin) && input.spin !== 0) {
+        // Number.isFinite rejects NaN and ±Infinity: a NaN spin would poison
+        // selectedLevel via Math.sign(NaN) = NaN, and ±Infinity would silently
+        // step the level via Math.sign(±Infinity) = ±1 (Story 5-9).
+        const next = s.select.selectedLevel + Math.sign(input.spin)
+        s.select.selectedLevel = Math.max(1, Math.min(MAX_SELECT_LEVEL, next))
       }
       break
     case 'playing':

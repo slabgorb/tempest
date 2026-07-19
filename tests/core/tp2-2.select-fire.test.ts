@@ -8,10 +8,12 @@
 // The subtlety is that `fire` is LEVEL-triggered in the shell — a held space
 // or mouse button asserts it on every step (deliberate autofire), and a mouse
 // click queues start+fire TOGETHER — so the same press that entered select
-// must not instantly confirm level 1. The select state therefore carries a
-// `fireHeld` latch seeded from the entering frame's fire: only a rising edge
-// (press after release) confirms. These tests drive the real transitions from
-// the attract screen so the latch's seeding is exercised, not bypassed.
+// must not instantly confirm level 1. stepGame confirms only on a RISING edge,
+// read through the shared `GameState.prevFire` latch (6-2) it maintains every
+// frame — the same last-frame-fire the high-score entry screen uses — so a
+// press carried in from the attract screen must be released before it can
+// confirm. These tests drive the real transitions from the attract screen so
+// the latch is exercised, not bypassed.
 import { describe, it, expect } from 'vitest'
 import { initialState, GameState } from '../../src/core/state'
 import { stepGame } from '../../src/core/sim'
@@ -30,6 +32,28 @@ describe('tp2-2 — fire confirms the start-level select', () => {
     s = step(s, { spin: 1 }) // 1 -> 2
     s = step(s, { spin: 1 }) // 2 -> 3
     const out = step(s, { fire: true })
+    expect(out.mode).toBe('playing')
+    expect(out.level).toBe(3)
+    // The fire that CONFIRMS must not also spawn a shot on the transition frame.
+    expect(out.bullets).toHaveLength(0)
+  })
+
+  it('spins while fire is held, then confirms at the spun-to level on release + re-press', () => {
+    // The story's own mouse scenario: the trigger is held down WHILE the player
+    // spins the selector. Spinning must work and the held fire must never
+    // confirm; only a fresh press (after release) commits — at the spun-to level.
+    let s = step(initialState(7), { start: true, fire: true }) // enter select, fire held
+    expect(s.mode).toBe('select')
+    expect(s.select.selectedLevel).toBe(1)
+    s = step(s, { spin: 1, fire: true }) // spin with fire still down: 1 -> 2
+    expect(s.mode).toBe('select')
+    expect(s.select.selectedLevel).toBe(2)
+    s = step(s, { spin: 1, fire: true }) // spin with fire still down: 2 -> 3
+    expect(s.mode).toBe('select')
+    expect(s.select.selectedLevel).toBe(3)
+    s = step(s) // release fire — clears the edge latch
+    expect(s.mode).toBe('select')
+    const out = step(s, { fire: true }) // fresh press confirms
     expect(out.mode).toBe('playing')
     expect(out.level).toBe(3)
   })
@@ -53,6 +77,8 @@ describe('tp2-2 — fire confirms the start-level select', () => {
     const out = step(s, { fire: true }) // fresh press
     expect(out.mode).toBe('playing')
     expect(out.level).toBe(1)
+    // The confirming press must not spawn a shot on the transition frame.
+    expect(out.bullets).toHaveLength(0)
   })
 
   it('start (Enter) still confirms', () => {

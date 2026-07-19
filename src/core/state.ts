@@ -179,11 +179,6 @@ export interface WarpState {
 
 export interface SelectState {
   selectedLevel: number // the level the player has chosen to start at (1..16)
-  // tp2-2: true while the fire button is held. Fire confirms the select (the
-  // prompt says PRESS FIRE TO SELECT) but only on a rising edge — the shell
-  // asserts `fire` every step for a held button, and a mouse click queues
-  // start+fire together, so the press that entered select must not confirm.
-  fireHeld: boolean
 }
 
 // Mid-flight state for the 'highscore' initials-entry machine (SH2-13): the
@@ -276,7 +271,7 @@ export function initialState(seed: number): GameState {
     spawn: spawnForLevel(1, rng, tube.laneCount),
     pulse: { son: PULSE_SON_INIT, tim: pultimForLevel(1) },  // INEWLI, ALWELG.MAC:46-48
     warp: { progress: 0, velocity: 0, warning: 0 },
-    select: { selectedLevel: 1, fireHeld: false },
+    select: { selectedLevel: 1 },
     entry: null,
     highScoreTable: [],
     events: [],
