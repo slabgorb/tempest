@@ -7,7 +7,7 @@ import {
   PLAYER_RIM_DEPTH, RESPAWN_DELAY, RESPAWN_LANE, START_LIVES, levelParams, spawnForLevel,
   SCORE_SPIKE_SEGMENT, SPIKE_BURROW_SPEED, SPIKE_BURROW_HITS, TANKER_SPLIT_DEPTH, LevelParams,
   SPLIT_TOO_CLOSE_DEPTH, NINVAD, WINVMX,
-  pultimForLevel, pulpotKillDepthForLevel, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
+  pultimForLevel, pulpotDepthForLevel, PULSE_SON_INIT, PULSE_SON_MAX, PULSE_SON_MIN,
   nymcha, MAX_SELECT_LEVEL,
   WARP_INITIAL_SPEED, warpAccel, WARP_AVOID_SPIKES_SECONDS, WARP_AVOID_SPIKES_MAX_LEVEL,
   EYE_FLYIN_START, EYE_FLYIN_STEP, startWaveBonus,
@@ -631,12 +631,11 @@ function resolvePlayerHits(s: GameState): void {
   //   * `LDA PULSON / IFPL`   — the pulse is lit. (Ours: `pulsing`.)
   //   * `CMP PULPOT / IFCC`   — and the pulsar has climbed INTO the potency zone. PULPOT
   //     is WAVE-PARAMETERISED (WPULPOT, 606-609): $A0 for waves 1-64, $C0 (WIDER) for
-  //     65-99 — read here via `pulpotKillDepthForLevel` (tp1-26; it used to be frozen at
-  //     the wave-1 $A0 value, PULSAR_NEAR_FAR_DEPTH, which a pulsar strobing out in the
-  //     far third of the well would clear harmlessly at every wave — W-027). PULPOT is
-  //     the same byte the climb-speed switch reads (rules.ts, PULSAR_NEAR_FAR_DEPTH's
-  //     comment), but that site — and the descend reverse, interpreter.ts — deliberately
-  //     stay on the frozen $A0 constant; only the kill tier is wave-parameterised here.
+  //     65-99 — read here via `pulpotDepthForLevel` (tp1-26; it used to be frozen at
+  //     the wave-1 $A0 value, which a pulsar strobing out in the far third of the well
+  //     would clear harmlessly at every wave — W-027). PULPOT is ONE ROM byte: the
+  //     climb-speed switch and the descend reverse (interpreter.ts) read the SAME
+  //     lookup, so all three JPULMO sites widen together at wave 65 (tp2-1).
   //   * both its legs on both of the cursor's legs (1808-1814) — which an invader caught
   //     MID-FLIP, straddling two lines, does not have. That is the grab's own gate, one
   //     line above; the pulse branch beside it never got it, so a pulsar mid-flip could
@@ -644,7 +643,7 @@ function resolvePlayerHits(s: GameState): void {
   //     4 of tp1-5, left open when the grab gate was widened in tp1-4).
   const killer = grabber ?? s.enemies.find(
     (e) => e.kind === 'pulsar' && e.pulsing && e.lane === pl
-      && e.depth >= pulpotKillDepthForLevel(s.level) && !isJumping(e),
+      && e.depth >= pulpotDepthForLevel(s.level) && !isJumping(e),
   )
   if (!killer) return
   s.events.push({ type: 'player-grab', lane: pl, killedBy: killer.kind })

@@ -27,7 +27,7 @@
 import { describe, it, expect } from 'vitest'
 import { playingState } from './helpers'
 import { stepGame, makeEnemy } from '../../src/core/sim'
-import { levelParams, SIM_STEP, PULSAR_NEAR_FAR_DEPTH } from '../../src/core/rules'
+import { levelParams, SIM_STEP } from '../../src/core/rules'
 import { GameState, Pulsar, Tanker } from '../../src/core/state'
 import type { Nymph } from '../../src/core/state'
 import { tubeForLevel } from '../../src/core/geometry'
@@ -35,6 +35,12 @@ import { Input } from '../../src/core/input'
 
 const NEUTRAL: Input = { spin: 0, fire: false, zap: false, start: false }
 const FRAME = SIM_STEP
+
+// The wave-1 PULPOT byte ($A0, WPULPOT ALWELG.MAC:606-609) as a depth. Every stage in
+// this suite is wave 1, where $A0 stands under both the frozen constant and the
+// wave-parameterised lookup — tp2-1 retires the rules.ts export, so the staging
+// tolerance is pinned to the ROM byte itself (the tp1-27 rule).
+const PULSAR_A0_DEPTH = (0xf0 - 0xa0) / 224   // ≈ 0.357
 
 const nymph = (lane: number, py: number): Nymph => ({ lane, py })
 /** Dormant far-off nymphs: they keep NYMCOU up without hatching into the test. */
@@ -115,7 +121,7 @@ describe('tp1-6 — the descending pulsar and the emptying queue (W-029)', () =>
       .toBeLessThan(0.5)
     expect(rose, 'liveness: the descent ends in a reversal').toBe(true)
     expect(minDepth, 'the reversal is at the PULPOT line, not past it')
-      .toBeGreaterThan(PULSAR_NEAR_FAR_DEPTH - 0.06)
+      .toBeGreaterThan(PULSAR_A0_DEPTH - 0.06)
 
     // Half B — the queue empties MID-DESCENT: "SEND PULSAR UP", wherever it is.
     let b = boardAt(1)
@@ -126,7 +132,7 @@ describe('tp1-6 — the descending pulsar and the emptying queue (W-029)', () =>
     for (let i = 0; i < 3; i++) b = stepGame(b, NEUTRAL, FRAME)
     expect(thePulsar(b)!.direction, 'guard: still descending with nymphs queued').toBe(-1)
     expect(thePulsar(b)!.depth, 'guard: still far above PULPOT — only the queue can flip it here')
-      .toBeGreaterThan(PULSAR_NEAR_FAR_DEPTH + 0.1)
+      .toBeGreaterThan(PULSAR_A0_DEPTH + 0.1)
 
     b.spawn = { nymphs: [] } // the last nymph hatches (surgically)
     for (let i = 0; i < 2; i++) b = stepGame(b, NEUTRAL, FRAME)
