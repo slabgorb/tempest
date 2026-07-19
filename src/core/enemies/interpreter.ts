@@ -25,7 +25,7 @@ import { Enemy, EnemyKind, PulseState } from '../state'
 import { Tube, wrapLane } from '../geometry'
 import { type Rng, nextFloat, nextInt } from '@arcade/shared/rng'
 import {
-  LevelParams, PULSAR_CLIMB_SPEED, PULSAR_NEAR_FAR_DEPTH, SPIKER_TURNAROUND_DEPTH,
+  LevelParams, PULSAR_CLIMB_SPEED, pulpotDepthForLevel, SPIKER_TURNAROUND_DEPTH,
   SPIKE_MAX_DEPTH, FUSEBALL_JITTER_INTERVAL, FUSEBALL_MOVE_PROB, PUCHDE_FRAMES, wttfraForLevel,
   WARP_ALONG_SPAN, FUSE_CHASE_ON_TUBE, wfuschForLevel, PLAYER_RIM_DEPTH,
   FUSE_TURNBACK_DEPTH, FUSE_RANGE_FLOOR_DEPTH, FUSE_EARLY_WAVE_MAX,
@@ -178,9 +178,10 @@ function speedFor(e: Enemy, ctx: CamContext): number {
     case 'fuseball': return ctx.params.fuseballSpeed
     // JPULMO (ALWELG.MAC:1780-1788): a pulsar outside the power zone "GO[es]
     // FASTER" — it climbs at the FLIPPER's rate until it crosses PULPOT, then at
-    // its own hardcoded spd_pulsar.
+    // its own hardcoded spd_pulsar. PULPOT is wave-parameterised ($A0 waves 1-64,
+    // $C0 at 65+ — WPULPOT 606-609), the same byte the kill gate reads (tp2-1).
     case 'pulsar':
-      return e.depth >= PULSAR_NEAR_FAR_DEPTH ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed
+      return e.depth >= pulpotDepthForLevel(ctx.level) ? PULSAR_CLIMB_SPEED : ctx.params.flipperSpeed
     // A sixth EnemyKind would otherwise fall out of here as `undefined` and turn every
     // speed — and then every depth — into NaN, silently. `assertNever` makes that a `tsc`
     // error instead. It is imported, not local, because the same rule binds `scoreFor`,
@@ -318,7 +319,7 @@ function jsmove(e: Enemy, ctx: CamContext): number | undefined {
 function jpulmo(e: Enemy, ctx: CamContext): number | undefined {
   if (e.direction === 1) return jsmove(e, ctx)
   moveAlong(e, ctx)
-  if (ctx.nymphCount === 0 || e.depth <= PULSAR_NEAR_FAR_DEPTH) e.direction = 1
+  if (ctx.nymphCount === 0 || e.depth <= pulpotDepthForLevel(ctx.level)) e.direction = 1
   return undefined
 }
 
