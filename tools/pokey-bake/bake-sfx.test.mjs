@@ -473,3 +473,82 @@ describe('expandAlsoun merge-sort timestamp invariant (story 6-12, AC#1)', () =>
     expect(isNonDecreasing(timeline.map(([, t]) => t)), 'merged stream is sorted').toBe(true)
   })
 })
+
+// ── Story td1-6: expandSeq omits the ROM AUDC high-nibble (distortion) mask ────
+// The clean 6-byte-record walker expandSeq() (bake-sfx.mjs) ramps the WHOLE byte
+// every step: `val = (val + delta) & 0xff`. For the ODD register (AUDC1, reg 1)
+// that is WRONG. Tempest's ALSOUN MODSND masks the AUDC high nibble on a ramp so
+// only the VOLUME (low nibble) changes while the DISTORTION (high nibble) HOLDS —
+// exactly what the orchestrator's scripts/audio/render/envelope.mjs does
+// (maskHighNibble, line 96: `val = maskHighNibble ? ((next & 0x0f) | (val & 0xf0)) : next`)
+// and what THIS file's own sibling engine streamVoice() already does (line 180,
+// `if (odd) Ld0 = (Ld0 & 0x0f) | (old & 0xf0)`). expandSeq() never implements it,
+// though its own comments (~line 118) claim it does — doc/code drift. The bug is
+// invisible on enemy_fire (AUDC high nibble 0) but corrupts player_fire, whose
+// AUDC record ramps a NON-zero distortion nibble.
+//
+// expandSeq is NOT exported, so we pin the contract through the public API
+// expandAlsoun({audf,audc}): expandSeq(1, audc) drives the AUDC voice and
+// expandSeq(0, audf) the AUDF voice. We read the per-register events back out of
+// the merged pokey1 feed with feedEvents().
+//
+// WORKED DIVERGENCE (out-of-band probe: current repo module vs a masked reimpl):
+//   player_fire audc = [0xa2,0x01,0xf8,0x20,0x00,0x00]  (value 0xa2, delta -8, count 32)
+//     buggy  AUDC: 0xa2 0x9a 0x92 0x8a ...   (whole byte ramps down)
+//     masked AUDC: 0xa2 0xaa 0xa2 0xaa ...   (distortion held 0xA0, volume 0x2<->0xA)
+//   first divergence @ event 1: masked 0xAA (170) vs buggy 0x9A (154)
+//   — the exact orchestrator canary reason string ROM=[1,170] shipped=[1,154].
+describe('expandSeq AUDC high-nibble (distortion) mask on a ramp (story td1-6)', () => {
+  it('holds the AUDC (odd reg) distortion high nibble while ramping volume — real player_fire record', () => {
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported').toBe('function')
+    const pf = SFX.find((s) => s.name === 'player_fire')
+    expect(pf, 'player_fire present as the AUDC-ramp lever').toBeDefined()
+    // Its AUDC record ramps a NON-zero distortion nibble (0xA0) by -8 per step.
+    expect(pf.alsoun.audc.slice(0, 4), 'player_fire AUDC record [value,beats,delta,count]').toEqual([0xa2, 0x01, 0xf8, 0x20])
+
+    const audc = feedEvents(bake.expandAlsoun(pf.alsoun).pokey1, 1)
+    expect(audc, 'AUDC voice emits one event per count (0x20)').toHaveLength(0x20)
+
+    // THE EXACT DIVERGENCE the orchestrator canary pins: event 1 must be 0xAA —
+    // distortion HELD at 0xA0, volume ramped 0x2 -> 0xA — NOT 0x9A, which is the
+    // whole byte ramped. ROM=[1,170] shipped=[1,154].
+    expect(audc[1][1], 'AUDC event 1 holds distortion (0xAA=170), not the whole-byte ramp (0x9A=154)').toBe(0xaa)
+
+    // Distortion (high) nibble pinned across the ENTIRE ramp...
+    for (const [, v] of audc) {
+      expect(v & 0xf0, `AUDC distortion nibble must hold at 0xA0 (got 0x${v.toString(16)})`).toBe(0xa0)
+    }
+    // ...while the volume (low) nibble genuinely varies — proving the mask ramps
+    // volume, not merely freezes the whole byte.
+    expect(new Set(audc.map(([, v]) => v & 0x0f)).size, 'AUDC volume (low) nibble actually ramps').toBeGreaterThan(1)
+  })
+
+  it('masks the AUDC high nibble on a carry across the nibble boundary — synthetic record', () => {
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported').toBe('function')
+    // value 0xA8, delta +4, count 6: the +4 ramp carries 0xAC -> 0xB0, spilling into
+    // the high nibble. Masked, step 2 stays in 0xA0 (0xA0 | 0x0); the buggy whole-byte
+    // ramp gives 0xB0. Divergence is unmistakable by step 2. (audf here is a filler
+    // pitch voice — we only read reg 1.)
+    const spec = { audf: [0x00, 0x01, 0x01, 0x06, 0x00, 0x00], audc: [0xa8, 0x01, 0x04, 0x06, 0x00, 0x00] }
+    const audc = feedEvents(bake.expandAlsoun(spec).pokey1, 1).map(([, v]) => v)
+    // masked expectation: distortion pinned 0xA0, volume ramps +4 mod 16.
+    expect(audc, 'masked AUDC stream: high nibble pinned 0xA0, low nibble ramps +4').toEqual([0xa8, 0xac, 0xa0, 0xa4, 0xa8, 0xac])
+    // The load-bearing carry step: buggy code spills to 0xB0 here.
+    expect(audc[2], 'the carry step: masked 0xA0, buggy whole-byte 0xB0').toBe(0xa0)
+  })
+
+  it('does NOT mask the AUDF (even reg) — pitch ramps the WHOLE byte across nibble boundaries (guard: GREEN must not over-apply the mask)', () => {
+    expect(typeof bake.expandAlsoun, 'expandAlsoun must be exported').toBe('function')
+    const pf = SFX.find((s) => s.name === 'player_fire')
+    // player_fire AUDF ramps 0x10 by +7 per step, climbing through many high nibbles.
+    expect(pf.alsoun.audf.slice(0, 4), 'player_fire AUDF record [value,beats,delta,count]').toEqual([0x10, 0x01, 0x07, 0x20])
+    const audf = feedEvents(bake.expandAlsoun(pf.alsoun).pokey1, 0)
+    expect(audf, 'AUDF voice emits one event per count (0x20)').toHaveLength(0x20)
+
+    // Even register: the WHOLE byte ramps, so step 3 (0x10 + 3*0x07 = 0x25) crosses
+    // into the 0x20 high nibble. A fix that wrongly masked reg 0 too would pin 0x10
+    // here and fail — this guard keeps the AUDC mask from leaking onto AUDF.
+    expect(audf[3][1], 'AUDF ramps the whole byte: 0x10 + 3*0x07 = 0x25').toBe(0x25)
+    expect(new Set(audf.map(([, v]) => v & 0xf0)).size, 'AUDF high nibble changes — no distortion mask on the even register').toBeGreaterThan(1)
+  })
+})
