@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, relative } from 'node:path'
+import { violations } from './helpers/purity-scanner.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (rel: string): string => readFileSync(join(root, rel), 'utf8')
@@ -153,23 +154,18 @@ describe('the core purity boundary — what FR-017 must not break (rule guard)',
   // shell dependencies into src/core, the pure deterministic core stops being
   // either. This is the highest-risk rule violation in the whole story, so it gets
   // its own guard rather than trusting a reviewer to spot it in the diff.
-  const FORBIDDEN: ReadonlyArray<readonly [string, RegExp]> = [
-    ['requestAnimationFrame', /\brequestAnimationFrame\b/],
-    ['Date.now', /\bDate\.now\b/],
-    ['new Date', /\bnew\s+Date\b/],
-    ['performance.now', /\bperformance\.now\b/],
-    ['Math.random', /\bMath\.random\b/],
-    ['document', /\bdocument\./],
-    ['window', /\bwindow\./],
-  ]
+  //
+  // td1-2 (GREEN) moved this sweep onto the shared TypeScript-compiler-API
+  // scanner in tests/helpers/purity-scanner.ts (ported from joust's
+  // jt1-7/jt1-11), replacing the inline `FORBIDDEN` regex table that only
+  // stripped comments and never strings — a false negative AND a false
+  // positive source (see tests/purity-scanner.test.ts).
 
   it('keeps src/core free of DOM, wall-clock time and ambient randomness', () => {
     const offenders: string[] = []
     for (const file of CORE_FILES) {
-      const code = stripComments(read(file))
-      for (const [name, re] of FORBIDDEN) {
-        if (re.test(code)) offenders.push(`${file}: ${name}`)
-      }
+      const hits = violations(read(file), file).filter((h) => !h.startsWith('import from shell/'))
+      if (hits.length) offenders.push(`${file}: ${hits.join(', ')}`)
     }
     expect(offenders, `src/core must stay pure:\n${offenders.join('\n')}`).toEqual([])
   })
@@ -177,8 +173,8 @@ describe('the core purity boundary — what FR-017 must not break (rule guard)',
   it('keeps src/core from importing src/shell', () => {
     const offenders: string[] = []
     for (const file of CORE_FILES) {
-      const code = stripComments(read(file))
-      if (/from\s+['"][^'"]*shell\//.test(code)) offenders.push(file)
+      const hits = violations(read(file), file)
+      if (hits.some((h) => h.startsWith('import from shell/'))) offenders.push(file)
     }
     expect(offenders, `src/core must not import from src/shell:\n${offenders.join('\n')}`).toEqual([])
   })
