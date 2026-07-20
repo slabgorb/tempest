@@ -18,7 +18,12 @@ export default defineConfig({
   },
   // Pin a dedicated port. strictPort fails loudly on a collision instead of
   // silently wandering to 5174/5175 like the default 5173.
+  // host is pinned to IPv4 loopback because strictPort alone does NOT protect
+  // the pin: with 127.0.0.1:5273 held, vite happily binds [::1]:5273 and two
+  // dev servers share the port with no error (td1-1 — the exact
+  // silent-wrong-checkout trap the orchestrator CLAUDE.md warns about).
   server: {
+    host: '127.0.0.1',
     port: 5273,
     strictPort: true,
     // The Cloudflare tunnel forwards requests with Host: arcade.slabgorb.com.
@@ -27,6 +32,7 @@ export default defineConfig({
     allowedHosts: ['arcade.slabgorb.com'],
   },
   preview: {
+    host: '127.0.0.1',
     port: 5273,
     strictPort: true,
     allowedHosts: ['arcade.slabgorb.com'],
