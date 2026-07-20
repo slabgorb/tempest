@@ -82,7 +82,12 @@ function expandSeq(reg, [value, beats, delta, count, restart]) {
   let val = value, t = 0, steps = 0, n = count === 0 ? 1 : count, looped = false;
   while (steps < n && t < MAX_SFX_S) {
     ev.push([reg, val & 0xff, Number(t.toFixed(5))]);
-    val = (val + delta) & 0xff;
+    const next = (val + delta) & 0xff;
+    // AUDC (odd register) ramps mask the high nibble — the ROM's MODSND holds
+    // distortion while only volume (low nibble) changes; same mask envelope.mjs:96
+    // and this file's own streamVoice (line 180) apply. AUDF (even) ramps the
+    // whole byte (pitch) and must NOT be masked (story td1-6).
+    val = (reg & 1) ? ((next & 0x0f) | (val & 0xf0)) : next;
     t += stepDur;
     steps++;
     if (steps >= n && restart !== 0 && t < MAX_SFX_S && !looped) {
